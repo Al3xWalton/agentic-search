@@ -1,0 +1,1055 @@
+   Compiling proc-macro2 v1.0.92
+   Compiling unicode-ident v1.0.14
+   Compiling libc v0.2.167
+   Compiling cfg-if v1.0.0
+   Compiling autocfg v1.4.0
+   Compiling serde v1.0.215
+   Compiling memchr v2.7.4
+   Compiling once_cell v1.20.2
+   Compiling version_check v0.9.5
+   Compiling smallvec v1.13.2
+   Compiling parking_lot_core v0.9.10
+   Compiling pin-project-lite v0.2.15
+   Compiling itoa v1.0.14
+   Compiling byteorder v1.5.0
+   Compiling typenum v1.17.0
+   Compiling stable_deref_trait v1.2.0
+   Compiling log v0.4.22
+   Compiling shlex v1.3.0
+   Compiling bytes v1.9.0
+   Compiling libm v0.2.11
+   Compiling generic-array v0.14.7
+   Compiling scopeguard v1.2.0
+   Compiling bitflags v2.6.0
+   Compiling either v1.13.0
+   Compiling lock_api v0.4.12
+   Compiling num-traits v0.2.19
+   Compiling crossbeam-utils v0.8.20
+   Compiling thiserror v1.0.69
+   Compiling simd-adler32 v0.3.7
+   Compiling futures-core v0.3.31
+   Compiling futures-sink v0.3.31
+   Compiling pkg-config v0.3.31
+   Compiling adler2 v2.0.0
+   Compiling rayon-core v1.12.1
+   Compiling miniz_oxide v0.8.0
+   Compiling tracing-core v0.1.33
+   Compiling slab v0.4.9
+   Compiling fnv v1.0.7
+   Compiling siphasher v0.3.11
+   Compiling allocator-api2 v0.2.21
+   Compiling futures-channel v0.3.31
+   Compiling futures-io v0.3.31
+   Compiling pin-utils v0.1.0
+   Compiling ryu v1.0.18
+   Compiling futures-task v0.3.31
+   Compiling quote v1.0.37
+   Compiling syn v1.0.109
+   Compiling syn v2.0.90
+   Compiling serde_json v1.0.133
+   Compiling core-foundation-sys v0.8.7
+   Compiling heck v0.5.0
+   Compiling synstructure v0.13.1
+   Compiling getrandom v0.2.15
+   Compiling jobserver v0.1.32
+   Compiling cc v1.2.2
+   Compiling rand_core v0.6.4
+   Compiling serde_derive v1.0.215
+   Compiling zerocopy-derive v0.7.35
+   Compiling zerofrom-derive v0.1.5
+   Compiling yoke-derive v0.7.5
+   Compiling zerovec-derive v0.10.3
+   Compiling displaydoc v0.2.5
+   Compiling parking_lot v0.12.3
+   Compiling thiserror-impl v1.0.69
+   Compiling zerocopy v0.7.35
+   Compiling icu_provider_macros v1.5.0
+   Compiling tokio-macros v2.4.0
+   Compiling mio v1.0.3
+   Compiling socket2 v0.5.8
+   Compiling signal-hook-registry v1.4.2
+   Compiling zerofrom v0.1.5
+   Compiling tokio v1.42.0
+   Compiling tracing-attributes v0.1.28
+   Compiling futures-macro v0.3.31
+   Compiling crossbeam-epoch v0.9.18
+   Compiling crossbeam-deque v0.8.5
+   Compiling tracing v0.1.41
+   Compiling bytemuck_derive v1.8.0
+   Compiling bitflags v1.3.2
+   Compiling bytemuck v1.20.0
+   Compiling rayon v1.10.0
+   Compiling futures-util v0.3.31
+   Compiling paste v1.0.15
+   Compiling crypto-common v0.1.6
+   Compiling zstd-sys v2.0.13+zstd.1.5.6
+   Compiling phf_shared v0.10.0
+   Compiling hashbrown v0.15.2
+   Compiling equivalent v1.0.1
+   Compiling writeable v0.5.5
+   Compiling litemap v0.7.4
+   Compiling foldhash v0.1.3
+   Compiling rustix v0.38.41
+   Compiling rustversion v1.0.18
+   Compiling subtle v2.6.1
+   Compiling indexmap v2.7.0
+   Compiling ppv-lite86 v0.2.20
+   Compiling rand_chacha v0.3.1
+   Compiling rand v0.8.5
+   Compiling yoke v0.7.5
+   Compiling block-buffer v0.10.4
+   Compiling errno v0.3.10
+   Compiling digest v0.10.7
+   Compiling cpufeatures v0.2.16
+   Compiling crunchy v0.2.2
+   Compiling icu_locid_transform_data v1.5.0
+   Compiling rand_distr v0.4.3
+   Compiling crc32fast v1.4.2
+   Compiling ident_case v1.0.1
+   Compiling icu_properties_data v1.5.0
+   Compiling tower-service v0.3.3
+   Compiling gimli v0.31.1
+   Compiling aho-corasick v1.1.3
+   Compiling object v0.36.5
+   Compiling percent-encoding v2.3.1
+   Compiling anyhow v1.0.93
+   Compiling addr2line v0.24.2
+   Compiling half v2.4.1
+   Compiling httparse v1.9.5
+   Compiling icu_normalizer_data v1.5.0
+   Compiling utf16_iter v1.0.5
+   Compiling rustc-demangle v0.1.24
+   Compiling write16 v1.0.0
+   Compiling utf8_iter v1.0.4
+   Compiling reborrow v0.5.5
+   Compiling regex-syntax v0.8.5
+   Compiling num-complex v0.4.6
+   Compiling tokio-util v0.7.12
+   Compiling form_urlencoded v1.2.1
+   Compiling flate2 v1.0.35
+   Compiling backtrace v0.3.74
+   Compiling regex-automata v0.4.9
+   Compiling sha2 v0.10.8
+   Compiling enum-as-inner v0.6.1
+   Compiling core-foundation v0.9.4
+   Compiling time-core v0.1.2
+   Compiling fastrand v2.2.0
+   Compiling num-conv v0.1.0
+   Compiling powerfmt v0.2.0
+   Compiling time-macros v0.2.19
+   Compiling sysctl v0.5.5
+   Compiling deranged v0.3.11
+   Compiling pulp v0.18.22
+   Compiling dyn-stack v0.10.0
+   Compiling phf_generator v0.10.0
+   Compiling raw-cpuid v10.7.0
+   Compiling memmap2 v0.9.5
+   Compiling security-framework-sys v2.12.1
+   Compiling http v0.2.12
+   Compiling tempfile v3.14.0
+   Compiling httpdate v1.0.3
+   Compiling minimal-lexical v0.2.1
+   Compiling native-tls v0.2.12
+   Compiling seq-macro v0.3.5
+   Compiling virtue v0.0.16
+   Compiling new_debug_unreachable v1.0.6
+   Compiling time v0.3.37
+   Compiling nom v7.1.3
+   Compiling security-framework v2.11.1
+   Compiling bincode_derive v2.0.0-rc.3 (https://github.com/bincode-org/bincode?rev=100685b#100685bc)
+   Compiling zerovec v0.10.4
+   Compiling regex v1.11.1
+   Compiling bzip2-sys v0.1.11+1.0.8
+   Compiling lazy_static v1.5.0
+   Compiling tiny-keccak v2.0.2
+   Compiling static_assertions v1.1.0
+   Compiling zstd-safe v5.0.2+zstd.1.5.2
+   Compiling semver v1.0.23
+   Compiling unty v0.0.3
+   Compiling same-file v1.0.6
+   Compiling walkdir v2.5.0
+   Compiling bincode v2.0.0-rc.3 (https://github.com/bincode-org/bincode?rev=100685b#100685bc)
+   Compiling phf_codegen v0.10.0
+   Compiling hmac v0.12.1
+   Compiling inout v0.1.3
+   Compiling async-trait v0.1.83
+   Compiling gemm-common v0.17.1
+   Compiling http v1.1.0
+   Compiling arrayvec v0.7.6
+   Compiling base64ct v1.6.0
+   Compiling http-body v1.0.1
+   Compiling password-hash v0.4.2
+   Compiling cipher v0.4.4
+   Compiling uuid v1.11.0
+   Compiling ahash v0.8.11
+   Compiling try-lock v0.2.5
+   Compiling unicode-width v0.1.14
+   Compiling unicode-xid v0.2.6
+   Compiling mime v0.3.17
+   Compiling strsim v0.10.0
+   Compiling darling_core v0.14.4
+   Compiling console v0.15.8
+   Compiling want v0.3.1
+   Compiling tinystr v0.7.6
+   Compiling icu_collections v1.5.0
+   Compiling pbkdf2 v0.11.0
+   Compiling aes v0.8.4
+   Compiling http-body v0.4.6
+   Compiling h2 v0.3.26
+   Compiling sha1 v0.10.6
+   Compiling num-integer v0.1.46
+   Compiling phf_shared v0.11.2
+   Compiling home v0.5.9
+   Compiling thiserror v2.0.3
+   Compiling tower-layer v0.3.3
+   Compiling system-configuration-sys v0.5.0
+   Compiling utf8parse v0.2.2
+   Compiling constant_time_eq v0.1.5
+   Compiling winnow v0.5.40
+   Compiling toml_datetime v0.6.8
+   Compiling sync_wrapper v0.1.2
+   Compiling strsim v0.11.1
+   Compiling anstyle-parse v0.2.6
+   Compiling darling_core v0.20.10
+   Compiling const-random-macro v0.1.16
+   Compiling const-random v0.1.18
+   Compiling toml_edit v0.19.15
+   Compiling hyper v0.14.31
+   Compiling term v1.0.0
+   Compiling num-bigint v0.4.6
+   Compiling gemm-f32 v0.17.1
+   Compiling phf_generator v0.11.2
+   Compiling darling_macro v0.14.4
+   Compiling tokio-native-tls v0.3.1
+   Compiling string_cache_codegen v0.5.2
+   Compiling keccak v0.1.5
+   Compiling serde_urlencoded v0.7.1
+   Compiling thiserror-impl v2.0.3
+   Compiling icu_locid v1.5.0
+   Compiling smartstring v1.0.1
+   Compiling precomputed-hash v0.1.1
+   Compiling base64 v0.21.7
+   Compiling zstd-safe v7.2.1
+   Compiling number_prefix v0.4.0
+   Compiling aligned-vec v0.5.0
+   Compiling icu_provider v1.5.0
+   Compiling mac v0.1.1
+   Compiling bzip2 v0.4.4
+   Compiling anstyle-query v1.1.2
+   Compiling zip v2.2.1
+   Compiling bit-vec v0.8.0
+   Compiling radium v0.7.0
+   Compiling is_terminal_polyfill v1.70.1
+   Compiling built v0.7.5
+   Compiling anstyle v1.0.10
+   Compiling lockfree-object-pool v0.1.6
+   Compiling bumpalo v3.16.0
+   Compiling fixedbitset v0.4.2
+   Compiling fst v0.4.7
+   Compiling colorchoice v1.0.3
+   Compiling anstream v0.6.18
+   Compiling rav1e v0.7.1
+   Compiling petgraph v0.6.5
+   Compiling zopfli v0.8.1
+   Compiling itertools v0.13.0
+   Compiling bit-set v0.8.0
+   Compiling string_cache v0.8.7
+   Compiling futf v0.1.5
+   Compiling v_frame v0.3.8
+   Compiling markup5ever v0.11.0
+   Compiling sha3 v0.10.8
+   Compiling dlv-list v0.5.2
+   Compiling darling v0.14.4
+   Compiling hyper-tls v0.5.0
+   Compiling gemm-f16 v0.17.1
+   Compiling hashbrown v0.14.5
+   Compiling num-rational v0.4.2
+   Compiling phf_macros v0.11.2
+   Compiling gemm-c32 v0.17.1
+   Compiling gemm-f64 v0.17.1
+   Compiling gemm-c64 v0.17.1
+   Compiling icu_locid_transform v1.5.0
+   Compiling ascii-canvas v4.0.0
+   Compiling icu_properties v1.5.1
+   Compiling proc-macro-crate v1.3.1
+   Compiling darling_macro v0.20.10
+   Compiling phf v0.10.1
+   Compiling rustc_version v0.4.1
+   Compiling http-body-util v0.1.2
+   Compiling twox-hash v1.6.3
+   Compiling ena v0.14.3
+   Compiling lalrpop-util v0.22.0
+   Compiling ownedbytes v0.1.0 (<WORKSPACE>/crates/ownedbytes)
+   Compiling futures-executor v0.3.31
+   Compiling onig_sys v69.8.1
+   Compiling profiling-procmacros v1.0.16
+   Compiling num_cpus v1.16.0
+   Compiling icu_normalizer v1.5.0
+   Compiling iana-time-zone v0.1.61
+   Compiling encoding_rs v0.8.35
+   Compiling utf8-ranges v1.0.5
+   Compiling tap v1.0.1
+   Compiling idna_adapter v1.2.0
+   Compiling idna v1.0.3
+   Compiling dtoa v1.0.9
+   Compiling utf-8 v0.7.6
+   Compiling regex-syntax v0.6.29
+   Compiling unicase v2.8.0
+   Compiling portable-atomic v1.10.0
+   Compiling url v2.5.4
+   Compiling snap v1.1.1
+   Compiling hashbrown v0.13.2
+   Compiling rust_decimal v1.36.0
+   Compiling clap_lex v0.7.3
+   Compiling beef v0.5.2
+   Compiling pico-args v0.5.0
+   Compiling lalrpop v0.22.0
+   Compiling logos-codegen v0.13.0
+   Compiling ordered-multimap v0.6.0
+   Compiling clap_builder v4.5.21
+   Compiling mime_guess v2.0.5
+   Compiling tendril v0.4.3
+   Compiling dtoa-short v0.3.5
+   Compiling wyz v0.5.1
+   Compiling profiling v1.0.16
+   Compiling chrono v0.4.38
+   Compiling futures v0.3.31
+   Compiling rust-embed-utils v8.5.0
+   Compiling phf v0.11.2
+   Compiling lz4_flex v0.11.3
+   Compiling heapless v0.7.17
+   Compiling darling v0.20.10
+   Compiling derive_builder_core v0.12.0
+   Compiling num_enum_derive v0.6.1
+   Compiling av1-grain v0.2.3
+   Compiling system-configuration v0.5.1
+   Compiling rustls-pemfile v1.0.4
+   Compiling gemm v0.17.1
+   Compiling common v0.1.0 (<WORKSPACE>/crates/common)
+   Compiling hyper v1.5.1
+   Compiling selectors v0.25.0
+   Compiling utoipa-gen v5.2.0
+   Compiling xattr v1.3.1
+   Compiling safetensors v0.4.5
+   Compiling html5ever v0.26.0
+   Compiling maybe-rayon v0.1.1
+   Compiling tikv-jemalloc-sys v0.5.4+5.3.0-patched
+   Compiling esaxx-rs v0.1.10
+   Compiling num-derive v0.4.2
+   Compiling cssparser-macros v0.6.1
+   Compiling pin-project-internal v1.1.7
+   Compiling arg_enum_proc_macro v0.3.4
+   Compiling clap_derive v4.5.18
+   Compiling filetime v0.2.25
+   Compiling simd_helpers v0.1.0
+   Compiling itertools v0.12.1
+   Compiling indexmap v1.9.3
+   Compiling quick-error v2.0.1
+   Compiling funty v2.0.0
+   Compiling imgref v1.11.0
+   Compiling weezl v0.1.8
+   Compiling sync_wrapper v1.0.2
+   Compiling bitstream-io v2.6.0
+   Compiling unicode-segmentation v1.12.0
+   Compiling noop_proc_macro v0.3.0
+   Compiling zstd v0.11.2+zstd.1.5.2
+   Compiling rxml_validation v0.9.1
+   Compiling ipnet v2.10.1
+   Compiling zip v0.6.6
+   Compiling pin-project v1.1.7
+   Compiling bitvec v1.0.1
+   Compiling heck v0.3.3
+   Compiling reqwest v0.11.27
+   Compiling rxml v0.9.1
+   Compiling loop9 v0.1.5
+   Compiling axum-core v0.4.5
+   Compiling clap v4.5.21
+   Compiling candle-core v0.3.3
+   Compiling regex-automata v0.1.10
+   Compiling tar v0.4.43
+   Compiling utoipa v5.2.0
+   Compiling cssparser v0.31.2
+   Compiling scylla-macros v0.4.0
+   Compiling zstd v0.13.2
+   Compiling hyper-util v0.1.10
+   Compiling file_store v0.1.0 (<WORKSPACE>/crates/file-store)
+   Compiling utoipa-swagger-ui v8.0.3
+   Compiling optics v0.1.0 (<WORKSPACE>/crates/optics)
+   Compiling num_enum v0.6.1
+   Compiling derive_builder_macro v0.12.0
+   Compiling rust-embed-impl v8.5.0
+   Compiling logos-derive v0.13.0
+   Compiling rust-ini v0.19.0
+   Compiling attohttpc v0.26.1
+   Compiling indicatif v0.16.2
+   Compiling tower v0.5.1
+   Compiling derive_more-impl v1.0.0
+   Compiling avif-serialize v0.8.2
+   Compiling strum_macros v0.26.4
+   Compiling tokio-stream v0.1.16
+   Compiling quick-xml v0.30.0
+   Compiling serde_path_to_error v0.1.16
+   Compiling serde_spanned v0.6.8
+   Compiling anyerror v0.1.12
+   Compiling ring v0.17.8
+   Compiling derive_more v0.99.18
+   Compiling monostate-impl v0.1.13
+   Compiling dirs-sys v0.3.7
+   Compiling fs2 v0.4.3
+   Compiling fdeflate v0.3.6
+   Compiling zune-inflate v0.2.54
+   Compiling itertools v0.8.2
+   Compiling fxhash v0.2.1
+   Compiling hash32 v0.2.1
+   Compiling servo_arc v0.3.0
+   Compiling instant v0.1.13
+   Compiling base64 v0.13.1
+   Compiling tinyvec_macros v0.1.1
+   Compiling jpeg-decoder v0.3.1
+   Compiling matchit v0.7.3
+   Compiling macro_rules_attribute-proc_macro v0.1.3
+   Compiling color_quant v1.1.0
+   Compiling unicode-width v0.2.0
+   Compiling xxhash-rust v0.8.12
+   Compiling option-ext v0.2.0
+   Compiling arc-swap v1.7.1
+   Compiling number_prefix v0.3.0
+   Compiling glob v0.3.1
+   Compiling overload v0.1.1
+   Compiling bit_field v0.10.2
+   Compiling winnow v0.6.20
+   Compiling lebe v0.5.2
+   Compiling byteorder v0.5.3
+   Compiling riff v1.0.1
+   Compiling hashbrown v0.12.3
+   Compiling utf8-width v0.1.7
+   Compiling zune-core v0.4.12
+   Compiling rgb v0.8.50
+   Compiling redb v2.2.0
+   Compiling byteorder-lite v0.1.0
+   Compiling zune-jpeg v0.4.13
+   Compiling byte-unit v5.1.6
+   Compiling image-webp v0.2.0
+   Compiling wav v1.0.1
+   Compiling spm_precompiled v0.1.4
+   Compiling lzma v0.2.2
+   Compiling exr v1.73.0
+   Compiling cached-path v0.6.1
+   Compiling nu-ansi-term v0.46.0
+   Compiling toml_edit v0.22.22
+   Compiling bloom v0.1.0 (<WORKSPACE>/crates/bloom)
+   Compiling indicatif v0.15.0
+   Compiling tiff v0.9.1
+   Compiling scylla-cql v0.1.0
+   Compiling indicatif v0.17.9
+   Compiling strum v0.26.3
+   Compiling axum v0.7.9
+   Compiling dirs-sys v0.4.1
+   Compiling macro_rules_attribute v0.1.3
+   Compiling gif v0.13.1
+   Compiling aws-creds v0.36.0
+   Compiling tinyvec v1.8.0
+   Compiling rayon-cond v0.1.0
+   Compiling measure_time v0.8.3
+   Compiling png v0.17.14
+   Compiling monostate v0.1.13
+   Compiling dirs v4.0.0
+   Compiling validit v0.2.4
+   Compiling derive_more v1.0.0
+   Compiling onig v6.4.0
+   Compiling rust-embed v8.5.0
+   Compiling logos v0.13.0
+   Compiling openraft-macros v0.9.17
+   Compiling derive_builder v0.12.0
+   Compiling candle-nn v0.3.3
+   Compiling bitpacking v0.9.2
+   Compiling tracing-futures v0.2.5
+   Compiling matchers v0.1.0
+   Compiling minidom v0.15.2
+   Compiling strum_macros v0.23.1
+   Compiling dashmap v5.5.3
+   Compiling whatlang v0.16.4
+   Compiling sharded-slab v0.1.7
+   Compiling fs4 v0.8.4
+   Compiling async-compression v0.4.18
+   Compiling aws-region v0.25.5
+   Compiling qoi v0.4.1
+   Compiling rust-stemmers v1.2.0
+   Compiling serde_plain v1.0.2
+   Compiling block_on_proc v0.2.0
+   Compiling postcard-derive v0.1.2
+   Compiling lru v0.12.5
+   Compiling crossbeam-channel v0.5.13
+   Compiling maybe-async v0.2.10
+   Compiling async-stream-impl v0.3.6
+   Compiling rand_pcg v0.3.1
+   Compiling tracing-log v0.2.0
+   Compiling itertools v0.11.0
+   Compiling itertools v0.9.0
+   Compiling csv-core v0.1.11
+   Compiling aho-corasick v0.7.20
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling thread_local v1.1.8
+   Compiling histogram v0.6.9
+   Compiling downcast-rs v1.2.1
+   Compiling base64 v0.22.1
+   Compiling oxiri v0.2.8
+   Compiling untrusted v0.9.0
+   Compiling fastdivide v0.4.2
+   Compiling murmurhash32 v0.3.1
+   Compiling levenshtein_automata v0.2.1
+   Compiling rio_api v0.8.5
+   Compiling maplit v1.0.2
+   Compiling oneshot v0.1.8
+   Compiling strum v0.23.0
+   Compiling hex v0.4.3
+   Compiling deadpool-runtime v0.1.4
+   Compiling unicode_categories v0.1.1
+   Compiling rustc-hash v1.1.0
+   Compiling cobs v0.2.3
+   Compiling oxilangtag v0.1.5
+   Compiling matches v0.1.10
+   Compiling psl-types v2.0.11
+   Compiling lending-iter v0.1.0 (<WORKSPACE>/crates/lending-iter)
+   Compiling spin v0.9.8
+   Compiling census v0.4.2
+   Compiling md5 v0.7.0
+   Compiling htmlescape v0.3.1
+   Compiling regex-syntax v0.7.5
+   Compiling rio_turtle v0.8.5
+   Compiling publicsuffix v2.3.0
+   Compiling rust-s3 v0.34.0
+   Compiling kuchiki v0.8.1 (<WORKSPACE>/crates/kuchiki)
+   Compiling postcard v1.1.1
+   Compiling deadpool v0.12.1
+   Compiling scylla v0.12.0
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/kuchiki/src/attributes.rs:60:38
+   |
+60 |     pub fn entry<A: Into<LocalName>>(&mut self, local_name: A) -> Entry<ExpandedName, Attribute> {
+   |                                      ^^^^^^^^^                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                                      |
+   |                                      the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+60 |     pub fn entry<A: Into<LocalName>>(&mut self, local_name: A) -> Entry<'_, ExpandedName, Attribute> {
+   |                                                                         +++
+
+   Compiling tantivy v0.23.0 (<WORKSPACE>/crates/tantivy)
+   Compiling openraft v0.9.17
+   Compiling tracing-subscriber v0.3.19
+warning: unnecessary parentheses around closure body
+   --> crates/tantivy/src/postings/serializer.rs:129:30
+    |
+129 |             .map(|ff_reader| (total_num_tokens as Score / ff_reader.num_docs() as Score))
+    |                              ^                                                         ^
+    |
+    = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+    |
+129 -             .map(|ff_reader| (total_num_tokens as Score / ff_reader.num_docs() as Score))
+129 +             .map(|ff_reader| total_num_tokens as Score / ff_reader.num_docs() as Score)
+    |
+
+warning: `kuchiki` (lib) generated 1 warning (run `cargo fix --lib -p kuchiki` to apply 1 suggestion)
+   Compiling tokenizers v0.13.4
+   Compiling ravif v0.11.11
+   Compiling image v0.25.5
+   Compiling csv v1.3.1
+   Compiling async-stream v0.3.6
+warning: struct `KeepFirst` is never constructed
+  --> crates/tantivy/src/sstable/merge/mod.rs:16:12
+   |
+16 | pub struct KeepFirst;
+   |            ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `FirstVal` is never constructed
+  --> crates/tantivy/src/sstable/merge/mod.rs:18:12
+   |
+18 | pub struct FirstVal<V>(V);
+   |            ^^^^^^^^
+
+warning: struct `VoidMerge` is never constructed
+  --> crates/tantivy/src/sstable/merge/mod.rs:36:12
+   |
+36 | pub struct VoidMerge;
+   |            ^^^^^^^^^
+
+warning: struct `U64Merge` is never constructed
+  --> crates/tantivy/src/sstable/merge/mod.rs:43:12
+   |
+43 | pub struct U64Merge;
+   |            ^^^^^^^^
+
+warning: struct `U64MonotonicValueReader` is never constructed
+ --> crates/tantivy/src/sstable/value/u64_monotonic.rs:7:12
+  |
+7 | pub struct U64MonotonicValueReader {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `U64MonotonicValueWriter` is never constructed
+  --> crates/tantivy/src/sstable/value/u64_monotonic.rs:35:12
+   |
+35 | pub struct U64MonotonicValueWriter {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `Bm25Params` is never constructed
+  --> crates/tantivy/src/query/bm25.rs:72:12
+   |
+72 | pub struct Bm25Params {
+   |            ^^^^^^^^^^
+
+warning: struct `DocSetIter` is never constructed
+   --> crates/tantivy/src/docset.rs:156:12
+    |
+156 | pub struct DocSetIter<T>
+    |            ^^^^^^^^^^
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/tantivy/src/columnar/columnar/reader/mod.rs:145:9
+    |
+145 |         &self,
+    |         ^^^^^ the lifetime is elided here
+146 |         column_name: &str,
+147 |     ) -> crate::sstable::StreamerBuilder<RangeSSTable> {
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+147 |     ) -> crate::sstable::StreamerBuilder<'_, RangeSSTable> {
+    |                                          +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/tantivy/src/indexer/index_writer.rs:438:27
+    |
+438 |     pub fn prepare_commit(&mut self) -> crate::Result<PreparedCommit<D>> {
+    |                           ^^^^^^^^^                   ^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                           |
+    |                           the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+438 |     pub fn prepare_commit(&mut self) -> crate::Result<PreparedCommit<'_, D>> {
+    |                                                                      +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/tantivy/src/sstable/dictionary.rs:389:18
+    |
+389 |     pub fn range(&self) -> StreamerBuilder<TSSTable> {
+    |                  ^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                  |
+    |                  the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+389 |     pub fn range(&self) -> StreamerBuilder<'_, TSSTable> {
+    |                                            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/tantivy/src/sstable/dictionary.rs:394:19
+    |
+394 |     pub fn stream(&self) -> io::Result<Streamer<TSSTable>> {
+    |                   ^^^^^                ^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                   |
+    |                   the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+394 |     pub fn stream(&self) -> io::Result<Streamer<'_, TSSTable>> {
+    |                                                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/tantivy/src/postings/serializer.rs:74:9
+   |
+74 |         &mut self,
+   |         ^^^^^^^^^ the lifetime is elided here
+...
+78 |     ) -> io::Result<FieldSerializer> {
+   |                     ^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+78 |     ) -> io::Result<FieldSerializer<'_>> {
+   |                                    ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/tantivy/src/query/grammar/query_grammar.rs:71:14
+   |
+71 | fn word(inp: &str) -> IResult<&str, Cow<str>> {
+   |              ^^^^             ^^^^  ^^^^^^^^ the same lifetime is hidden here
+   |              |                |
+   |              |                the same lifetime is elided here
+   |              the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+71 | fn word(inp: &str) -> IResult<&str, Cow<'_, str>> {
+   |                                         +++
+
+   Compiling candle-transformers v0.3.3
+   Compiling tower-http v0.5.2
+   Compiling web-spell v0.1.0 (<WORKSPACE>/crates/web-spell)
+   Compiling unicode-normalization v0.1.24
+   Compiling dirs v5.0.1
+   Compiling toml v0.8.19
+   Compiling speedy_kv v0.1.0 (<WORKSPACE>/crates/speedy-kv)
+   Compiling zimba v0.1.0 (<WORKSPACE>/crates/zimba)
+   Compiling chitchat v0.5.0
+   Compiling simple_wal v0.1.0 (<WORKSPACE>/crates/simple-wal)
+   Compiling robotstxt v0.1.0 (<WORKSPACE>/crates/robotstxt)
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/robotstxt/src/parser.rs:37:21
+   |
+37 | pub fn parse(input: &str) -> IResult<&str, Vec<Line>> {
+   |                     ^^^^             ^^^^      ^^^^ the same lifetime is hidden here
+   |                     |                |
+   |                     |                the same lifetime is elided here
+   |                     the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+37 | pub fn parse(input: &str) -> IResult<&str, Vec<Line<'_>>> {
+   |                                                    ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/robotstxt/src/parser.rs:80:28
+   |
+80 | fn parse_user_agent(input: &str) -> IResult<&str, Line> {
+   |                            ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+   |                            |                |
+   |                            |                the same lifetime is elided here
+   |                            the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+80 | fn parse_user_agent(input: &str) -> IResult<&str, Line<'_>> {
+   |                                                       ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:100:23
+    |
+100 | fn parse_allow(input: &str) -> IResult<&str, Line> {
+    |                       ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                       |                |
+    |                       |                the same lifetime is elided here
+    |                       the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+100 | fn parse_allow(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                  ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:115:26
+    |
+115 | fn parse_disallow(input: &str) -> IResult<&str, Line> {
+    |                          ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                          |                |
+    |                          |                the same lifetime is elided here
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+115 | fn parse_disallow(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                     ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:136:25
+    |
+136 | fn parse_sitemap(input: &str) -> IResult<&str, Line> {
+    |                         ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                         |                |
+    |                         |                the same lifetime is elided here
+    |                         the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+136 | fn parse_sitemap(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                    ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:151:29
+    |
+151 | fn parse_crawl_delay(input: &str) -> IResult<&str, Line> {
+    |                             ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                             |                |
+    |                             |                the same lifetime is elided here
+    |                             the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+151 | fn parse_crawl_delay(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                        ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:170:21
+    |
+170 | fn parse_raw(input: &str) -> IResult<&str, Line> {
+    |                     ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                     |                |
+    |                     |                the same lifetime is elided here
+    |                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+170 | fn parse_raw(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                ++++
+
+warning: `robotstxt` (lib) generated 7 warnings (run `cargo fix --lib -p robotstxt` to apply 7 suggestions)
+   Compiling chardetng v0.1.17
+   Compiling tower v0.4.13
+   Compiling axum-macros v0.4.2
+   Compiling enum_dispatch v0.3.13
+   Compiling fend-core v1.5.5
+   Compiling min-max-heap v1.3.0
+   Compiling urlencoding v2.1.3
+   Compiling bytecount v0.6.8
+warning: `tantivy` (lib) generated 15 warnings (run `cargo fix --lib -p tantivy` to apply 7 suggestions)
+   Compiling tikv-jemallocator v0.5.4
+   Compiling stract v0.1.0 (<WORKSPACE>/crates/core)
+warning: unnecessary parentheses around closure body
+   --> crates/core/src/ranking/computer/mod.rs:315:39
+    |
+315 |                         .and_then(|f| (f.tantivy_field(schema).map(|tv_field| (f, tv_field))))
+    |                                       ^                                                     ^
+    |
+    = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+    |
+315 -                         .and_then(|f| (f.tantivy_field(schema).map(|tv_field| (f, tv_field))))
+315 +                         .and_then(|f| f.tantivy_field(schema).map(|tv_field| (f, tv_field)))
+    |
+
+warning: unnecessary parentheses around type
+  --> crates/core/src/widgets/calculator.rs:96:25
+   |
+96 |         std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+   |                         ^                                                                       ^
+   |
+help: remove these parentheses
+   |
+96 -         std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+96 +         std::boxed::Box<dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static>,
+   |
+
+warning: field `0` is never read
+   --> crates/core/src/distributed/sonic/mod.rs:191:8
+    |
+191 | struct Header {
+    |        ^^^^^^ field in this struct
+    |
+    = help: consider removing this field
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `check` is never used
+   --> crates/core/src/distributed/sonic/mod.rs:190:1
+    |
+190 | #[repr(C)]
+    | ^
+
+warning: struct `IntSet` is never constructed
+   --> crates/core/src/intmap.rs:161:12
+    |
+161 | pub struct IntSet<K: Key = u64> {
+    |            ^^^^^^
+
+warning: associated items `new` and `insert` are never used
+   --> crates/core/src/intmap.rs:172:12
+    |
+171 | impl<K: Key> IntSet<K> {
+    | ---------------------- associated items in this implementation
+172 |     pub fn new() -> Self {
+    |            ^^^
+...
+176 |     pub fn insert(&mut self, item: K) {
+    |            ^^^^^^
+
+warning: struct `InDegreeQuery` is never constructed
+  --> crates/core/src/webgraph/query/degree.rs:34:12
+   |
+34 | pub struct InDegreeQuery {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `DummyQuery` is never constructed
+  --> crates/core/src/webgraph/query/raw/dummy.rs:18:12
+   |
+18 | pub struct DummyQuery;
+   |            ^^^^^^^^^^
+
+warning: struct `DummyWeight` is never constructed
+  --> crates/core/src/webgraph/query/raw/dummy.rs:29:8
+   |
+29 | struct DummyWeight;
+   |        ^^^^^^^^^^^
+
+warning: struct `DummyScorer` is never constructed
+  --> crates/core/src/webgraph/query/raw/dummy.rs:52:8
+   |
+52 | struct DummyScorer;
+   |        ^^^^^^^^^^^
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/core/src/tokenizer/mod.rs:68:17
+   |
+68 |     fn tokenize(&self) -> impl Iterator<Item = Token> + '_;
+   |                 ^^^^^                          ^^^^^    ^^ the same lifetime is elided here
+   |                 |                              |
+   |                 |                              the same lifetime is hidden here
+   |                 the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+68 |     fn tokenize(&self) -> impl Iterator<Item = Token<'_>> + '_;
+   |                                                     ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/core/src/tokenizer/mod.rs:72:17
+   |
+72 |     fn tokenize(&self) -> impl Iterator<Item = Token> + '_ {
+   |                 ^^^^^                          ^^^^^    ^^ the same lifetime is elided here
+   |                 |                              |
+   |                 |                              the same lifetime is hidden here
+   |                 the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+72 |     fn tokenize(&self) -> impl Iterator<Item = Token<'_>> + '_ {
+   |                                                     ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/fields/json.rs:102:25
+    |
+102 |     pub fn token_stream(&mut self) -> BoxTokenStream {
+    |                         ^^^^^^^^^     ^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                         |
+    |                         the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+102 |     pub fn token_stream(&mut self) -> BoxTokenStream<'_> {
+    |                                                     ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/core/src/tokenizer/segmenter.rs:47:17
+   |
+47 |     fn segments(&self) -> SegmentIterator;
+   |                 ^^^^^     ^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                 |
+   |                 the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+47 |     fn segments(&self) -> SegmentIterator<'_>;
+   |                                          ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:117:26
+    |
+117 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<F>
+    |                          ^^^^^              ^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+117 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<'_, F>
+    |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:123:26
+    |
+123 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<F>
+    |                          ^^^^^              ^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+123 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<'_, F>
+    |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:132:26
+    |
+132 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<F>
+    |                          ^^^^^              ^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+132 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<'_, F>
+    |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:141:37
+    |
+141 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<F>
+    |                                     ^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                                     |
+    |                                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+141 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<'_, F>
+    |                                                                               +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:147:37
+    |
+147 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<F>
+    |                                     ^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                                     |
+    |                                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+147 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<'_, F>
+    |                                                                               +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:156:37
+    |
+156 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<F>
+    |                                     ^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                                     |
+    |                                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+156 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<'_, F>
+    |                                                                               +++
+
+warning: `stract` (lib) generated 20 warnings (run `cargo fix --lib -p stract` to apply 12 suggestions)
+    Finished `release` profile [optimized + debuginfo] target(s) in 3m 00s

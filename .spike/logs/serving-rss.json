@@ -1,0 +1,17 @@
+{
+  "name": "serving-rss",
+  "command": [
+    "python3",
+    "-"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:28:57.504341+00:00",
+  "exit_code": 0,
+  "wall_seconds": 0.036602459,
+  "cpu_user_seconds": 0.016509,
+  "cpu_system_seconds": 0.016721,
+  "peak_rss_bytes": 11354112,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

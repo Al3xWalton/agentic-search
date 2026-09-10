@@ -1,0 +1,6 @@
+{
+  "crawl": "CC-MAIN-2026-34",
+  "rule": "first path in official warc.paths.gz; selected before inspecting contents",
+  "path": "crawl-data/CC-MAIN-2026-34/segments/1786091384908.68/warc/CC-MAIN-20260807101845-20260807131845-00000.warc.gz",
+  "url": "https://data.commoncrawl.org/crawl-data/CC-MAIN-2026-34/segments/1786091384908.68/warc/CC-MAIN-20260807101845-20260807131845-00000.warc.gz"
+}

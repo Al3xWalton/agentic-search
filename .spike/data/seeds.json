@@ -1,0 +1,802 @@
+[
+  {
+    "url": "https://en.wikipedia.org/wiki/Canberra",
+    "category": "factual"
+  },
+  {
+    "url": "https://science.nasa.gov/mercury/facts/",
+    "category": "factual"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Albert_Einstein",
+    "category": "factual"
+  },
+  {
+    "url": "https://www.un.org/en/about-us/history-of-the-un",
+    "category": "factual"
+  },
+  {
+    "url": "https://www.bipm.org/en/measurement-units/si-base-units",
+    "category": "factual"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Heart",
+    "category": "factual"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Mount_Everest",
+    "category": "factual"
+  },
+  {
+    "url": "https://science.nasa.gov/venus/facts/",
+    "category": "factual"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Gold",
+    "category": "factual"
+  },
+  {
+    "url": "https://science.nasa.gov/moon/moon-phases/",
+    "category": "factual"
+  },
+  {
+    "url": "https://docs.python.org/3/library/venv.html",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/json.html",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/std/fs/fn.read_to_string.html",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Basic_concepts_of_grid_layout",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/subprocess.html",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://git-scm.com/docs/git-reset",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://www.postgresql.org/docs/current/tutorial-table.html",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/cargo/reference/publishing.html",
+    "category": "how_to_technical"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-5/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://frame.work/laptop13",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.apple.com/macbook-air/specs/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.nintendo.com/us/gaming-systems/switch/oled-model/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.steamdeck.com/en/oled",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://electronics.sony.com/audio/headphones/headband/p/wh1000xm5-b",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.logitech.com/en-us/products/mice/mx-master-3s.910-006556.html",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.prusa3d.com/product/original-prusa-mk4s-3d-printer-5/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://store.arduino.cc/products/arduino-uno-rev3",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.fairphone.com/en/fairphone-5/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://blog.rust-lang.org/2026/09/07/rust-debugging-survey-2026-results/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://blog.rust-lang.org/2026/09/03/Rust-1.98.1/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://blog.rust-lang.org/2026/09/01/Rustup-1.29.1/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://blog.rust-lang.org/2026/08/26/announcing-our-first-maintainers-in-residence/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://blog.rust-lang.org/2026/08/21/enabling-next-solver-on-nightly/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://blog.rust-lang.org/2026/08/20/Rust-1.98.0/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://blog.mozilla.org/sumo/2026/08/19/firefox-new-release-cadence-and-what-to-expect/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://science.nasa.gov/missions/hubble/nasas-hubble-webb-find-far-out-solar-system-objects-remember-past/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://science.nasa.gov/missions/hubble/nasas-hubble-tracks-new-decagon-encircling-saturns-south-pole/",
+    "category": "recent_news"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Eiffel_Tower",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Mona_Lisa",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Pillars_of_Creation",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Grand_Canyon",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Cherry_blossom",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Red_panda",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Sydney_Opera_House",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Rosetta_Stone",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Aurora",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope",
+    "category": "image_bearing"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Ada_Lovelace",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Alan_Turing",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Charles_Darwin",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Marie_Curie",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Isaac_Newton",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Paris",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/London",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Tokyo",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Berlin",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Rome",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Solar_System",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Earth",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Mars",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Jupiter",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Saturn",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Uranus",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Neptune",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Sun",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Water",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Oxygen",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Carbon_Dioxide",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/DNA",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Evolution",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Climate_change",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Taj_Mahal",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Stonehenge",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Colosseum",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Machu_Picchu",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Blue_whale",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Tiger",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Lion",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Giraffe",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Elephant",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Penguin",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Volcano",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Rainbow",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Waterfall",
+    "category": "reference_image"
+  },
+  {
+    "url": "https://docs.python.org/3/library/pathlib.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/csv.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/sqlite3.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/argparse.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/asyncio.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/concurrent.futures.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/threading.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/multiprocessing.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/datetime.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/zoneinfo.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/time.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/math.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/statistics.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/random.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/secrets.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/hashlib.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/hmac.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/ssl.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/http.client.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/urllib.request.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/urllib.parse.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/gzip.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/zipfile.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/tarfile.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/shutil.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/tempfile.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/os.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/sys.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/logging.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/unittest.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/re.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/collections.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/itertools.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/functools.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/dataclasses.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/typing.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/enum.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/contextlib.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/io.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://docs.python.org/3/library/socket.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch01-01-installation.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch01-02-hello-world.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch01-03-hello-cargo.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch02-00-guessing-game-tutorial.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch03-02-data-types.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch03-03-how-functions-work.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch03-05-control-flow.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch04-03-slices.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch05-01-defining-structs.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch05-03-method-syntax.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch06-02-match.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch07-01-packages-and-crates.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch08-01-vectors.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch08-02-strings.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch08-03-hash-maps.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch10-01-syntax.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch10-02-traits.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch11-01-writing-tests.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch12-00-an-io-project.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch13-01-closures.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch13-02-iterators.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch15-01-box.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch16-01-threads.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch16-03-shared-state.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://doc.rust-lang.org/book/ch17-01-futures-and-syntax.html",
+    "category": "technical"
+  },
+  {
+    "url": "https://www.gov.uk/renew-adult-passport",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/apply-first-adult-passport",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/register-to-vote",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/check-uk-visa",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/foreign-travel-advice",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/bank-holidays",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/national-minimum-wage-rates",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/income-tax-rates",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/apply-online-to-replace-a-driving-licence",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/vehicle-tax",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/check-mot-history",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/check-mot-status",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/apply-provisional-driving-licence",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/government/organisations",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/government/how-government-works",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/government/get-involved",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/browse/housing-local-services",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/browse/working",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/browse/education",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.gov.uk/browse/business",
+    "category": "government_how_to"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-4-model-b/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-400/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-zero-2-w/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-pico/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-pico-2/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-camera-module-3/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-global-shutter-camera/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-ssd/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-touch-display-2/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://www.raspberrypi.com/products/raspberry-pi-ai-kit/",
+    "category": "product_commerce"
+  },
+  {
+    "url": "https://science.nasa.gov/mars/facts/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/jupiter/facts/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/saturn/facts/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/uranus/facts/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/neptune/facts/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/sun/facts/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/moon/facts/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/solar-system/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/planets/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://science.nasa.gov/universe/",
+    "category": "factual_image"
+  },
+  {
+    "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide",
+    "category": "technical"
+  }
+]

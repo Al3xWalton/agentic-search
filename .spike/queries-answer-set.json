@@ -1,0 +1,957 @@
+{
+  "status": "frozen",
+  "frozen_at_utc": "2026-09-09T20:25:35.869736+00:00",
+  "upstream_commit": "8ac40b023e0a49f55cdd5b599841ea46d0503ec9",
+  "labeller": "Codex spike engineer; manual review of captured page text and image markup; one rater, no independent adjudication",
+  "labelling_rule": "A known acceptable page must directly address the query in captured content and have its URL present in the actual Stract index export. Accept exact page identity after declared URL normalization; no blanket domain credit. Image queries require relevant image markup in the captured parent page. These are 50 known-answer labels, not exhaustive judgements of every relevant page.",
+  "normalization": "lowercase host; remove leading www.; ignore http vs https and fragment; strip trailing slash except root; drop utm_*, gclid and fbclid parameters; sort remaining parameters; retain path case and meaningful parameters. No result filtering/backfilling before the top-10 cutoff.",
+  "corpus": {
+    "cc_crawl": "CC-MAIN-2026-34",
+    "cc_indexed_documents": 19285,
+    "seed_indexed_documents": 178,
+    "seed_urls_attempted": 200,
+    "cc_capture_range_utc": [
+      "2026-08-07T10:19:29Z",
+      "2026-08-07T13:04:31Z"
+    ],
+    "seed_capture_date": "2026-09-09",
+    "answer_sources": {
+      "seeds": 45,
+      "cc": 5
+    }
+  },
+  "assumptions": [
+    "Balanced categories are deliberately constructed, not a representative sample of production agent traffic.",
+    "News queries refer to dated announcements within the combined corpus date range (August 7 through September 9), and all news answers are from September 9 seed captures rather than the August 7 CC segment.",
+    "The news category contains seven Rust posts, one Mozilla post and two NASA posts.",
+    "Five inaccessible commerce seeds were replaced by manually reviewed commerce pages already present in the CC index; two other unavailable targets and one unsupported factual question were revised before either retrieval run.",
+    "No image bytes were fetched; image-bearing relevance is established from page content and image-resource markup.",
+    "A relevant live Firecrawl answer at a different unlabelled URL receives no known-answer recall credit; this metric does not measure unrestricted live-web answer quality."
+  ],
+  "queries": [
+    {
+      "id": "q01",
+      "category": "factual",
+      "query": "What is the capital city of Australia?",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Canberra"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Canberra - Wikipedia",
+      "label_reason": "Captured article explicitly identifies Canberra as the Australian capital.",
+      "indexed_record_sha256": "0a420451c6bcdd3a80e81e664f6734898c6da4f1af0d49097ed89c100b39176f",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:10.452304Z"
+    },
+    {
+      "id": "q02",
+      "category": "factual",
+      "query": "How long does Mercury take to orbit the Sun?",
+      "acceptable_urls": [
+        "https://science.nasa.gov/mercury/facts/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Mercury: Facts",
+      "label_reason": "NASA facts state that Mercury circles the Sun every 88 Earth days.",
+      "indexed_record_sha256": "c5f0734e2f2bbbad68c2f29c4d8ab4a17528b0fa526ac440e0a6aff828fa87db",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:16.609458Z"
+    },
+    {
+      "id": "q03",
+      "category": "factual",
+      "query": "Who developed the theory of general relativity?",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Albert_Einstein"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Albert Einstein - Wikipedia",
+      "label_reason": "Einstein article attributes general relativity development to Einstein during 1907–1915.",
+      "indexed_record_sha256": "5df0869ed5fba2105988159edb0deb18b4e7ac4ce281a61abd38f72df6f83382",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:13.706626Z"
+    },
+    {
+      "id": "q04",
+      "category": "factual",
+      "query": "When was the United Nations founded?",
+      "acceptable_urls": [
+        "https://www.un.org/en/about-us/history-of-the-un"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "History of the United Nations | United Nations",
+      "label_reason": "UN history records its official beginning on 24 October 1945.",
+      "indexed_record_sha256": "3dac262456700f83878d4ed11799c023777ab180605f973f8614f3201d859723",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:03.819920Z"
+    },
+    {
+      "id": "q05",
+      "category": "factual",
+      "query": "Which four SI base units had new definitions in the 2018 revision?",
+      "acceptable_urls": [
+        "https://www.bipm.org/en/measurement-units/si-base-units"
+      ],
+      "label_status": "manually_accepted",
+      "original_query": "What is the SI definition of a metre?",
+      "original_candidate_url": "https://www.bipm.org/en/measurement-units/si-base-units",
+      "replacement_reason": "Original question not directly supported by indexed clean text; adjusted to captured content",
+      "corpus": "seeds",
+      "title": "SI base units - BIPM",
+      "label_reason": "BIPM names kilogram, ampere, kelvin and mole as the four revised base units.",
+      "indexed_record_sha256": "60d59a15d304a3cc33a91783f44099f3c02336c1e3fa8e62408370bee7c579e4",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:05.506698Z"
+    },
+    {
+      "id": "q06",
+      "category": "factual",
+      "query": "How many chambers does a human heart have?",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Heart"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Heart - Wikipedia",
+      "label_reason": "Captured HTML describes the human heart as two atria and two ventricles.",
+      "indexed_record_sha256": "81f06e4443300e661ac9a3b2d4bafecf570e28c3662311e33cf23dec2827dace",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:16.517174Z"
+    },
+    {
+      "id": "q07",
+      "category": "factual",
+      "query": "What is the tallest mountain above sea level?",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Mount_Everest"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Mount Everest - Wikipedia",
+      "label_reason": "Everest article identifies it as the highest mountain above sea level.",
+      "indexed_record_sha256": "1a431a2d2e2579178c55baa6d6c9c260020e38e0ae86e93727be3b02216c3ed5",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:19.573548Z"
+    },
+    {
+      "id": "q08",
+      "category": "factual",
+      "query": "How long does Mars take to orbit the Sun?",
+      "acceptable_urls": [
+        "https://science.nasa.gov/mars/facts/"
+      ],
+      "label_status": "manually_accepted",
+      "original_query": "Why is Venus hotter than Mercury?",
+      "original_candidate_url": "https://science.nasa.gov/venus/facts/",
+      "replacement_reason": "Original seed unavailable; selected another captured indexed answer before either retrieval run",
+      "corpus": "seeds",
+      "title": "Mars: Facts - NASA Science",
+      "label_reason": "NASA states a Martian year is 687 Earth days.",
+      "indexed_record_sha256": "bb8597e66d223bcccaf7fb8c57ae0b67d921b836458f60d26b3902e50097b909",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:31.305761Z"
+    },
+    {
+      "id": "q09",
+      "category": "factual",
+      "query": "What is the chemical symbol for gold?",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Gold"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Gold - Wikipedia",
+      "label_reason": "Gold article identifies the element and its Au symbol in captured content.",
+      "indexed_record_sha256": "931608eb0e720ed08ac7bf53084a33e6a800e9dd4ea626497c93ac4ececcf0ca",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:22.150515Z"
+    },
+    {
+      "id": "q10",
+      "category": "factual",
+      "query": "What causes the phases of the Moon?",
+      "acceptable_urls": [
+        "https://science.nasa.gov/moon/moon-phases/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Moon Phases - NASA Science",
+      "label_reason": "NASA explains reflected sunlight and the changing visible illuminated portion.",
+      "indexed_record_sha256": "a0d8e8393a4381981ff00892eae7d0ef627f8f6ca385653c3d83672f27c2666b",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:22.600078Z"
+    },
+    {
+      "id": "q11",
+      "category": "how_to_technical",
+      "query": "How do I create a Python virtual environment with venv?",
+      "acceptable_urls": [
+        "https://docs.python.org/3/library/venv.html"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "venv — Creation of virtual environments — Python 3.14.7 documentation",
+      "label_reason": "Official venv reference describes virtual environments and their creation.",
+      "indexed_record_sha256": "75c5785761139b25d8ad02f10aaf3334548bb4934de56cb3f93c6f42132db97c",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:31.198870Z"
+    },
+    {
+      "id": "q12",
+      "category": "how_to_technical",
+      "query": "How do I parse JSON into a Python dictionary?",
+      "acceptable_urls": [
+        "https://docs.python.org/3/library/json.html"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "json — JSON encoder and decoder — Python 3.14.7 documentation",
+      "label_reason": "Official json reference documents decoding JSON objects into dictionaries.",
+      "indexed_record_sha256": "8f7cf59d6819ba96c549885772c2719605c46111cd624f3a85b67aec61f79754",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:33.425712Z"
+    },
+    {
+      "id": "q13",
+      "category": "how_to_technical",
+      "query": "How do I read a text file into a string in Rust?",
+      "acceptable_urls": [
+        "https://doc.rust-lang.org/std/fs/fn.read_to_string.html"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "read_to_string in std::fs - Rust",
+      "label_reason": "Rust standard library page documents reading entire file contents into a string.",
+      "indexed_record_sha256": "ef3e05068af94a70803e2a50b1d822fea0f0584186c4ef94fd2116e9f91e4e4b",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:47.063601Z"
+    },
+    {
+      "id": "q14",
+      "category": "how_to_technical",
+      "query": "How do I handle recoverable errors using Result in Rust?",
+      "acceptable_urls": [
+        "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Recoverable Errors with Result - The Rust Programming Language",
+      "label_reason": "Rust Book explains Result, success/error variants and handling File::open failures.",
+      "indexed_record_sha256": "412e8d2dfb71d3c7c6b8845d82e7d083cdae275d9a757c9635a254c836f51c45",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:49.573349Z"
+    },
+    {
+      "id": "q15",
+      "category": "how_to_technical",
+      "query": "How do I make an HTTP request with the JavaScript Fetch API?",
+      "acceptable_urls": [
+        "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Using the Fetch API - Web APIs | MDN",
+      "label_reason": "MDN explains JavaScript fetch requests and response handling.",
+      "indexed_record_sha256": "ea101cba9b4d08b8fdf6732d4ab65ed2c49f67816cfc4a703875ea328b1be476",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:14.558985Z"
+    },
+    {
+      "id": "q16",
+      "category": "how_to_technical",
+      "query": "How do I parse command line arguments in Python using argparse?",
+      "acceptable_urls": [
+        "https://docs.python.org/3/library/argparse.html"
+      ],
+      "label_status": "manually_accepted",
+      "original_query": "How do I define a CSS grid layout?",
+      "original_candidate_url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Basic_concepts_of_grid_layout",
+      "replacement_reason": "Original seed unavailable; selected another captured indexed answer before either retrieval run",
+      "corpus": "seeds",
+      "title": "argparse — Parser for command-line options, arguments and subcommands — Python 3.14.7 documentation",
+      "label_reason": "Python argparse reference covers defining and parsing command-line arguments.",
+      "indexed_record_sha256": "856407220a04ef1a5b7cb4149d7bc36660716b79da79717c4ce6d908bf3b0729",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:45.117016Z"
+    },
+    {
+      "id": "q17",
+      "category": "how_to_technical",
+      "query": "How do I run a subprocess and capture its output in Python?",
+      "acceptable_urls": [
+        "https://docs.python.org/3/library/subprocess.html"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "subprocess — Subprocess management — Python 3.14.7 documentation",
+      "label_reason": "Python subprocess reference explains capture_output and stdout/stderr handling.",
+      "indexed_record_sha256": "1d38f71b72aec8cb5254cc261e5f591978ca3176c385d98da6ef5d7454f047a2",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:35.711035Z"
+    },
+    {
+      "id": "q18",
+      "category": "how_to_technical",
+      "query": "How do I undo the last Git commit while keeping the changes?",
+      "acceptable_urls": [
+        "https://git-scm.com/docs/git-reset"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Git - git-reset Documentation",
+      "label_reason": "Git reset documentation describes --soft preserving working tree and index.",
+      "indexed_record_sha256": "cfa4fb1e1c0bc4d711c6ca907dfaf14bc514e7fcd01a3be320061eb6d090045f",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:10.512706Z"
+    },
+    {
+      "id": "q19",
+      "category": "how_to_technical",
+      "query": "How do I create a PostgreSQL database table?",
+      "acceptable_urls": [
+        "https://www.postgresql.org/docs/current/tutorial-table.html"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "PostgreSQL: Documentation: 18: 2.3. Creating a New Table",
+      "label_reason": "PostgreSQL tutorial shows CREATE TABLE syntax and a cities example.",
+      "indexed_record_sha256": "fcc7af871e6901a3bc700d935e90a8c8f649b52f1801ebd09e9b7a56a4c1ada7",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:25.919400Z"
+    },
+    {
+      "id": "q20",
+      "category": "how_to_technical",
+      "query": "How do I publish a Rust crate to crates.io?",
+      "acceptable_urls": [
+        "https://doc.rust-lang.org/cargo/reference/publishing.html"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Publishing on crates.io - The Cargo Book",
+      "label_reason": "Cargo reference explains preparing and publishing a crate to crates.io.",
+      "indexed_record_sha256": "c7ee6b6716ac7f7f46f36517de7a1c0b3dc8849e049383d395a745b29dbdd6f2",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:51.996298Z"
+    },
+    {
+      "id": "q21",
+      "category": "product_commerce",
+      "query": "Find a Singapore supplier page for bulk vanilla pods in different grades.",
+      "acceptable_urls": [
+        "https://naturalvanilla.sg/vanilla-pods/"
+      ],
+      "label_status": "manually_accepted",
+      "original_query": "Find the official Raspberry Pi 5 product specifications.",
+      "original_candidate_url": "https://www.raspberrypi.com/products/raspberry-pi-5/",
+      "replacement_reason": "Original seed unavailable; selected another captured indexed answer before either retrieval run",
+      "corpus": "cc",
+      "title": "Vanilla Pods Singapore | Buy Bulk & Wholesale Vanilla Beans",
+      "label_reason": "Wholesale supplier page lists vanilla origins, grades and bulk/retail pack sizes.",
+      "indexed_record_sha256": "5b044060600c35789ebb143ec3723fd668aba2747a518c6a7e1a9aaef853e2fb",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-08-07 (file capture date)"
+    },
+    {
+      "id": "q22",
+      "category": "product_commerce",
+      "query": "Find the official Framework Laptop 13 product page.",
+      "acceptable_urls": [
+        "https://frame.work/laptop13"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Framework | Order a Framework Laptop 13 with AMD Ryzen™ AI 300 Series",
+      "label_reason": "Official Framework page describes configurable and repairable Laptop 13 hardware.",
+      "indexed_record_sha256": "656ebd7362ca9cf6cf67597975cc546226c087af099e6b1d633f3d3281a457ce",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:10.336089Z"
+    },
+    {
+      "id": "q23",
+      "category": "product_commerce",
+      "query": "Find the Apple MacBook Air technical specifications.",
+      "acceptable_urls": [
+        "https://www.apple.com/macbook-air/specs/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "MacBook Air - Tech Specs - Apple",
+      "label_reason": "Apple specifications page lists MacBook Air display, ports and external-display capabilities.",
+      "indexed_record_sha256": "2f7f22c804e8cdf63ea8a4424ddf719e9e1872096e0de7b5c5009693346728b2",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:04.556829Z"
+    },
+    {
+      "id": "q24",
+      "category": "product_commerce",
+      "query": "Find the official Nintendo Switch OLED model product page.",
+      "acceptable_urls": [
+        "https://www.nintendo.com/us/gaming-systems/switch/oled-model/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Nintendo Switch – OLED Model - Nintendo - Official Site",
+      "label_reason": "Official Nintendo page describes OLED display, stand, storage and dock.",
+      "indexed_record_sha256": "b200eedce850ca9ca7c2df929fbe98d9130433ec49e73a4e18e0d50d9d67f1ba",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:18.244420Z"
+    },
+    {
+      "id": "q25",
+      "category": "product_commerce",
+      "query": "Find the Felix First Class Wood chef knife with a 21 cm blade and olive handle.",
+      "acceptable_urls": [
+        "https://pizzini.at/felix-first-class-wood-chef-knife-21-cm-olive-aktion.html?language=en"
+      ],
+      "label_status": "manually_accepted",
+      "original_query": "Find the official Steam Deck OLED product page.",
+      "original_candidate_url": "https://www.steamdeck.com/en/oled",
+      "replacement_reason": "Original seed unavailable; selected another captured indexed answer before either retrieval run",
+      "corpus": "cc",
+      "title": "pizzini.at/shop - Felix - First Class Wood Chef Knife (21 cm, olive)",
+      "label_reason": "Product title specifies Felix First Class Wood, 21 cm and olive; text describes forged blade.",
+      "indexed_record_sha256": "d5bd05b8214f5253b48334a865cc1f8a7bc368ffdc5d71abbab36d6a0ab579c1",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-08-07 (file capture date)"
+    },
+    {
+      "id": "q26",
+      "category": "product_commerce",
+      "query": "Find a product page for Magnesia Red pomegranate drink in a 1.5 litre bottle.",
+      "acceptable_urls": [
+        "https://www.halusky.co.uk/magnesia-red-pommegranate-1-5l.html"
+      ],
+      "label_status": "manually_accepted",
+      "original_query": "Find the official Sony WH-1000XM5 wireless headphones page.",
+      "original_candidate_url": "https://electronics.sony.com/audio/headphones/headband/p/wh1000xm5-b",
+      "replacement_reason": "Original seed unavailable; selected another captured indexed answer before either retrieval run",
+      "corpus": "cc",
+      "title": "Magnesia Red Pommegranate - 1.5l - 1.5l buy online at Halusky.co.uk",
+      "label_reason": "Product title specifies Magnesia Red Pommegranate 1.5l; retailer body describes Magnesia RED. Body has inconsistent raspberry wording, so no taste claim is labelled.",
+      "indexed_record_sha256": "a1f53f1df0b26a6ae236494929a4e39cd04e1b0036a6bb7911c88ad178eab4c8",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-08-07 (file capture date)"
+    },
+    {
+      "id": "q27",
+      "category": "product_commerce",
+      "query": "Find a distributor product page for the ABB S203U-C15.",
+      "acceptable_urls": [
+        "https://proax.ca/en/product/21451/abbs203uc15"
+      ],
+      "label_status": "manually_accepted",
+      "original_query": "Find the Logitech MX Master 3S mouse product page.",
+      "original_candidate_url": "https://www.logitech.com/en-us/products/mice/mx-master-3s.910-006556.html",
+      "replacement_reason": "Original seed unavailable; selected another captured indexed answer before either retrieval run",
+      "corpus": "cc",
+      "title": "Buy ABB S203U-C15 | Proax",
+      "label_reason": "Proax product page identifies itself as an ABB S203U-C15 distributor.",
+      "indexed_record_sha256": "074b8acc90208c1423d4391824c4f94a81041efe1637faddc915b56d6f690e4e",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-08-07 (file capture date)"
+    },
+    {
+      "id": "q28",
+      "category": "product_commerce",
+      "query": "Find the official Prusa MK4S 3D printer product page.",
+      "acceptable_urls": [
+        "https://www.prusa3d.com/product/original-prusa-mk4s-3d-printer-5/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Original Prusa MK4S 3D Printer | Original Prusa 3D printers directly from Josef Prusa",
+      "label_reason": "Official Prusa product page identifies MK4S and its printer ecosystem.",
+      "indexed_record_sha256": "e3d9c4b4b1c53e8bda0a1ec6828566f55336c9bb54aae51aa5409be63e54e363",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:25.878922Z"
+    },
+    {
+      "id": "q29",
+      "category": "product_commerce",
+      "query": "Find the official Arduino Uno Rev3 board specifications.",
+      "acceptable_urls": [
+        "https://store.arduino.cc/products/arduino-uno-rev3"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Arduino UNO Rev3 – Reliable ATmega328P Board with Digital & Analog I/O — Arduino Official Store",
+      "label_reason": "Official Arduino store page identifies UNO Rev3 and board specifications.",
+      "indexed_record_sha256": "ec6d6562d41694d2b5bde5426e5c5ba45c82b0abcc6f7c57858792ea0779f278",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:05.486663Z"
+    },
+    {
+      "id": "q30",
+      "category": "product_commerce",
+      "query": "Find the Black Tourmaline Rough Stone product at Earthbound Trading.",
+      "acceptable_urls": [
+        "https://www.earthboundtrading.com/black-tourmaline-rough-stone"
+      ],
+      "label_status": "manually_accepted",
+      "original_query": "Find the official Fairphone 5 product page.",
+      "original_candidate_url": "https://www.fairphone.com/en/fairphone-5/",
+      "replacement_reason": "Original seed unavailable; selected another captured indexed answer before either retrieval run",
+      "corpus": "cc",
+      "title": "Buy Black Tourmaline Rough Stone Online at Earthbound Trading",
+      "label_reason": "Exact Earthbound product title and size information identify the rough stone. No health or metaphysical claim is endorsed.",
+      "indexed_record_sha256": "558705ac0c501c3d7c7427f5c16bfa0bf927149f4bd91e23c5f7f749d0c23df0",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-08-07 (file capture date)"
+    },
+    {
+      "id": "q31",
+      "category": "recent_news",
+      "query": "What did the September 2026 Rust debugging survey results say?",
+      "acceptable_urls": [
+        "https://blog.rust-lang.org/2026/09/07/rust-debugging-survey-2026-results/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Rust debugging survey 2026 results | Rust Blog",
+      "label_reason": "Dated Rust survey results article describes participants and debugger experience.",
+      "indexed_record_sha256": "2b9fd17db364c6b6fff95f9feb4da69e71424b775e9f68e8c332d3550ab0303a",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:54.913403Z"
+    },
+    {
+      "id": "q32",
+      "category": "recent_news",
+      "query": "What did Rust 1.98.1 fix in September 2026?",
+      "acceptable_urls": [
+        "https://blog.rust-lang.org/2026/09/03/Rust-1.98.1/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Announcing Rust 1.98.1 | Rust Blog",
+      "label_reason": "Dated Rust 1.98.1 announcement explains the null-vtable-pointer regression fix.",
+      "indexed_record_sha256": "ad549cca51b7899aed34b047d2e482c044fc622611e6a4017bfecfd03e0a126a",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:57.155981Z"
+    },
+    {
+      "id": "q33",
+      "category": "recent_news",
+      "query": "What changed in rustup 1.29.1 released in September 2026?",
+      "acceptable_urls": [
+        "https://blog.rust-lang.org/2026/09/01/Rustup-1.29.1/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Announcing rustup 1.29.1 | Rust Blog",
+      "label_reason": "Dated rustup 1.29.1 announcement describes concurrent update and component operations.",
+      "indexed_record_sha256": "bf009cee745c84b940f1ed7fb75effa1c2047fea4ca18890f283fb584e3ff523",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:59.342518Z"
+    },
+    {
+      "id": "q34",
+      "category": "recent_news",
+      "query": "Who are the first Rust Maintainers in Residence announced in August 2026?",
+      "acceptable_urls": [
+        "https://blog.rust-lang.org/2026/08/26/announcing-our-first-maintainers-in-residence/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Announcing our first Maintainers in Residence | Rust Blog",
+      "label_reason": "Dated announcement names the first Maintainers in Residence and grant recipients.",
+      "indexed_record_sha256": "f096f1e45b7387ce58b09b63d104f49ef54d021e99b1b573a44a7c3ca106841a",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:01.512976Z"
+    },
+    {
+      "id": "q35",
+      "category": "recent_news",
+      "query": "What changed when Rust enabled the next generation trait solver on nightly in August 2026?",
+      "acceptable_urls": [
+        "https://blog.rust-lang.org/2026/08/21/enabling-next-solver-on-nightly/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Enabling the next-generation trait solver on nightly | Rust Blog",
+      "label_reason": "Dated Rust announcement describes enabling the new trait solver on nightly.",
+      "indexed_record_sha256": "6cc36d69b69e3a9839290acb1326d26f8a82b06ae9550884a4607c70c7105f48",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:03.699551Z"
+    },
+    {
+      "id": "q36",
+      "category": "recent_news",
+      "query": "What happened in the August 2026 arrayref supply chain attack?",
+      "acceptable_urls": [
+        "https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Supply chain attack on arrayref | Rust Blog",
+      "label_reason": "Dated security incident article describes malicious dependencies and the arrayref supply-chain compromise.",
+      "indexed_record_sha256": "869a7f05c111b027dc0145d83ff5143dea5175600b29195ba6866e0ccd74f234",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:05.856862Z"
+    },
+    {
+      "id": "q37",
+      "category": "recent_news",
+      "query": "What features were stabilised in Rust 1.98.0 in August 2026?",
+      "acceptable_urls": [
+        "https://blog.rust-lang.org/2026/08/20/Rust-1.98.0/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Announcing Rust 1.98.0 | Rust Blog",
+      "label_reason": "Dated Rust 1.98.0 announcement lists stabilized features, including algebraic floating-point methods.",
+      "indexed_record_sha256": "0a1568386c16e104d18172e2f50eb749760ff6c335479343c43d86aa87c5278a",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:08.026225Z"
+    },
+    {
+      "id": "q38",
+      "category": "recent_news",
+      "query": "When does Firefox switch to a two week release cadence in 2026?",
+      "acceptable_urls": [
+        "https://blog.mozilla.org/sumo/2026/08/19/firefox-new-release-cadence-and-what-to-expect/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Firefox new release cadence and what to expect – The Mozilla Support Blog",
+      "label_reason": "Mozilla announcement dates the two-week cadence to Firefox 155 on 1 September 2026.",
+      "indexed_record_sha256": "f50ba54b0daac7dc2c550245f6ef7c8a8ffa6cb7d77de940c2d47b157c301fa3",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:19.861073Z"
+    },
+    {
+      "id": "q39",
+      "category": "recent_news",
+      "query": "What did Hubble and Webb discover about distant solar system objects in September 2026?",
+      "acceptable_urls": [
+        "https://science.nasa.gov/missions/hubble/nasas-hubble-webb-find-far-out-solar-system-objects-remember-past/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "NASA’s Hubble, Webb Find Far-out Solar System Objects ‘Remember’ Past - NASA Science",
+      "label_reason": "NASA article describes joint Hubble/Webb observations of trans-Neptunian objects.",
+      "indexed_record_sha256": "69e13ecbd1dcd33ffa5dd0acd1a20bfb801ba670daf720b90103889b2f0f2cdb",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:25.543041Z"
+    },
+    {
+      "id": "q40",
+      "category": "recent_news",
+      "query": "What did Hubble find around Saturn south pole in September 2026?",
+      "acceptable_urls": [
+        "https://science.nasa.gov/missions/hubble/nasas-hubble-tracks-new-decagon-encircling-saturns-south-pole/"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "NASA's Hubble Tracks New Decagon Encircling Saturn’s South Pole - NASA Science",
+      "label_reason": "NASA article describes a ten-sided atmospheric wave around Saturn’s south pole.",
+      "indexed_record_sha256": "eff1125eafe9599818d9b9a0692d8090e0da7de3d8982b7557ecc7e09daa1a17",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:15:28.470446Z"
+    },
+    {
+      "id": "q41",
+      "category": "image_bearing",
+      "query": "Find a page with a photograph of the Eiffel Tower.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Eiffel_Tower"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Eiffel Tower - Wikipedia",
+      "label_reason": "Captured Eiffel Tower page contains a photograph resource named Tour Eiffel Wikimedia Commons (cropped).jpg.",
+      "indexed_record_sha256": "de61cc09dd62036cac5933a13ae2dbeeee97a6d863e3ceb530fa19e627456964",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:24.608661Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Semi-protection-shackle.svg",
+        "https://en.wikipedia.org/wiki/File:Eiffel_Tower_logo.svg",
+        "https://en.wikipedia.org/wiki/File:Tour_Eiffel_Wikimedia_Commons_(cropped).jpg",
+        "https://en.wikipedia.org/wiki/File:Maurice_koechlin_pylone.jpg",
+        "https://en.wikipedia.org/wiki/File:Caricature_Gustave_Eiffel.png",
+        "https://en.wikipedia.org/wiki/File:Guillaume_Apollinaire_Calligramme.JPG",
+        "https://en.wikipedia.org/wiki/File:Les_fondations_de_la_Tour_Eiffel,_maçonneries.jpg",
+        "https://en.wikipedia.org/wiki/File:Construction_tour_eiffel.JPG"
+      ]
+    },
+    {
+      "id": "q42",
+      "category": "image_bearing",
+      "query": "Find a page showing the Mona Lisa painting.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Mona_Lisa"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Mona Lisa - Wikipedia",
+      "label_reason": "Captured Mona Lisa article contains the painting resource from C2RMF.",
+      "indexed_record_sha256": "0fa0b42783cd00ee2c3bba677d187432cf0893f1b04567f7c8f9dc3f2a553353",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:27.086560Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Semi-protection-shackle.svg",
+        "https://en.wikipedia.org/wiki/File:Mona_Lisa,_by_Leonardo_da_Vinci,_from_C2RMF_retouched.jpg",
+        "https://en.wikipedia.org/wiki/File:Mona_Lisa_margin_scribble.jpg",
+        "https://en.wikipedia.org/wiki/File:Leonardo_di_ser_Piero_da_Vinci_-_Portrait_de_Mona_Lisa_(dite_La_Joconde)_-_Louvre_779_-_Detail_(right_landscape).jpg",
+        "https://en.wikipedia.org/wiki/File:Leonardo_di_ser_Piero_da_Vinci_-_Portrait_de_Mona_Lisa_(dite_La_Joconde)_-_Louvre_779_-_Detail_(hands).jpg",
+        "https://en.wikipedia.org/wiki/File:Sketch_of_the_Mona_Lisa_by_Raphael.jpg",
+        "https://en.wikipedia.org/wiki/File:Louis_Beroud_-_Mona_Lisa_au_Louvre_1911.jpg",
+        "https://en.wikipedia.org/wiki/File:Mona_Lisa_stolen-1911.jpg"
+      ]
+    },
+    {
+      "id": "q43",
+      "category": "image_bearing",
+      "query": "Find a page with images of the Pillars of Creation.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Pillars_of_Creation"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Pillars of Creation - Wikipedia",
+      "label_reason": "Captured Pillars of Creation article contains Eagle nebula pillars and Hubble/Webb images.",
+      "indexed_record_sha256": "a3ad99cd27137fe5f73e8bfa644c991cc09d0904a6bfc3e5d4f7ba2b21a33110",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:29.359806Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Eagle_nebula_pillars.jpg",
+        "https://en.wikipedia.org/wiki/File:Stellar_(9460796504).jpg",
+        "https://en.wikipedia.org/wiki/File:Eagle_Nebula_4xHubble_WikiSky.jpg",
+        "https://en.wikipedia.org/wiki/File:Pillars_of_creation_2014_HST_WFC3-UVIS_full-res_denoised.jpg",
+        "https://en.wikipedia.org/wiki/File:New_view_of_the_Pillars_of_Creation_—_infrared_Heic1501b.jpg",
+        "https://en.wikipedia.org/wiki/File:Pillars_of_Creation_(NIRCam_Image).jpg",
+        "https://en.wikipedia.org/wiki/File:Pillars_of_creation_-_JWST,_MIRI_-_STScI-01GFRYYRTCTMX197BY86MBFCR9.png",
+        "https://en.wikipedia.org/wiki/File:Commons-logo.svg"
+      ]
+    },
+    {
+      "id": "q44",
+      "category": "image_bearing",
+      "query": "Find photographs of the Grand Canyon on an informative page.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Grand_Canyon"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Grand Canyon - Wikipedia",
+      "label_reason": "Captured Grand Canyon article contains canyon photographs and an aerial view.",
+      "indexed_record_sha256": "19965557b69f19e363066c958a1d573c4b517c01d591b06c611626860f6ffcbb",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:32.488529Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Semi-protection-shackle.svg",
+        "https://en.wikipedia.org/wiki/File:Canyon_River_Tree_(165872763).jpeg",
+        "https://en.wikipedia.org/wiki/File:GrandCanyon.NASA.2014.jpg",
+        "https://en.wikipedia.org/wiki/File:Grand_Canyon_from_air.JPG",
+        "https://en.wikipedia.org/wiki/File:GrandCanyon27June2017.tif",
+        "https://en.wikipedia.org/wiki/File:2021_Revised_NPS_Geologic_Stratigraphic_Column_of_the_Grand_Canyon.jpg",
+        "https://en.wikipedia.org/wiki/File:GCRockfall.JPG",
+        "https://en.wikipedia.org/wiki/File:Grand_Canyon_National_Park_Ribbon_Falls_0913e_(6687267983).jpg"
+      ]
+    },
+    {
+      "id": "q45",
+      "category": "image_bearing",
+      "query": "Find a page illustrating the Japanese cherry blossom.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Cherry_blossom"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Cherry blossom - Wikipedia",
+      "label_reason": "Captured cherry blossom article contains Sakura and Moss Pink and other blossom photographs.",
+      "indexed_record_sha256": "028a35957b61799c72c083ef8c22511f68e23f637468d29855ad38121ec7acbc",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:35.263962Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Symbol_support_vote.svg",
+        "https://en.wikipedia.org/wiki/File:Semi-protection-shackle.svg",
+        "https://en.wikipedia.org/wiki/File:Sakura_and_Moss_Pink_-_桜(さくら)と芝桜(しばざくら).jpg",
+        "https://en.wikipedia.org/wiki/File:Prunus_speciosa_in_the_Jardin_des_Plantes_002.jpg",
+        "https://en.wikipedia.org/wiki/File:カンザン全体.jpg",
+        "https://en.wikipedia.org/wiki/File:Cherry-Blossom-Utagawa-Hiroshige-36-Views-of-Mount_Fuji-Series-7.jpg",
+        "https://en.wikipedia.org/wiki/File:Hokuto_Yamanashi_Yamatakajindaizakura_1.JPG",
+        "https://en.wikipedia.org/wiki/File:Prunus_'Jindai_Akebono'_小江川1000本桜4.jpg"
+      ]
+    },
+    {
+      "id": "q46",
+      "category": "image_bearing",
+      "query": "Find a page with a photograph of a red panda.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Red_panda"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Red panda - Wikipedia",
+      "label_reason": "Captured red panda article includes Red Panda, Gentle Tree-Dweller of the Himalayas.jpg.",
+      "indexed_record_sha256": "174b9e4d30584e8ed94878fcb4cafcbd212066f5d453e4277527a0fd957e86ca",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:40.104476Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Cscr-featured.svg",
+        "https://en.wikipedia.org/wiki/File:Semi-protection-shackle.svg",
+        "https://en.wikipedia.org/wiki/File:Red_Panda,_Gentle_Tree-Dweller_of_the_Himalayas.jpg",
+        "https://en.wikipedia.org/wiki/File:Status_iucn3.1_EN_WCAG.svg",
+        "https://en.wikipedia.org/wiki/File:OOjs_UI_icon_edit-ltr.svg",
+        "https://en.wikipedia.org/wiki/File:RedPanda_distribution.png",
+        "https://en.wikipedia.org/wiki/File:Anh48_0368_1.jpg",
+        "https://en.wikipedia.org/wiki/File:Ailurus_fulgens_styani_59714096.jpg"
+      ]
+    },
+    {
+      "id": "q47",
+      "category": "image_bearing",
+      "query": "Find a page with pictures of the Sydney Opera House.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Sydney_Opera_House"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Sydney Opera House - Wikipedia",
+      "label_reason": "Captured Sydney Opera House article includes the Sydney Australia photograph.",
+      "indexed_record_sha256": "1d3b47a8a249f86d54f13a30ca336c6569d656de3e175eb6b9b6ee2c49bb144b",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:43.777223Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Sydney_Opera_House_logo.svg",
+        "https://en.wikipedia.org/wiki/File:Sydney_Australia._(21339175489).jpg",
+        "https://en.wikipedia.org/wiki/File:OSM_central_Sydney_2.svg",
+        "https://en.wikipedia.org/wiki/File:Red_pog.svg",
+        "https://en.wikipedia.org/wiki/File:Australia_New_South_Wales_relief_location_map.png",
+        "https://en.wikipedia.org/wiki/File:Red_pog.svg",
+        "https://en.wikipedia.org/wiki/File:Australia_relief_map.jpg",
+        "https://en.wikipedia.org/wiki/File:Red_pog.svg"
+      ]
+    },
+    {
+      "id": "q48",
+      "category": "image_bearing",
+      "query": "Find a page showing the Rosetta Stone.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Rosetta_Stone"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Rosetta Stone - Wikipedia",
+      "label_reason": "Captured Rosetta Stone article includes Rosetta Stone.JPG.",
+      "indexed_record_sha256": "bc31d68cb516b8bb3dd29b62866e9bb913b20e219bac7a1643044d5c63aec84c",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:46.504450Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Journal_Icon.svg",
+        "https://en.wikipedia.org/wiki/File:Cscr-featured.svg",
+        "https://en.wikipedia.org/wiki/File:Rosetta_Stone.JPG",
+        "https://en.wikipedia.org/wiki/File:RosettaStoneAsPartOfOriginalStele_revised.svg",
+        "https://en.wikipedia.org/wiki/File:PepiII-DecreeOfOfficialExactionForTempleOfMin_MetropolitanMuseum.png",
+        "https://en.wikipedia.org/wiki/File:Rosetta_news.jpg",
+        "https://en.wikipedia.org/wiki/File:RosettaStone-LeftAndRightSides-BritishMuseum-August21-08.jpg",
+        "https://en.wikipedia.org/wiki/File:Rosetta_Stone_International_Congress_of_Orientalists_ILN_1874.jpg"
+      ]
+    },
+    {
+      "id": "q49",
+      "category": "image_bearing",
+      "query": "Find a page with a picture of the aurora borealis.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/Aurora"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "Aurora - Wikipedia",
+      "label_reason": "Captured aurora article includes Aurora borealis over Eielson Air Force Base, Alaska.jpg.",
+      "indexed_record_sha256": "567cd18a150b0cc80176b1df69feb8eee1acb9478785a4edb6703312df6eb005",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:48.987598Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:Aurora_borealis_over_Eielson_Air_Force_Base,_Alaska.jpg",
+        "https://en.wikipedia.org/wiki/File:Flames_in_the_sky.jpg",
+        "https://en.wikipedia.org/wiki/File:G5_aurora_over_Tuntorp,_Lysekil_Municipality_15.jpg",
+        "https://en.wikipedia.org/wiki/File:Aurora_australis_ISS.jpg",
+        "https://en.wikipedia.org/wiki/File:Antarctic_aurora_ESA313457.jpg",
+        "https://en.wikipedia.org/wiki/File:Aurora_Kp_Map_North_America.gif",
+        "https://en.wikipedia.org/wiki/File:Aurora_Kp_Map_Eurasia.gif",
+        "https://en.wikipedia.org/wiki/File:Aurora_shapes.jpg"
+      ]
+    },
+    {
+      "id": "q50",
+      "category": "image_bearing",
+      "query": "Find a page with images of the James Webb Space Telescope.",
+      "acceptable_urls": [
+        "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope"
+      ],
+      "label_status": "manually_accepted",
+      "corpus": "seeds",
+      "title": "James Webb Space Telescope - Wikipedia",
+      "label_reason": "Captured Webb article includes a spacecraft model and telescope photographs.",
+      "indexed_record_sha256": "71558d312999090b1d474ad6ebffe2de03ab5db05f1de5a41e8942ef66feaba9",
+      "acceptable_domains": [],
+      "ground_truth_granularity": "one_known_answer_page",
+      "capture_date_utc": "2026-09-09T20:16:51.930885Z",
+      "image_evidence": [
+        "https://en.wikipedia.org/wiki/File:JWST_spacecraft_model_3.png",
+        "https://en.wikipedia.org/wiki/File:OOjs_UI_icon_edit-ltr-progressive.svg",
+        "https://en.wikipedia.org/wiki/File:OOjs_UI_icon_edit-ltr-progressive.svg",
+        "https://en.wikipedia.org/wiki/File:JWST_Launch_Logo.png",
+        "https://en.wikipedia.org/wiki/File:Atmospheric_electromagnetic_opacity.svg",
+        "https://en.wikipedia.org/wiki/File:James_Webb_Space_Telescope_2009_top.jpg",
+        "https://en.wikipedia.org/wiki/File:James_Webb_Space_Telescope_2009_bottom.jpg",
+        "https://en.wikipedia.org/wiki/File:James_Webb_telescope_sunshield.jpg"
+      ]
+    }
+  ]
+}

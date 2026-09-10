@@ -1,0 +1,21 @@
+{
+  "name": "cc-index-dump",
+  "command": [
+    "env",
+    "TMPDIR=<WORKSPACE>/.spike/tmp",
+    ".spike/target-1.98/release/examples/spike",
+    "dump-index",
+    ".spike/data/index-cc",
+    ".spike/data/cc-indexed.jsonl"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:21:59.585988+00:00",
+  "exit_code": 0,
+  "wall_seconds": 0.348316792,
+  "cpu_user_seconds": 0.26136,
+  "cpu_system_seconds": 0.0834,
+  "peak_rss_bytes": 73744384,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

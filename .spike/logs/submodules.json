@@ -1,0 +1,18 @@
+{
+  "name": "submodules",
+  "command": [
+    "git",
+    "submodule",
+    "update",
+    "--init",
+    "--recursive"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:07:37.321060+00:00",
+  "exit_code": 0,
+  "wall_seconds": 1.93786325,
+  "cpu_user_seconds": 0.123266,
+  "cpu_system_seconds": 0.12114,
+  "peak_rss_bytes": 14041088,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}

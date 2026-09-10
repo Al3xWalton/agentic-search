@@ -1,0 +1,15 @@
+{
+  "name": "cc-raw-inventory",
+  "command": [
+    "python3",
+    ".spike/scripts/warc_stats.py"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:14:07.409682+00:00",
+  "exit_code": 0,
+  "wall_seconds": 4.981716583000001,
+  "cpu_user_seconds": 4.702796,
+  "cpu_system_seconds": 0.264776,
+  "peak_rss_bytes": 978468864,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}

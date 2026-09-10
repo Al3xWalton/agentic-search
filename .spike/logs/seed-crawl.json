@@ -1,0 +1,20 @@
+{
+  "name": "seed-crawl",
+  "command": [
+    "env",
+    "TMPDIR=<WORKSPACE>/.spike/tmp",
+    "RUST_LOG=stract::crawler=debug",
+    ".spike/target-1.98/release/examples/spike",
+    "crawl",
+    ".spike/data/seeds.json",
+    ".spike/data"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:14:58.958988+00:00",
+  "exit_code": 0,
+  "wall_seconds": 221.98653345800003,
+  "cpu_user_seconds": 7.898571,
+  "cpu_system_seconds": 1.078934,
+  "peak_rss_bytes": 90472448,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}

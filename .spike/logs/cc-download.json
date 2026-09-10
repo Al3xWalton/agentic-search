@@ -1,0 +1,15 @@
+{
+  "name": "cc-download",
+  "command": [
+    "python3",
+    "-"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:07:56.528038+00:00",
+  "exit_code": 0,
+  "wall_seconds": 277.79369375000005,
+  "cpu_user_seconds": 8.827863,
+  "cpu_system_seconds": 4.321333,
+  "peak_rss_bytes": 11059200,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}

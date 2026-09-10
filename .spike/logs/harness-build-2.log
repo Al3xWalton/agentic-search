@@ -1,0 +1,502 @@
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/kuchiki/src/attributes.rs:60:38
+   |
+60 |     pub fn entry<A: Into<LocalName>>(&mut self, local_name: A) -> Entry<ExpandedName, Attribute> {
+   |                                      ^^^^^^^^^                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                                      |
+   |                                      the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+60 |     pub fn entry<A: Into<LocalName>>(&mut self, local_name: A) -> Entry<'_, ExpandedName, Attribute> {
+   |                                                                         +++
+
+warning: `kuchiki` (lib) generated 1 warning (run `cargo fix --lib -p kuchiki` to apply 1 suggestion)
+warning: unnecessary parentheses around closure body
+   --> crates/tantivy/src/postings/serializer.rs:129:30
+    |
+129 |             .map(|ff_reader| (total_num_tokens as Score / ff_reader.num_docs() as Score))
+    |                              ^                                                         ^
+    |
+    = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+    |
+129 -             .map(|ff_reader| (total_num_tokens as Score / ff_reader.num_docs() as Score))
+129 +             .map(|ff_reader| total_num_tokens as Score / ff_reader.num_docs() as Score)
+    |
+
+warning: struct `KeepFirst` is never constructed
+  --> crates/tantivy/src/sstable/merge/mod.rs:16:12
+   |
+16 | pub struct KeepFirst;
+   |            ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `FirstVal` is never constructed
+  --> crates/tantivy/src/sstable/merge/mod.rs:18:12
+   |
+18 | pub struct FirstVal<V>(V);
+   |            ^^^^^^^^
+
+warning: struct `VoidMerge` is never constructed
+  --> crates/tantivy/src/sstable/merge/mod.rs:36:12
+   |
+36 | pub struct VoidMerge;
+   |            ^^^^^^^^^
+
+warning: struct `U64Merge` is never constructed
+  --> crates/tantivy/src/sstable/merge/mod.rs:43:12
+   |
+43 | pub struct U64Merge;
+   |            ^^^^^^^^
+
+warning: struct `U64MonotonicValueReader` is never constructed
+ --> crates/tantivy/src/sstable/value/u64_monotonic.rs:7:12
+  |
+7 | pub struct U64MonotonicValueReader {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `U64MonotonicValueWriter` is never constructed
+  --> crates/tantivy/src/sstable/value/u64_monotonic.rs:35:12
+   |
+35 | pub struct U64MonotonicValueWriter {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `Bm25Params` is never constructed
+  --> crates/tantivy/src/query/bm25.rs:72:12
+   |
+72 | pub struct Bm25Params {
+   |            ^^^^^^^^^^
+
+warning: struct `DocSetIter` is never constructed
+   --> crates/tantivy/src/docset.rs:156:12
+    |
+156 | pub struct DocSetIter<T>
+    |            ^^^^^^^^^^
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/tantivy/src/columnar/columnar/reader/mod.rs:145:9
+    |
+145 |         &self,
+    |         ^^^^^ the lifetime is elided here
+146 |         column_name: &str,
+147 |     ) -> crate::sstable::StreamerBuilder<RangeSSTable> {
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+147 |     ) -> crate::sstable::StreamerBuilder<'_, RangeSSTable> {
+    |                                          +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/tantivy/src/indexer/index_writer.rs:438:27
+    |
+438 |     pub fn prepare_commit(&mut self) -> crate::Result<PreparedCommit<D>> {
+    |                           ^^^^^^^^^                   ^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                           |
+    |                           the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+438 |     pub fn prepare_commit(&mut self) -> crate::Result<PreparedCommit<'_, D>> {
+    |                                                                      +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/tantivy/src/sstable/dictionary.rs:389:18
+    |
+389 |     pub fn range(&self) -> StreamerBuilder<TSSTable> {
+    |                  ^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                  |
+    |                  the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+389 |     pub fn range(&self) -> StreamerBuilder<'_, TSSTable> {
+    |                                            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/tantivy/src/sstable/dictionary.rs:394:19
+    |
+394 |     pub fn stream(&self) -> io::Result<Streamer<TSSTable>> {
+    |                   ^^^^^                ^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                   |
+    |                   the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+394 |     pub fn stream(&self) -> io::Result<Streamer<'_, TSSTable>> {
+    |                                                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/tantivy/src/postings/serializer.rs:74:9
+   |
+74 |         &mut self,
+   |         ^^^^^^^^^ the lifetime is elided here
+...
+78 |     ) -> io::Result<FieldSerializer> {
+   |                     ^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+78 |     ) -> io::Result<FieldSerializer<'_>> {
+   |                                    ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/tantivy/src/query/grammar/query_grammar.rs:71:14
+   |
+71 | fn word(inp: &str) -> IResult<&str, Cow<str>> {
+   |              ^^^^             ^^^^  ^^^^^^^^ the same lifetime is hidden here
+   |              |                |
+   |              |                the same lifetime is elided here
+   |              the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+71 | fn word(inp: &str) -> IResult<&str, Cow<'_, str>> {
+   |                                         +++
+
+warning: `tantivy` (lib) generated 15 warnings (run `cargo fix --lib -p tantivy` to apply 7 suggestions)
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/robotstxt/src/parser.rs:37:21
+   |
+37 | pub fn parse(input: &str) -> IResult<&str, Vec<Line>> {
+   |                     ^^^^             ^^^^      ^^^^ the same lifetime is hidden here
+   |                     |                |
+   |                     |                the same lifetime is elided here
+   |                     the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+37 | pub fn parse(input: &str) -> IResult<&str, Vec<Line<'_>>> {
+   |                                                    ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/robotstxt/src/parser.rs:80:28
+   |
+80 | fn parse_user_agent(input: &str) -> IResult<&str, Line> {
+   |                            ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+   |                            |                |
+   |                            |                the same lifetime is elided here
+   |                            the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+80 | fn parse_user_agent(input: &str) -> IResult<&str, Line<'_>> {
+   |                                                       ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:100:23
+    |
+100 | fn parse_allow(input: &str) -> IResult<&str, Line> {
+    |                       ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                       |                |
+    |                       |                the same lifetime is elided here
+    |                       the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+100 | fn parse_allow(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                  ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:115:26
+    |
+115 | fn parse_disallow(input: &str) -> IResult<&str, Line> {
+    |                          ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                          |                |
+    |                          |                the same lifetime is elided here
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+115 | fn parse_disallow(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                     ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:136:25
+    |
+136 | fn parse_sitemap(input: &str) -> IResult<&str, Line> {
+    |                         ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                         |                |
+    |                         |                the same lifetime is elided here
+    |                         the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+136 | fn parse_sitemap(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                    ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:151:29
+    |
+151 | fn parse_crawl_delay(input: &str) -> IResult<&str, Line> {
+    |                             ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                             |                |
+    |                             |                the same lifetime is elided here
+    |                             the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+151 | fn parse_crawl_delay(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                        ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/robotstxt/src/parser.rs:170:21
+    |
+170 | fn parse_raw(input: &str) -> IResult<&str, Line> {
+    |                     ^^^^             ^^^^  ^^^^ the same lifetime is hidden here
+    |                     |                |
+    |                     |                the same lifetime is elided here
+    |                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+170 | fn parse_raw(input: &str) -> IResult<&str, Line<'_>> {
+    |                                                ++++
+
+warning: `robotstxt` (lib) generated 7 warnings (run `cargo fix --lib -p robotstxt` to apply 7 suggestions)
+warning: unnecessary parentheses around closure body
+   --> crates/core/src/ranking/computer/mod.rs:315:39
+    |
+315 |                         .and_then(|f| (f.tantivy_field(schema).map(|tv_field| (f, tv_field))))
+    |                                       ^                                                     ^
+    |
+    = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+    |
+315 -                         .and_then(|f| (f.tantivy_field(schema).map(|tv_field| (f, tv_field))))
+315 +                         .and_then(|f| f.tantivy_field(schema).map(|tv_field| (f, tv_field)))
+    |
+
+warning: unnecessary parentheses around type
+  --> crates/core/src/widgets/calculator.rs:96:25
+   |
+96 |         std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+   |                         ^                                                                       ^
+   |
+help: remove these parentheses
+   |
+96 -         std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+96 +         std::boxed::Box<dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static>,
+   |
+
+warning: field `0` is never read
+   --> crates/core/src/distributed/sonic/mod.rs:191:8
+    |
+191 | struct Header {
+    |        ^^^^^^ field in this struct
+    |
+    = help: consider removing this field
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `check` is never used
+   --> crates/core/src/distributed/sonic/mod.rs:190:1
+    |
+190 | #[repr(C)]
+    | ^
+
+warning: struct `IntSet` is never constructed
+   --> crates/core/src/intmap.rs:161:12
+    |
+161 | pub struct IntSet<K: Key = u64> {
+    |            ^^^^^^
+
+warning: associated items `new` and `insert` are never used
+   --> crates/core/src/intmap.rs:172:12
+    |
+171 | impl<K: Key> IntSet<K> {
+    | ---------------------- associated items in this implementation
+172 |     pub fn new() -> Self {
+    |            ^^^
+...
+176 |     pub fn insert(&mut self, item: K) {
+    |            ^^^^^^
+
+warning: struct `InDegreeQuery` is never constructed
+  --> crates/core/src/webgraph/query/degree.rs:34:12
+   |
+34 | pub struct InDegreeQuery {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `DummyQuery` is never constructed
+  --> crates/core/src/webgraph/query/raw/dummy.rs:18:12
+   |
+18 | pub struct DummyQuery;
+   |            ^^^^^^^^^^
+
+warning: struct `DummyWeight` is never constructed
+  --> crates/core/src/webgraph/query/raw/dummy.rs:29:8
+   |
+29 | struct DummyWeight;
+   |        ^^^^^^^^^^^
+
+warning: struct `DummyScorer` is never constructed
+  --> crates/core/src/webgraph/query/raw/dummy.rs:52:8
+   |
+52 | struct DummyScorer;
+   |        ^^^^^^^^^^^
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/core/src/tokenizer/mod.rs:68:17
+   |
+68 |     fn tokenize(&self) -> impl Iterator<Item = Token> + '_;
+   |                 ^^^^^                          ^^^^^    ^^ the same lifetime is elided here
+   |                 |                              |
+   |                 |                              the same lifetime is hidden here
+   |                 the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+68 |     fn tokenize(&self) -> impl Iterator<Item = Token<'_>> + '_;
+   |                                                     ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/core/src/tokenizer/mod.rs:72:17
+   |
+72 |     fn tokenize(&self) -> impl Iterator<Item = Token> + '_ {
+   |                 ^^^^^                          ^^^^^    ^^ the same lifetime is elided here
+   |                 |                              |
+   |                 |                              the same lifetime is hidden here
+   |                 the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+72 |     fn tokenize(&self) -> impl Iterator<Item = Token<'_>> + '_ {
+   |                                                     ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/fields/json.rs:102:25
+    |
+102 |     pub fn token_stream(&mut self) -> BoxTokenStream {
+    |                         ^^^^^^^^^     ^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                         |
+    |                         the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+102 |     pub fn token_stream(&mut self) -> BoxTokenStream<'_> {
+    |                                                     ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> crates/core/src/tokenizer/segmenter.rs:47:17
+   |
+47 |     fn segments(&self) -> SegmentIterator;
+   |                 ^^^^^     ^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                 |
+   |                 the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+47 |     fn segments(&self) -> SegmentIterator<'_>;
+   |                                          ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:117:26
+    |
+117 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<F>
+    |                          ^^^^^              ^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+117 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<'_, F>
+    |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:123:26
+    |
+123 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<F>
+    |                          ^^^^^              ^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+123 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<'_, F>
+    |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:132:26
+    |
+132 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<F>
+    |                          ^^^^^              ^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+132 |     fn split_preserve<F>(&self, pred: F) -> SplitPreserve<'_, F>
+    |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:141:37
+    |
+141 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<F>
+    |                                     ^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                                     |
+    |                                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+141 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<'_, F>
+    |                                                                               +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:147:37
+    |
+147 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<F>
+    |                                     ^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                                     |
+    |                                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+147 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<'_, F>
+    |                                                                               +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> crates/core/src/tokenizer/split_preserve.rs:156:37
+    |
+156 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<F>
+    |                                     ^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                                     |
+    |                                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+156 |     fn split_preserve_with_range<F>(&self, pred: F) -> SplitPreserveWithRange<'_, F>
+    |                                                                               +++
+
+warning: `stract` (lib) generated 20 warnings (run `cargo fix --lib -p stract` to apply 12 suggestions)
+   Compiling stract v0.1.0 (<WORKSPACE>/crates/core)
+    Finished `release` profile [optimized + debuginfo] target(s) in 10.33s

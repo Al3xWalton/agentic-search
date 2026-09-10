@@ -1,0 +1,4 @@
+50247 106976 05:14 <WORKSPACE>/.spike/target-1.98/release/stract search-server <WORKSPACE>/.spike/configs/search-cc.toml
+50248  50272 05:14 <WORKSPACE>/.spike/target-1.98/release/stract search-server <WORKSPACE>/.spike/configs/search-seeds.toml
+50249  39504 05:14 <WORKSPACE>/.spike/target-1.98/release/stract api <WORKSPACE>/.spike/configs/api.toml
+

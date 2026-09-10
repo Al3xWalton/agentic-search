@@ -1,0 +1,16 @@
+{
+  "name": "firecrawl-setup",
+  "command": [
+    "sh",
+    "-c",
+    "cd .spike; FIRECRAWL_NO_SEARCH_FEEDBACK=1 firecrawl --status; firecrawl search --help"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:06:57.478835+00:00",
+  "exit_code": 0,
+  "wall_seconds": 0.7733559170000001,
+  "cpu_user_seconds": 0.170871,
+  "cpu_system_seconds": 0.038832,
+  "peak_rss_bytes": 83591168,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}

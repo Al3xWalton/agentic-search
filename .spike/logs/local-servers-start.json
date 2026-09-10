@@ -1,0 +1,18 @@
+{
+  "name": "local-servers-start",
+  "command": [
+    "python3",
+    ".spike/scripts/serve.py",
+    "start"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:23:43.257332+00:00",
+  "exit_code": 0,
+  "wall_seconds": 0.030712667000000003,
+  "cpu_user_seconds": 0.016848,
+  "cpu_system_seconds": 0.009127999999999999,
+  "peak_rss_bytes": 12009472,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

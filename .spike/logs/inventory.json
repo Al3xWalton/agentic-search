@@ -1,0 +1,16 @@
+{
+  "name": "inventory",
+  "command": [
+    "sh",
+    "-c",
+    "git log -1 --format=fuller; git rev-list --count HEAD; git rev-parse --is-shallow-repository; rustup toolchain list; rustc +stable --version; rustc +1.98.0 --version; docker version; sysctl -n hw.memsize hw.ncpu; df -h .; command -v clang protoc cmake pkg-config; rg --files --hidden -g AGENTS.md -g \"*toolchain*\" -g \"!.git/**\" -g \"!.spike/**\""
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:06:45.233591+00:00",
+  "exit_code": 1,
+  "wall_seconds": 0.180980042,
+  "cpu_user_seconds": 0.046639,
+  "cpu_system_seconds": 0.087033,
+  "peak_rss_bytes": 30457856,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}

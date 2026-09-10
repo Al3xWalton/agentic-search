@@ -1,0 +1,1868 @@
+{
+  "answer_set_sha256": "14ff433c807326a0b37ed984d7e69638e3c4d0fcdfc67923f3122a9c1be8df5e",
+  "total_documents": 19463,
+  "unique_normalized_urls": 19463,
+  "queries": 50,
+  "answer_coverage": 1.0,
+  "modes": {
+    "stract": {
+      "attempts": 50,
+      "successes": 50,
+      "recall_at_10": 0.36,
+      "n": 50,
+      "p50_ms": 3.711686999999991,
+      "p95_ms": 12.350209000000001,
+      "zero_results": 19
+    },
+    "firecrawl": {
+      "attempts": 50,
+      "successes": 0,
+      "recall_at_10": null,
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "zero_results": 0
+    }
+  },
+  "categories": {
+    "factual": {
+      "stract": {
+        "attempts": 10,
+        "successes": 10,
+        "recall_at_10": 0.7,
+        "n": 10,
+        "p50_ms": 11.743520999999994,
+        "p95_ms": 18.876749999999998,
+        "zero_results": 0
+      },
+      "firecrawl": {
+        "attempts": 10,
+        "successes": 0,
+        "recall_at_10": null,
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "zero_results": 0
+      }
+    },
+    "how_to_technical": {
+      "stract": {
+        "attempts": 10,
+        "successes": 10,
+        "recall_at_10": 0.2,
+        "n": 10,
+        "p50_ms": 3.3563539999999916,
+        "p95_ms": 6.221499999999991,
+        "zero_results": 4
+      },
+      "firecrawl": {
+        "attempts": 10,
+        "successes": 0,
+        "recall_at_10": null,
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "zero_results": 0
+      }
+    },
+    "product_commerce": {
+      "stract": {
+        "attempts": 10,
+        "successes": 10,
+        "recall_at_10": 0.2,
+        "n": 10,
+        "p50_ms": 2.247270999999995,
+        "p95_ms": 12.81770800000001,
+        "zero_results": 7
+      },
+      "firecrawl": {
+        "attempts": 10,
+        "successes": 0,
+        "recall_at_10": null,
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "zero_results": 0
+      }
+    },
+    "recent_news": {
+      "stract": {
+        "attempts": 10,
+        "successes": 10,
+        "recall_at_10": 0.0,
+        "n": 10,
+        "p50_ms": 2.0404584999999806,
+        "p95_ms": 10.477417000000017,
+        "zero_results": 7
+      },
+      "firecrawl": {
+        "attempts": 10,
+        "successes": 0,
+        "recall_at_10": null,
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "zero_results": 0
+      }
+    },
+    "image_bearing": {
+      "stract": {
+        "attempts": 10,
+        "successes": 10,
+        "recall_at_10": 0.7,
+        "n": 10,
+        "p50_ms": 5.126624999999995,
+        "p95_ms": 10.90920900000003,
+        "zero_results": 1
+      },
+      "firecrawl": {
+        "attempts": 10,
+        "successes": 0,
+        "recall_at_10": null,
+        "n": 0,
+        "p50_ms": null,
+        "p95_ms": null,
+        "zero_results": 0
+      }
+    }
+  },
+  "rows": [
+    {
+      "id": "q01",
+      "category": "factual",
+      "query": "What is the capital city of Australia?",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Canberra"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Canberra",
+          "https://en.wikipedia.org/wiki/Berlin",
+          "https://en.wikipedia.org/wiki/Rome",
+          "https://en.wikipedia.org/wiki/Paris",
+          "https://expert360.com/nz/articles/facility-location-where-do-i-need-to-be",
+          "https://internationalfinance.com/technology/saudi-arabias-batic-acquires-stake-smart-cities-solutions/",
+          "https://en.wikipedia.org/wiki/Tokyo",
+          "https://bebusinessed.com/history/history-of-the-stock-market/",
+          "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+          "https://rivertower.net/the-core-secret-on-river-tower-airplane-travel-guide-revealed.html/"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Canberra"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 10.7365,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 9,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 816.2583330000001,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q02",
+      "category": "factual",
+      "query": "How long does Mercury take to orbit the Sun?",
+      "answers": [
+        "https://science.nasa.gov/mercury/facts/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Sun",
+          "https://science.nasa.gov/mercury/facts/",
+          "https://en.wikipedia.org/wiki/Solar_System",
+          "https://en.wikipedia.org/wiki/Jupiter",
+          "https://en.wikipedia.org/wiki/Earth",
+          "https://en.wikipedia.org/wiki/Saturn",
+          "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope",
+          "https://en.wikipedia.org/wiki/Neptune",
+          "https://en.wikipedia.org/wiki/Mars",
+          "https://en.wikipedia.org/wiki/Aurora"
+        ],
+        "matched_urls": [
+          "https://science.nasa.gov/mercury/facts/"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 18.876749999999998,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 12,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 661.0980000000001,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q03",
+      "category": "factual",
+      "query": "Who developed the theory of general relativity?",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Albert_Einstein"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Albert_Einstein",
+          "https://bebusinessed.com/history/history-of-the-stock-market/",
+          "https://themovementtheory.org/what-we-treat/knee-replacement-surgery/",
+          "https://learn.elca.org/jle/review-of-mark-c-mattes-the-role-of-justification-in-contemporary-theology/",
+          "https://plato.stanford.edu/archives/spr2011/entries/social-minimum/notes.html",
+          "https://en.wikipedia.org/wiki/Charles_Darwin",
+          "https://en.wikipedia.org/wiki/Isaac_Newton",
+          "https://www.freejazzblog.org/2017/12/open-letter-by-joelle-leandre-to-accuse.html?showComment=1514342318447",
+          "https://seds.nu.edu.kz/mscinappliedartificialintelligencedatascience",
+          "https://www.digitalinberlin.de/le-millipede/"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Albert_Einstein"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 9.494542000000001,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 6,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 701.7031250000001,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q04",
+      "category": "factual",
+      "query": "When was the United Nations founded?",
+      "answers": [
+        "https://www.un.org/en/about-us/history-of-the-un"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://aluqema.com/gambling-cities-in-the-united-kingdom/",
+          "https://bebusinessed.com/history/history-of-the-stock-market/",
+          "https://www.naplesldm.com/Miscellany80.php",
+          "https://en.wikipedia.org/wiki/Paris",
+          "https://en.wikipedia.org/wiki/Marie_Curie",
+          "https://journals.plos.org/plosntds/article?id=10.1371%2Fjournal.pntd.0003981",
+          "https://en.wikipedia.org/wiki/Albert_Einstein",
+          "https://www.commondreams.org/views/2016/03/26/viva-cuba-libre",
+          "https://en.wikipedia.org/wiki/Ada_Lovelace",
+          "https://en.wikipedia.org/wiki/Tokyo"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 7.923875000000004,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 7,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 658.0870000000001,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q05",
+      "category": "factual",
+      "query": "Which four SI base units had new definitions in the 2018 revision?",
+      "answers": [
+        "https://www.bipm.org/en/measurement-units/si-base-units"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Rome",
+          "https://en.wikipedia.org/wiki/Sun",
+          "https://en.wikipedia.org/wiki/Oxygen",
+          "https://en.wikipedia.org/wiki/Mount_Everest",
+          "https://en.wikipedia.org/wiki/Solar_System",
+          "https://en.wikipedia.org/wiki/Isaac_Newton",
+          "https://en.wikipedia.org/wiki/Earth",
+          "https://en.wikipedia.org/wiki/Gold"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 12.350209000000001,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 11,
+        "error": null,
+        "top10_urls_in_sample": 8
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 608.2059580000001,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q06",
+      "category": "factual",
+      "query": "How many chambers does a human heart have?",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Heart"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Heart",
+          "https://en.wikipedia.org/wiki/Oxygen",
+          "https://en.wikipedia.org/wiki/Machu_Picchu",
+          "https://truthout.org/audio/we-surrender-nothing-and-no-one-a-playbook-for-solidarity-amid-fascist-terror/",
+          "https://en.wikipedia.org/wiki/Water",
+          "https://en.wikipedia.org/wiki/Albert_Einstein",
+          "https://mastersofuniverse.net/missouri/health-beauty-in-martinsville/"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Heart"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 8.524000000000004,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 8,
+        "error": null,
+        "top10_urls_in_sample": 7
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 840.0635419999998,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q07",
+      "category": "factual",
+      "query": "What is the tallest mountain above sea level?",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Mount_Everest"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Mount_Everest",
+          "https://en.wikipedia.org/wiki/Eiffel_Tower",
+          "https://en.wikipedia.org/wiki/Mars",
+          "https://en.wikipedia.org/wiki/Earth",
+          "https://en.wikipedia.org/wiki/Volcano",
+          "https://en.wikipedia.org/wiki/Tokyo",
+          "https://en.wikipedia.org/wiki/Canberra",
+          "https://en.wikipedia.org/wiki/London",
+          "https://en.wikipedia.org/wiki/Saturn",
+          "https://en.wikipedia.org/wiki/Colosseum"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Mount_Everest"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 11.772375000000002,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 11,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 604.6120829999993,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q08",
+      "category": "factual",
+      "query": "How long does Mars take to orbit the Sun?",
+      "answers": [
+        "https://science.nasa.gov/mars/facts/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Sun",
+          "https://en.wikipedia.org/wiki/Solar_System",
+          "https://en.wikipedia.org/wiki/Mars",
+          "https://en.wikipedia.org/wiki/Jupiter",
+          "https://science.nasa.gov/mercury/facts/",
+          "https://en.wikipedia.org/wiki/Earth",
+          "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope",
+          "https://en.wikipedia.org/wiki/Saturn",
+          "https://en.wikipedia.org/wiki/Neptune",
+          "https://en.wikipedia.org/wiki/Aurora"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 12.20462500000001,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 11,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 602.792,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q09",
+      "category": "factual",
+      "query": "What is the chemical symbol for gold?",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Gold"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Gold",
+          "https://en.wikipedia.org/wiki/Uranus",
+          "https://en.wikipedia.org/wiki/Oxygen",
+          "https://en.wikipedia.org/wiki/Sun",
+          "https://en.wikipedia.org/wiki/Marie_Curie",
+          "https://theglobalnewz.com/dynamic-aesthetic-clinic-personalised-skincare-solutions/",
+          "https://en.wikipedia.org/wiki/DNA",
+          "https://en.wikipedia.org/wiki/Machu_Picchu",
+          "https://en.wikipedia.org/wiki/Mars",
+          "https://en.wikipedia.org/wiki/Isaac_Newton"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Gold"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 12.154624999999989,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 11,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 654.3745419999993,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q10",
+      "category": "factual",
+      "query": "What causes the phases of the Moon?",
+      "answers": [
+        "https://science.nasa.gov/moon/moon-phases/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://science.nasa.gov/moon/moon-phases/",
+          "https://en.wikipedia.org/wiki/Earth",
+          "https://en.wikipedia.org/wiki/Solar_System",
+          "https://en.wikipedia.org/wiki/Sun",
+          "https://en.wikipedia.org/wiki/Taj_Mahal",
+          "https://en.wikipedia.org/wiki/Rainbow",
+          "https://en.wikipedia.org/wiki/Jupiter",
+          "https://en.wikipedia.org/wiki/Isaac_Newton",
+          "https://en.wikipedia.org/wiki/Saturn",
+          "https://en.wikipedia.org/wiki/Aurora"
+        ],
+        "matched_urls": [
+          "https://science.nasa.gov/moon/moon-phases/"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 11.714666999999984,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 11,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 648.7602919999995,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 402",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q11",
+      "category": "how_to_technical",
+      "query": "How do I create a Python virtual environment with venv?",
+      "answers": [
+        "https://docs.python.org/3/library/venv.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.8551670000000187,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 604.7827499999992,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q12",
+      "category": "how_to_technical",
+      "query": "How do I parse JSON into a Python dictionary?",
+      "answers": [
+        "https://docs.python.org/3/library/json.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.5696669999999968,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 560.5487500000006,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q13",
+      "category": "how_to_technical",
+      "query": "How do I read a text file into a string in Rust?",
+      "answers": [
+        "https://doc.rust-lang.org/std/fs/fn.read_to_string.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://doc.rust-lang.org/book/ch03-02-data-types.html",
+          "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html",
+          "https://blog.rust-lang.org/2026/09/07/rust-debugging-survey-2026-results/"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 3.6988329999999845,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 3,
+        "error": null,
+        "top10_urls_in_sample": 3
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 536.6208750000005,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q14",
+      "category": "how_to_technical",
+      "query": "How do I handle recoverable errors using Result in Rust?",
+      "answers": [
+        "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.7270829999999904,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 536.5637920000008,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q15",
+      "category": "how_to_technical",
+      "query": "How do I make an HTTP request with the JavaScript Fetch API?",
+      "answers": [
+        "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://fi.wordpress.org/plugins/wp-optimize/"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 3.6663329999999936,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 3,
+        "error": null,
+        "top10_urls_in_sample": 1
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 532.7278330000009,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q16",
+      "category": "how_to_technical",
+      "query": "How do I parse command line arguments in Python using argparse?",
+      "answers": [
+        "https://docs.python.org/3/library/argparse.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://docs.python.org/3/library/argparse.html",
+          "https://docs.python.org/3/library/collections.html"
+        ],
+        "matched_urls": [
+          "https://docs.python.org/3/library/argparse.html"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 3.931165999999986,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 3,
+        "error": null,
+        "top10_urls_in_sample": 2
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 481.08037499999944,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q17",
+      "category": "how_to_technical",
+      "query": "How do I run a subprocess and capture its output in Python?",
+      "answers": [
+        "https://docs.python.org/3/library/subprocess.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://docs.python.org/3/library/os.html",
+          "https://docs.python.org/3/library/socket.html"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 6.221499999999991,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 5,
+        "error": null,
+        "top10_urls_in_sample": 2
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 477.9495829999991,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q18",
+      "category": "how_to_technical",
+      "query": "How do I undo the last Git commit while keeping the changes?",
+      "answers": [
+        "https://git-scm.com/docs/git-reset"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://git-scm.com/docs/git-reset"
+        ],
+        "matched_urls": [
+          "https://git-scm.com/docs/git-reset"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 3.04637499999999,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 2,
+        "error": null,
+        "top10_urls_in_sample": 1
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 492.3982079999991,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q19",
+      "category": "how_to_technical",
+      "query": "How do I create a PostgreSQL database table?",
+      "answers": [
+        "https://www.postgresql.org/docs/current/tutorial-table.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://docs.python.org/3/library/sqlite3.html",
+          "https://listcomp.com/python/2017/10/05/digest-of-essential-sqlalchemy",
+          "https://www.connectionstrings.com/mysql_ms-project/questions/page-2/"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 3.7245409999999977,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 3,
+        "error": null,
+        "top10_urls_in_sample": 3
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 551.3273329999997,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q20",
+      "category": "how_to_technical",
+      "query": "How do I publish a Rust crate to crates.io?",
+      "answers": [
+        "https://doc.rust-lang.org/cargo/reference/publishing.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.7312090000000113,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 504.8439580000004,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q21",
+      "category": "product_commerce",
+      "query": "Find a Singapore supplier page for bulk vanilla pods in different grades.",
+      "answers": [
+        "https://naturalvanilla.sg/vanilla-pods/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 2.161833000000002,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 498.56491699999947,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q22",
+      "category": "product_commerce",
+      "query": "Find the official Framework Laptop 13 product page.",
+      "answers": [
+        "https://frame.work/laptop13"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://desigheek.com/boost-your-business/"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 12.81770800000001,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 12,
+        "error": null,
+        "top10_urls_in_sample": 1
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 493.75087499999995,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q23",
+      "category": "product_commerce",
+      "query": "Find the Apple MacBook Air technical specifications.",
+      "answers": [
+        "https://www.apple.com/macbook-air/specs/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://www.apple.com/macbook-air/specs/"
+        ],
+        "matched_urls": [
+          "https://www.apple.com/macbook-air/specs/"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 2.541500000000002,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 2,
+        "error": null,
+        "top10_urls_in_sample": 1
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 538.6326670000017,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q24",
+      "category": "product_commerce",
+      "query": "Find the official Nintendo Switch OLED model product page.",
+      "answers": [
+        "https://www.nintendo.com/us/gaming-systems/switch/oled-model/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.7368749999999988,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 535.4492920000009,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q25",
+      "category": "product_commerce",
+      "query": "Find the Felix First Class Wood chef knife with a 21 cm blade and olive handle.",
+      "answers": [
+        "https://pizzini.at/felix-first-class-wood-chef-knife-21-cm-olive-aktion.html?language=en"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 2.415625000000005,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 489.8993330000003,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q26",
+      "category": "product_commerce",
+      "query": "Find a product page for Magnesia Red pomegranate drink in a 1.5 litre bottle.",
+      "answers": [
+        "https://www.halusky.co.uk/magnesia-red-pommegranate-1-5l.html"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 2.3327089999999884,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 551.6497919999993,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q27",
+      "category": "product_commerce",
+      "query": "Find a distributor product page for the ABB S203U-C15.",
+      "answers": [
+        "https://proax.ca/en/product/21451/abbs203uc15"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.7757499999999926,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 648.5842500000008,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q28",
+      "category": "product_commerce",
+      "query": "Find the official Prusa MK4S 3D printer product page.",
+      "answers": [
+        "https://www.prusa3d.com/product/original-prusa-mk4s-3d-printer-5/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://www.prusa3d.com/product/original-prusa-mk4s-3d-printer-5/"
+        ],
+        "matched_urls": [
+          "https://www.prusa3d.com/product/original-prusa-mk4s-3d-printer-5/"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 2.7625840000000124,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 2,
+        "error": null,
+        "top10_urls_in_sample": 1
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 600.8838329999993,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q29",
+      "category": "product_commerce",
+      "query": "Find the official Arduino Uno Rev3 board specifications.",
+      "answers": [
+        "https://store.arduino.cc/products/arduino-uno-rev3"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.7088749999999986,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 583.6565829999997,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q30",
+      "category": "product_commerce",
+      "query": "Find the Black Tourmaline Rough Stone product at Earthbound Trading.",
+      "answers": [
+        "https://www.earthboundtrading.com/black-tourmaline-rough-stone"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.800790999999996,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 557.2274999999997,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q31",
+      "category": "recent_news",
+      "query": "What did the September 2026 Rust debugging survey results say?",
+      "answers": [
+        "https://blog.rust-lang.org/2026/09/07/rust-debugging-survey-2026-results/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.7656250000000207,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 490.2077909999996,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q32",
+      "category": "recent_news",
+      "query": "What did Rust 1.98.1 fix in September 2026?",
+      "answers": [
+        "https://blog.rust-lang.org/2026/09/03/Rust-1.98.1/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Oxygen",
+          "https://en.wikipedia.org/wiki/Eiffel_Tower"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 4.302417000000003,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 3,
+        "error": null,
+        "top10_urls_in_sample": 2
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 549.110541000001,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q33",
+      "category": "recent_news",
+      "query": "What changed in rustup 1.29.1 released in September 2026?",
+      "answers": [
+        "https://blog.rust-lang.org/2026/09/01/Rustup-1.29.1/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 2.0479169999999822,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 1004.8992500000011,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q34",
+      "category": "recent_news",
+      "query": "Who are the first Rust Maintainers in Residence announced in August 2026?",
+      "answers": [
+        "https://blog.rust-lang.org/2026/08/26/announcing-our-first-maintainers-in-residence/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 2.0190839999999763,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 831.7028329999978,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q35",
+      "category": "recent_news",
+      "query": "What changed when Rust enabled the next generation trait solver on nightly in August 2026?",
+      "answers": [
+        "https://blog.rust-lang.org/2026/08/21/enabling-next-solver-on-nightly/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 2.259834000000016,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 549.7301249999999,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q36",
+      "category": "recent_news",
+      "query": "What happened in the August 2026 arrayref supply chain attack?",
+      "answers": [
+        "https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.8112499999999865,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 557.1182089999986,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q37",
+      "category": "recent_news",
+      "query": "What features were stabilised in Rust 1.98.0 in August 2026?",
+      "answers": [
+        "https://blog.rust-lang.org/2026/08/20/Rust-1.98.0/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 2.032999999999979,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 687.1089999999995,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q38",
+      "category": "recent_news",
+      "query": "When does Firefox switch to a two week release cadence in 2026?",
+      "answers": [
+        "https://blog.mozilla.org/sumo/2026/08/19/firefox-new-release-cadence-and-what-to-expect/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.8998749999999953,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 612.6943750000003,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q39",
+      "category": "recent_news",
+      "query": "What did Hubble and Webb discover about distant solar system objects in September 2026?",
+      "answers": [
+        "https://science.nasa.gov/missions/hubble/nasas-hubble-webb-find-far-out-solar-system-objects-remember-past/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Solar_System",
+          "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope",
+          "https://en.wikipedia.org/wiki/Neptune",
+          "https://en.wikipedia.org/wiki/Uranus"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 8.127292000000008,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 7,
+        "error": null,
+        "top10_urls_in_sample": 4
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 719.0890420000003,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q40",
+      "category": "recent_news",
+      "query": "What did Hubble find around Saturn south pole in September 2026?",
+      "answers": [
+        "https://science.nasa.gov/missions/hubble/nasas-hubble-tracks-new-decagon-encircling-saturns-south-pole/"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://science.nasa.gov/saturn/facts/",
+          "https://en.wikipedia.org/wiki/Saturn",
+          "https://science.nasa.gov/solar-system/",
+          "https://en.wikipedia.org/wiki/Neptune",
+          "https://en.wikipedia.org/wiki/Uranus",
+          "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope",
+          "https://en.wikipedia.org/wiki/Mars",
+          "https://en.wikipedia.org/wiki/Sun",
+          "https://science.nasa.gov/mars/facts/"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 10.477417000000017,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 9,
+        "error": null,
+        "top10_urls_in_sample": 9
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 709.4526250000008,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q41",
+      "category": "image_bearing",
+      "query": "Find a page with a photograph of the Eiffel Tower.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Eiffel_Tower"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Eiffel_Tower",
+          "https://en.wikipedia.org/wiki/Paris",
+          "https://en.wikipedia.org/wiki/Marie_Curie"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Eiffel_Tower"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 5.514083000000003,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 4,
+        "error": null,
+        "top10_urls_in_sample": 3
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 667.3530419999985,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q42",
+      "category": "image_bearing",
+      "query": "Find a page showing the Mona Lisa painting.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Mona_Lisa"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Mona_Lisa",
+          "https://en.wikipedia.org/wiki/Paris"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Mona_Lisa"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 4.413582999999999,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 3,
+        "error": null,
+        "top10_urls_in_sample": 2
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 699.0662500000013,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q43",
+      "category": "image_bearing",
+      "query": "Find a page with images of the Pillars of Creation.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Pillars_of_Creation"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Pillars_of_Creation",
+          "https://en.wikipedia.org/wiki/Eiffel_Tower",
+          "https://en.wikipedia.org/wiki/Mona_Lisa",
+          "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope",
+          "https://en.wikipedia.org/wiki/Stonehenge",
+          "https://www.seoservicesit.com/best-website-designing-company-townsville",
+          "https://magazconstruction.com/2017/01/15/wordpress-video-post/"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Pillars_of_Creation"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 9.04012500000001,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 8,
+        "error": null,
+        "top10_urls_in_sample": 7
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 669.259083,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q44",
+      "category": "image_bearing",
+      "query": "Find photographs of the Grand Canyon on an informative page.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Grand_Canyon"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Grand_Canyon",
+          "https://en.wikipedia.org/wiki/Uranus",
+          "https://en.wikipedia.org/wiki/Great_Barrier_Reef",
+          "https://www.drhorton.com/texas/san-antonio/san-antonio/express-the-canyons-at-amhurst/qmis/12103-jasper-stream",
+          "https://www.laspilitas.com/referenc.htm",
+          "https://videowatchdogblog.blogspot.com/2007/01/"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Grand_Canyon"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 7.179250000000026,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 6,
+        "error": null,
+        "top10_urls_in_sample": 6
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 550.8607079999983,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q45",
+      "category": "image_bearing",
+      "query": "Find a page illustrating the Japanese cherry blossom.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Cherry_blossom"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 1.7177090000000117,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 1,
+        "error": null,
+        "top10_urls_in_sample": 0
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 535.131707999998,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q46",
+      "category": "image_bearing",
+      "query": "Find a page with a photograph of a red panda.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Red_panda"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Mount_Everest"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 4.298583999999995,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 3,
+        "error": null,
+        "top10_urls_in_sample": 1
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 535.576791999997,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q47",
+      "category": "image_bearing",
+      "query": "Find a page with pictures of the Sydney Opera House.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Sydney_Opera_House"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Rome",
+          "https://en.wikipedia.org/wiki/Eiffel_Tower",
+          "https://en.wikipedia.org/wiki/Paris",
+          "https://en.wikipedia.org/wiki/Isaac_Newton",
+          "https://en.wikipedia.org/wiki/London",
+          "https://en.wikipedia.org/wiki/Ada_Lovelace",
+          "https://en.wikipedia.org/wiki/Tokyo",
+          "https://magazconstruction.com/2017/01/15/wordpress-video-post/"
+        ],
+        "matched_urls": [],
+        "recall_at_10": 0.0,
+        "latency_ms": 10.90920900000003,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 10,
+        "error": null,
+        "top10_urls_in_sample": 8
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 555.6373329999999,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q48",
+      "category": "image_bearing",
+      "query": "Find a page showing the Rosetta Stone.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Rosetta_Stone"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Rosetta_Stone",
+          "https://en.wikipedia.org/wiki/Mona_Lisa"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Rosetta_Stone"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 3.660624999999973,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 3,
+        "error": null,
+        "top10_urls_in_sample": 2
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 513.9204999999976,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q49",
+      "category": "image_bearing",
+      "query": "Find a page with a picture of the aurora borealis.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/Aurora"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://en.wikipedia.org/wiki/Aurora",
+          "https://en.wikipedia.org/wiki/Mars"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/Aurora"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 4.739166999999989,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 4,
+        "error": null,
+        "top10_urls_in_sample": 2
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 556.3604169999969,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    },
+    {
+      "id": "q50",
+      "category": "image_bearing",
+      "query": "Find a page with images of the James Webb Space Telescope.",
+      "answers": [
+        "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope"
+      ],
+      "stract": {
+        "success": true,
+        "top10_urls": [
+          "https://science.nasa.gov/missions/hubble/nasas-hubble-webb-find-far-out-solar-system-objects-remember-past/",
+          "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope",
+          "https://science.nasa.gov/missions/hubble/nasas-hubble-tracks-new-decagon-encircling-saturns-south-pole/",
+          "https://en.wikipedia.org/wiki/Pillars_of_Creation",
+          "https://en.wikipedia.org/wiki/Neptune",
+          "https://science.nasa.gov/universe/",
+          "https://en.wikipedia.org/wiki/Uranus",
+          "https://science.nasa.gov/moon/moon-phases/",
+          "https://science.nasa.gov/saturn/facts/",
+          "https://science.nasa.gov/solar-system/"
+        ],
+        "matched_urls": [
+          "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope"
+        ],
+        "recall_at_10": 1.0,
+        "latency_ms": 8.009375000000041,
+        "failed_attempt_ms": null,
+        "server_duration_ms": 7,
+        "error": null,
+        "top10_urls_in_sample": 10
+      },
+      "firecrawl": {
+        "success": false,
+        "top10_urls": [],
+        "matched_urls": [],
+        "recall_at_10": null,
+        "latency_ms": null,
+        "failed_attempt_ms": 544.9839169999997,
+        "server_duration_ms": null,
+        "error": "Error: Request failed with status code 429",
+        "top10_urls_in_sample": 0
+      }
+    }
+  ],
+  "firecrawl_errors": {
+    "Error: Request failed with status code 402": 10,
+    "Error: Request failed with status code 429": 40
+  }
+}

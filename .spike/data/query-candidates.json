@@ -1,0 +1,405 @@
+{
+  "labelling_rule": "Manual relevance judgement from captured page content; exact canonical page URL, no blanket domains; only confirmed indexed pages enter the answer set. Frozen before retrieval runs.",
+  "queries": [
+    {
+      "id": "q01",
+      "category": "factual",
+      "query": "What is the capital city of Australia?",
+      "candidate_url": "https://en.wikipedia.org/wiki/Canberra",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q02",
+      "category": "factual",
+      "query": "How long does Mercury take to orbit the Sun?",
+      "candidate_url": "https://science.nasa.gov/mercury/facts/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q03",
+      "category": "factual",
+      "query": "Who developed the theory of general relativity?",
+      "candidate_url": "https://en.wikipedia.org/wiki/Albert_Einstein",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q04",
+      "category": "factual",
+      "query": "When was the United Nations founded?",
+      "candidate_url": "https://www.un.org/en/about-us/history-of-the-un",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q05",
+      "category": "factual",
+      "query": "What is the SI definition of a metre?",
+      "candidate_url": "https://www.bipm.org/en/measurement-units/si-base-units",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q06",
+      "category": "factual",
+      "query": "How many chambers does a human heart have?",
+      "candidate_url": "https://en.wikipedia.org/wiki/Heart",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q07",
+      "category": "factual",
+      "query": "What is the tallest mountain above sea level?",
+      "candidate_url": "https://en.wikipedia.org/wiki/Mount_Everest",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q08",
+      "category": "factual",
+      "query": "Why is Venus hotter than Mercury?",
+      "candidate_url": "https://science.nasa.gov/venus/facts/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q09",
+      "category": "factual",
+      "query": "What is the chemical symbol for gold?",
+      "candidate_url": "https://en.wikipedia.org/wiki/Gold",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q10",
+      "category": "factual",
+      "query": "What causes the phases of the Moon?",
+      "candidate_url": "https://science.nasa.gov/moon/moon-phases/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q11",
+      "category": "how_to_technical",
+      "query": "How do I create a Python virtual environment with venv?",
+      "candidate_url": "https://docs.python.org/3/library/venv.html",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q12",
+      "category": "how_to_technical",
+      "query": "How do I parse JSON into a Python dictionary?",
+      "candidate_url": "https://docs.python.org/3/library/json.html",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q13",
+      "category": "how_to_technical",
+      "query": "How do I read a text file into a string in Rust?",
+      "candidate_url": "https://doc.rust-lang.org/std/fs/fn.read_to_string.html",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q14",
+      "category": "how_to_technical",
+      "query": "How do I handle recoverable errors using Result in Rust?",
+      "candidate_url": "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q15",
+      "category": "how_to_technical",
+      "query": "How do I make an HTTP request with the JavaScript Fetch API?",
+      "candidate_url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q16",
+      "category": "how_to_technical",
+      "query": "How do I define a CSS grid layout?",
+      "candidate_url": "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Basic_concepts_of_grid_layout",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q17",
+      "category": "how_to_technical",
+      "query": "How do I run a subprocess and capture its output in Python?",
+      "candidate_url": "https://docs.python.org/3/library/subprocess.html",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q18",
+      "category": "how_to_technical",
+      "query": "How do I undo the last Git commit while keeping the changes?",
+      "candidate_url": "https://git-scm.com/docs/git-reset",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q19",
+      "category": "how_to_technical",
+      "query": "How do I create a PostgreSQL database table?",
+      "candidate_url": "https://www.postgresql.org/docs/current/tutorial-table.html",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q20",
+      "category": "how_to_technical",
+      "query": "How do I publish a Rust crate to crates.io?",
+      "candidate_url": "https://doc.rust-lang.org/cargo/reference/publishing.html",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q21",
+      "category": "product_commerce",
+      "query": "Find the official Raspberry Pi 5 product specifications.",
+      "candidate_url": "https://www.raspberrypi.com/products/raspberry-pi-5/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q22",
+      "category": "product_commerce",
+      "query": "Find the official Framework Laptop 13 product page.",
+      "candidate_url": "https://frame.work/laptop13",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q23",
+      "category": "product_commerce",
+      "query": "Find the Apple MacBook Air technical specifications.",
+      "candidate_url": "https://www.apple.com/macbook-air/specs/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q24",
+      "category": "product_commerce",
+      "query": "Find the official Nintendo Switch OLED model product page.",
+      "candidate_url": "https://www.nintendo.com/us/gaming-systems/switch/oled-model/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q25",
+      "category": "product_commerce",
+      "query": "Find the official Steam Deck OLED product page.",
+      "candidate_url": "https://www.steamdeck.com/en/oled",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q26",
+      "category": "product_commerce",
+      "query": "Find the official Sony WH-1000XM5 wireless headphones page.",
+      "candidate_url": "https://electronics.sony.com/audio/headphones/headband/p/wh1000xm5-b",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q27",
+      "category": "product_commerce",
+      "query": "Find the Logitech MX Master 3S mouse product page.",
+      "candidate_url": "https://www.logitech.com/en-us/products/mice/mx-master-3s.910-006556.html",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q28",
+      "category": "product_commerce",
+      "query": "Find the official Prusa MK4S 3D printer product page.",
+      "candidate_url": "https://www.prusa3d.com/product/original-prusa-mk4s-3d-printer-5/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q29",
+      "category": "product_commerce",
+      "query": "Find the official Arduino Uno Rev3 board specifications.",
+      "candidate_url": "https://store.arduino.cc/products/arduino-uno-rev3",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q30",
+      "category": "product_commerce",
+      "query": "Find the official Fairphone 5 product page.",
+      "candidate_url": "https://www.fairphone.com/en/fairphone-5/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q31",
+      "category": "recent_news",
+      "query": "What did the September 2026 Rust debugging survey results say?",
+      "candidate_url": "https://blog.rust-lang.org/2026/09/07/rust-debugging-survey-2026-results/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q32",
+      "category": "recent_news",
+      "query": "What did Rust 1.98.1 fix in September 2026?",
+      "candidate_url": "https://blog.rust-lang.org/2026/09/03/Rust-1.98.1/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q33",
+      "category": "recent_news",
+      "query": "What changed in rustup 1.29.1 released in September 2026?",
+      "candidate_url": "https://blog.rust-lang.org/2026/09/01/Rustup-1.29.1/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q34",
+      "category": "recent_news",
+      "query": "Who are the first Rust Maintainers in Residence announced in August 2026?",
+      "candidate_url": "https://blog.rust-lang.org/2026/08/26/announcing-our-first-maintainers-in-residence/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q35",
+      "category": "recent_news",
+      "query": "What changed when Rust enabled the next generation trait solver on nightly in August 2026?",
+      "candidate_url": "https://blog.rust-lang.org/2026/08/21/enabling-next-solver-on-nightly/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q36",
+      "category": "recent_news",
+      "query": "What happened in the August 2026 arrayref supply chain attack?",
+      "candidate_url": "https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q37",
+      "category": "recent_news",
+      "query": "What features were stabilised in Rust 1.98.0 in August 2026?",
+      "candidate_url": "https://blog.rust-lang.org/2026/08/20/Rust-1.98.0/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q38",
+      "category": "recent_news",
+      "query": "When does Firefox switch to a two week release cadence in 2026?",
+      "candidate_url": "https://blog.mozilla.org/sumo/2026/08/19/firefox-new-release-cadence-and-what-to-expect/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q39",
+      "category": "recent_news",
+      "query": "What did Hubble and Webb discover about distant solar system objects in September 2026?",
+      "candidate_url": "https://science.nasa.gov/missions/hubble/nasas-hubble-webb-find-far-out-solar-system-objects-remember-past/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q40",
+      "category": "recent_news",
+      "query": "What did Hubble find around Saturn south pole in September 2026?",
+      "candidate_url": "https://science.nasa.gov/missions/hubble/nasas-hubble-tracks-new-decagon-encircling-saturns-south-pole/",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q41",
+      "category": "image_bearing",
+      "query": "Find a page with a photograph of the Eiffel Tower.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Eiffel_Tower",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q42",
+      "category": "image_bearing",
+      "query": "Find a page showing the Mona Lisa painting.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Mona_Lisa",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q43",
+      "category": "image_bearing",
+      "query": "Find a page with images of the Pillars of Creation.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Pillars_of_Creation",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q44",
+      "category": "image_bearing",
+      "query": "Find photographs of the Grand Canyon on an informative page.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Grand_Canyon",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q45",
+      "category": "image_bearing",
+      "query": "Find a page illustrating the Japanese cherry blossom.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Cherry_blossom",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q46",
+      "category": "image_bearing",
+      "query": "Find a page with a photograph of a red panda.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Red_panda",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q47",
+      "category": "image_bearing",
+      "query": "Find a page with pictures of the Sydney Opera House.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Sydney_Opera_House",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q48",
+      "category": "image_bearing",
+      "query": "Find a page showing the Rosetta Stone.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Rosetta_Stone",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q49",
+      "category": "image_bearing",
+      "query": "Find a page with a picture of the aurora borealis.",
+      "candidate_url": "https://en.wikipedia.org/wiki/Aurora",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    },
+    {
+      "id": "q50",
+      "category": "image_bearing",
+      "query": "Find a page with images of the James Webb Space Telescope.",
+      "candidate_url": "https://en.wikipedia.org/wiki/James_Webb_Space_Telescope",
+      "acceptable_urls": [],
+      "label_status": "pending_crawl_and_index_verification"
+    }
+  ]
+}
