@@ -8,9 +8,18 @@ mod revision;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = std::path::PathBuf::from(
-        std::env::var_os("CARGO_MANIFEST_DIR").ok_or("missing manifest directory")?,
+        std::env::var_os("CARGO_MANIFEST_DIR")
+            .ok_or("missing manifest directory")
+            .map_err(|e| format!("read CARGO_MANIFEST_DIR: {e}"))?,
     );
-    let root = manifest.join("../..").canonicalize()?;
+    let root_path = manifest.join("../..");
+    let root = root_path.canonicalize().map_err(|e| {
+        format!(
+            "canonicalize manifest root {}: {e} ({:?})",
+            root_path.display(),
+            e.kind()
+        )
+    })?;
     let environment = std::env::var("SOURCE_REVISION").ok();
     let selected = revision::resolve(&root, environment.as_deref());
     revision::emit_watches(&root);
@@ -22,7 +31,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if selected.source == "unknown" {
         println!("cargo:warning=Source revision unknown; this build is not release-ready");
     }
-    let template = std::fs::read_to_string(root.join("SOURCE_OFFER.md"))?;
+    let template_path = root.join("SOURCE_OFFER.md");
+    let template = std::fs::read_to_string(&template_path).map_err(|e| {
+        format!(
+            "read source-offer template {}: {e} ({:?})",
+            template_path.display(),
+            e.kind()
+        )
+    })?;
     let repository = env!("CARGO_PKG_REPOSITORY");
     let source_url = if selected.source == "unknown" {
         repository.to_owned()
@@ -42,10 +58,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    let out =
-        std::path::PathBuf::from(std::env::var_os("OUT_DIR").ok_or("missing output directory")?);
+    let out = std::path::PathBuf::from(
+        std::env::var_os("OUT_DIR")
+            .ok_or("missing output directory")
+            .map_err(|e| format!("read OUT_DIR for {}: {e}", root.display()))?,
+    );
     let temporary = out.join("SOURCE_OFFER.md.tmp");
-    std::fs::write(&temporary, rendered)?;
-    std::fs::rename(temporary, out.join("SOURCE_OFFER.md"))?;
+    std::fs::write(&temporary, rendered).map_err(|e| {
+        format!(
+            "write source offer {}: {e} ({:?})",
+            temporary.display(),
+            e.kind()
+        )
+    })?;
+    let offer = out.join("SOURCE_OFFER.md");
+    std::fs::rename(&temporary, &offer).map_err(|e| {
+        format!(
+            "rename source offer {} to {}: {e} ({:?})",
+            temporary.display(),
+            offer.display(),
+            e.kind()
+        )
+    })?;
     Ok(())
 }

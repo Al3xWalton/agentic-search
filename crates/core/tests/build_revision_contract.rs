@@ -45,8 +45,10 @@ impl Fixture {
     fn clone_repo(&self) -> PathBuf {
         let root = self.0.join("repository");
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        // Git 2.55 can flip shared core.sparseCheckout across worktrees; a full local
+        // clone avoids that shared state and costs under a second for this 50 MB fixture.
         let out = Command::new("git")
-            .args(["clone", "--no-hardlinks", "--local", "--no-checkout"])
+            .args(["clone", "--no-hardlinks", "--local"])
             .arg(source)
             .arg(&root)
             .output()
@@ -56,7 +58,6 @@ impl Fixture {
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        git(&root, &["sparse-checkout", "set", "crates/core"]);
         git(&root, &["checkout", "--detach", "HEAD"]);
         prepare_checked_inputs(&root);
         root
@@ -93,9 +94,6 @@ fn add_worktree(root: &Path, worktree: &Path) {
             "HEAD",
         ],
     );
-    // Sparse-checkout inheritance differs between Git 2.50 and 2.55.
-    git(worktree, &["sparse-checkout", "disable"]);
-    git(worktree, &["checkout", "--detach", "HEAD"]);
     assert!(
         worktree.join("crates/core/Cargo.toml").is_file(),
         "worktree fixture must contain crates/core"
@@ -359,7 +357,6 @@ fn symlinked_git_is_unknown() {
 fn foreign_history_is_unknown() {
     let fixture = Fixture::new();
     let root = fixture.clone_repo();
-    git(&root, &["sparse-checkout", "disable"]);
     let initial = git(&root, &["rev-list", "--max-parents=0", "HEAD"]);
     let initial = String::from_utf8(initial.stdout).unwrap();
     // Reuse the existing initial commit instead of creating an empty fixture commit.
@@ -568,6 +565,27 @@ fn git_top_level_must_match_root() {
         })
     });
     assert_eq!(selected.revision, "unknown");
+}
+
+#[test]
+fn build_script_reports_missing_template() {
+    let fixture = Fixture::new();
+    let root = fixture.archive();
+    fs::remove_file(root.join("SOURCE_OFFER.md")).unwrap();
+    let binary = compile_build(&fixture);
+    let out = fixture.0.join("out");
+    fs::create_dir(&out).unwrap();
+    let result = Command::new(binary)
+        .env("CARGO_MANIFEST_DIR", root.join("crates/core"))
+        .env("OUT_DIR", out)
+        .env_remove("SOURCE_REVISION")
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    eprintln!("missing-template stderr: {stderr}");
+    assert!(stderr.contains("SOURCE_OFFER.md"), "{stderr}");
+    assert!(stderr.contains("NotFound"), "{stderr}");
 }
 
 #[test]
