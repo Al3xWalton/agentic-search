@@ -45,7 +45,8 @@ where
     I::Item<'a>: LendingIterator,
     Self: 'a,
 {
-    type Item<'b> = <I::Item<'a> as LendingIterator>::Item<'b>
+    type Item<'b>
+        = <I::Item<'a> as LendingIterator>::Item<'b>
     where
         Self: 'b;
 
