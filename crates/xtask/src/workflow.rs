@@ -1,17 +1,32 @@
-//! Lint the repository's indented workflow for unavailable contexts, mutable actions and missing runners.
-//! This line-based guard checks the supported layout; GitHub remains the full YAML and expression parser.
+//! Regression guard for unavailable contexts in workflow/job env, pinned uses, and runs-on presence.
+//! This short, hand-maintained workflow is checked line by line, not as a security control.
+//! Dotted and bracket contexts and same-line flow-map env blocks are checked.
+//! Block scalars, quoted keys, and other exotic YAML forms are out of scope.
+//! GitHub's parser is the authority: rejected workflows fail loudly with zero jobs in the run summary.
+//! A YAML-parser dependency is unnecessary for this deliberately limited authoring guard.
 
 use anyhow::{bail, Context, Result};
 use std::{fs, path::Path};
 
 fn forbidden_context(value: &str, forbidden: &[&str]) -> bool {
     value.split("${{").skip(1).any(|expression| {
+        let expression = expression.split("}}").next().unwrap_or_default();
         expression
-            .split("}}")
-            .next()
-            .unwrap_or_default()
             .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '.')
             .any(|token| forbidden.iter().any(|context| token.starts_with(context)))
+            || forbidden.iter().any(|context| {
+                let name = context.trim_end_matches('.');
+                expression.match_indices(name).any(|(start, _)| {
+                    let boundary = expression[..start]
+                        .chars()
+                        .next_back()
+                        .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '.');
+                    boundary
+                        && expression[start + name.len()..]
+                            .trim_start()
+                            .starts_with('[')
+                })
+            })
     })
 }
 
@@ -50,6 +65,7 @@ pub fn workflow_lint(path: &Path) -> Result<()> {
         let (key, value) = entry.split_once(':').unwrap_or((entry, ""));
         let key = key.trim();
         let value = value.split(" #").next().unwrap_or_default().trim();
+        let flow_map = key == "env" && value.starts_with('{');
         if indent == 0 {
             finish_job(job.take(), &mut errors);
             workflow_env = key == "env";
@@ -70,7 +86,7 @@ pub fn workflow_lint(path: &Path) -> Result<()> {
             }
         }
         if workflow_env
-            && indent > 0
+            && (indent > 0 || flow_map)
             && forbidden_context(
                 text,
                 &[
@@ -88,7 +104,9 @@ pub fn workflow_lint(path: &Path) -> Result<()> {
                 "line {number}: unavailable context in workflow env"
             ));
         }
-        if job_env && indent > 4 && forbidden_context(text, &["runner.", "env.", "steps.", "job."])
+        if job_env
+            && (indent > 4 || flow_map)
+            && forbidden_context(text, &["runner.", "env.", "steps.", "job."])
         {
             errors.push(format!("line {number}: unavailable context in job env"));
         }

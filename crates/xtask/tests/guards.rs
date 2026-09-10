@@ -624,3 +624,302 @@ fn workflow_lint_accepts_current_workflow() {
         assert!(error.contains(diagnostic), "{error}");
     }
 }
+
+fn ci_environment(
+    fixture: &Fixture,
+) -> std::collections::BTreeMap<&'static str, std::ffi::OsString> {
+    fixture.write("env", "BASE=kept\n");
+    fixture.write("path", "existing-bin\n");
+    fs::create_dir_all(fixture.0.join("repository")).unwrap();
+    [
+        ("GITHUB_ENV", fixture.0.join("env").into_os_string()),
+        ("GITHUB_PATH", fixture.0.join("path").into_os_string()),
+        ("RUNNER_TEMP", fixture.0.join("runner").into_os_string()),
+        (
+            "STORY584_SCRATCH",
+            fixture.0.join("scratch").into_os_string(),
+        ),
+        ("STORY584_TOOLS", fixture.0.join("tools").into_os_string()),
+        (
+            "STORY584_ARTIFACT_DIR",
+            fixture.0.join("artifacts").into_os_string(),
+        ),
+    ]
+    .into_iter()
+    .collect()
+}
+
+fn rejects_ci_environment(
+    fixture: &Fixture,
+    environment: &std::collections::BTreeMap<&str, std::ffi::OsString>,
+    name: &str,
+) {
+    let before_env = fs::read(fixture.0.join("env")).unwrap();
+    let before_path = fs::read(fixture.0.join("path")).unwrap();
+    let result = xtask::ci::ci_init_exports(&fixture.0.join("repository"), |key| {
+        environment.get(key).cloned()
+    });
+    assert!(
+        result.is_err(),
+        "ci-init accepted {name}; env={:?}",
+        fs::read_to_string(fixture.0.join("env"))
+    );
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains(name), "{message}");
+    assert!(
+        !message.contains("INJECTED"),
+        "diagnostic echoed rejected bytes"
+    );
+    assert!(
+        !message.bytes().any(|b| b < 0x20 || b == 0x7f),
+        "diagnostic contains control bytes"
+    );
+    assert_eq!(fs::read(fixture.0.join("env")).unwrap(), before_env);
+    assert_eq!(fs::read(fixture.0.join("path")).unwrap(), before_path);
+}
+
+#[test]
+fn ci_init_rejects_control_bytes_in_runner_temp() {
+    use std::os::unix::ffi::OsStringExt;
+    let fixture = Fixture::new();
+    let original = ci_environment(&fixture);
+    for name in [
+        "RUNNER_TEMP",
+        "STORY584_SCRATCH",
+        "STORY584_TOOLS",
+        "STORY584_ARTIFACT_DIR",
+    ] {
+        for byte in std::iter::once(b'\n')
+            .chain((0u8..0x20).filter(|b| *b != b'\n'))
+            .chain([0x7f])
+        {
+            let mut environment = original.clone();
+            if name != "RUNNER_TEMP" {
+                environment.remove("RUNNER_TEMP");
+            }
+            let mut path = fixture.0.join("bad").into_os_string().into_vec();
+            path.push(byte);
+            path.extend_from_slice(b"INJECTED=1");
+            environment.insert(name, std::ffi::OsString::from_vec(path));
+            rejects_ci_environment(&fixture, &environment, name);
+        }
+        for invalid in ["", "relative/INJECTED"] {
+            let mut environment = original.clone();
+            if name != "RUNNER_TEMP" {
+                environment.remove("RUNNER_TEMP");
+            }
+            environment.insert(name, invalid.into());
+            rejects_ci_environment(&fixture, &environment, name);
+        }
+    }
+    let unsafe_destination = fixture.0.join("resolved\nINJECTED=1");
+    fs::create_dir(&unsafe_destination).unwrap();
+    let alias = fixture.0.join("alias");
+    symlink(&unsafe_destination, &alias).unwrap();
+    let mut environment = original.clone();
+    environment.insert("RUNNER_TEMP", alias.into_os_string());
+    rejects_ci_environment(&fixture, &environment, "RUNNER_TEMP");
+    for (suffix, name) in [
+        ("story584-scratch", "STORY584_SCRATCH"),
+        ("story584-tools", "STORY584_TOOLS"),
+        ("story584-artifacts", "STORY584_ARTIFACT_DIR"),
+        ("story584-scratch/wasm-pack-cache", "WASM_PACK_CACHE"),
+        ("story584-tools/bin", "STORY584_TOOLS/bin"),
+    ] {
+        let path = fixture.0.join("runner").join(suffix);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        symlink(&unsafe_destination, &path).unwrap();
+        rejects_ci_environment(&fixture, &original, name);
+        fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn ci_init_rejects_command_files_inside_repository() {
+    use std::os::unix::ffi::OsStringExt;
+    let fixture = Fixture::new();
+    let original = ci_environment(&fixture);
+    fixture.write("repository/command", "owned fixture bytes\n");
+    let inside = fixture.0.join("repository/command");
+    let alias = fixture.0.join("command-alias");
+    symlink(&inside, &alias).unwrap();
+    for name in ["GITHUB_ENV", "GITHUB_PATH"] {
+        for path in [&inside, &alias, Path::new("relative"), Path::new("")] {
+            let mut environment = original.clone();
+            environment.insert(name, path.as_os_str().to_owned());
+            rejects_ci_environment(&fixture, &environment, name);
+            assert_eq!(fs::read(&inside).unwrap(), b"owned fixture bytes\n");
+        }
+        for byte in (0u8..0x20).chain([0x7f]) {
+            let mut environment = original.clone();
+            let mut path = fixture.0.join("command").into_os_string().into_vec();
+            path.push(byte);
+            path.extend_from_slice(b"INJECTED=1");
+            environment.insert(name, std::ffi::OsString::from_vec(path));
+            rejects_ci_environment(&fixture, &environment, name);
+        }
+    }
+}
+
+#[test]
+fn workflow_lint_rejects_bracket_context_syntax() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("ci.yaml");
+    let source = include_str!("fixtures/workflow/bracket-context.yaml");
+    for context in [
+        "runner", "env", "steps", "job", "matrix", "strategy", "needs",
+    ] {
+        for lookup in ["['temp']", " ['temp']", " [\"temp\"]", "\t['temp']"] {
+            fixture.write(
+                "ci.yaml",
+                source.replace("runner ['temp']", &format!("{context}{lookup}")),
+            );
+            let error = xtask::workflow::workflow_lint(&path)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("line 3: unavailable context in workflow env"),
+                "{error}"
+            );
+        }
+    }
+    for context in ["runner", "env", "steps", "job"] {
+        fixture.write("ci.yaml", format!("jobs:\n  linux:\n    runs-on: ubuntu-latest\n    env:\n      BAD: ${{{{ {context} ['temp'] }}}}\n"));
+        let error = xtask::workflow::workflow_lint(&path)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("line 5: unavailable context in job env"),
+            "{error}"
+        );
+    }
+    fixture.write(
+        "ci.yaml",
+        source.replace("runner ['temp']", "github.event.runner['temp']"),
+    );
+    accepts(xtask::workflow::workflow_lint(&path));
+    fixture.write(
+        "ci.yaml",
+        include_str!("fixtures/workflow/valid.yaml").replace("runner.temp", "runner ['temp']"),
+    );
+    accepts(xtask::workflow::workflow_lint(&path));
+}
+
+#[test]
+fn workflow_lint_rejects_flow_map_env() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("ci.yaml");
+    let source = include_str!("fixtures/workflow/flow-map-env.yaml");
+    for lookup in ["runner.temp", "runner ['temp']"] {
+        fixture.write("ci.yaml", source.replace("runner.temp", lookup));
+        let error = xtask::workflow::workflow_lint(&path)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("line 2: unavailable context in workflow env"),
+            "{error}"
+        );
+        fixture.write("ci.yaml", format!("jobs:\n  linux:\n    runs-on: ubuntu-latest\n    env: {{ GOOD: literal, BAD: \"${{{{ {lookup} }}}}\" }}\n"));
+        let error = xtask::workflow::workflow_lint(&path)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("line 4: unavailable context in job env"),
+            "{error}"
+        );
+    }
+    fixture.write("ci.yaml", source.replace("runner.temp", "github.ref"));
+    accepts(xtask::workflow::workflow_lint(&path));
+    fixture.write("ci.yaml", "jobs:\n  linux:\n    runs-on: ubuntu-latest\n    env: { GOOD: '${{ matrix.name }}' }\n    steps:\n      - env: { ALLOWED: '${{ runner.temp }}' }\n        run: cargo xtask workflow-lint\n");
+    accepts(xtask::workflow::workflow_lint(&path));
+}
+
+#[test]
+fn workflow_lint_documents_its_limits() {
+    let header = include_str!("../src/workflow.rs")
+        .lines()
+        .take_while(|line| line.starts_with("//!"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_ascii_lowercase();
+    for phrase in [
+        "block scalars",
+        "quoted keys",
+        "out of scope",
+        "github's parser",
+        "zero jobs",
+        "not as a security control",
+    ] {
+        assert!(
+            header.contains(phrase),
+            "missing workflow-lint contract: {phrase}"
+        );
+    }
+}
+
+#[test]
+fn ci_init_rejects_dangling_symlink_into_repository() {
+    let fixture = Fixture::new();
+    let root = fixture.0.join("repository");
+    let clone = Command::new("git")
+        .args(["clone", "--no-hardlinks", "--local"])
+        .arg(xtask::repository_root())
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(clone.status.success(), "{clone:?}");
+    let mut environment = ci_environment(&fixture);
+    let target = root.join("not-created/runner");
+    let alias = fixture.0.join("dangling-runner");
+    symlink(&target, &alias).unwrap();
+    assert!(!alias.exists());
+    assert!(fs::symlink_metadata(&alias)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    environment.insert("RUNNER_TEMP", alias.into_os_string());
+    let result = xtask::ci::ci_init_exports(&root, |name| environment.get(name).cloned());
+    eprintln!(
+        "dangling runner result: {result:?}; in-tree-created={}",
+        root.join("not-created").exists()
+    );
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(error.contains("RUNNER_TEMP"), "{error}");
+    assert!(!root.join("not-created").exists());
+    assert_eq!(fs::read(fixture.0.join("env")).unwrap(), b"BASE=kept\n");
+    assert_eq!(fs::read(fixture.0.join("path")).unwrap(), b"existing-bin\n");
+    let status = Command::new("git")
+        .current_dir(&root)
+        .args(["status", "--porcelain"])
+        .output()
+        .unwrap();
+    assert!(
+        status.status.success() && status.stdout.is_empty(),
+        "{status:?}"
+    );
+}
+
+#[test]
+fn ci_init_rejects_dot_dot_in_runner_temp() {
+    let fixture = Fixture::new();
+    let mut environment = ci_environment(&fixture);
+    let root = fixture.0.join("repository");
+    let outside = fixture.0.join("outside");
+    fs::create_dir(&outside).unwrap();
+    for suffix in ["missing/../../repository/created", "./created"] {
+        environment.insert("RUNNER_TEMP", outside.join(suffix).into_os_string());
+        let result = xtask::ci::ci_init_exports(&root, |name| environment.get(name).cloned());
+        eprintln!(
+            "runner components {suffix:?}: {result:?}; outside-entries={}, repository-entries={}",
+            fs::read_dir(&outside).unwrap().count(),
+            fs::read_dir(&root).unwrap().count()
+        );
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains("RUNNER_TEMP"), "{error}");
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
+        assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 4);
+        assert_eq!(fs::read(fixture.0.join("env")).unwrap(), b"BASE=kept\n");
+        assert_eq!(fs::read(fixture.0.join("path")).unwrap(), b"existing-bin\n");
+    }
+}

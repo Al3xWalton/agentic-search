@@ -1,11 +1,12 @@
 //! Execute CI steps serially and keep runner setup out of shell entrypoints.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::{
     env,
+    ffi::OsString,
     fs::{self, OpenOptions},
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -192,32 +193,68 @@ pub fn ci_all() -> Result<()> {
     crate::artifacts::secrets(None, None)
 }
 
-fn append_env(name: &str, value: &Path) -> Result<()> {
-    let file = env::var_os("GITHUB_ENV").context("ci-init: missing GITHUB_ENV")?;
-    writeln!(
-        OpenOptions::new().append(true).open(file)?,
-        "{name}={}",
-        value.display()
-    )?;
+fn validate_export(name: &str, value: &Path) -> Result<()> {
+    let bytes = value.as_os_str().as_encoded_bytes();
+    // A newline in a command-file value injects variables into later steps.
+    if bytes.iter().any(|byte| *byte < 0x20 || *byte == 0x7f) {
+        bail!("ci-init: {name} contains control bytes");
+    }
+    if bytes.is_empty() || !value.is_absolute() {
+        bail!("ci-init: {name} must be a non-empty absolute path");
+    }
     Ok(())
 }
 
-/// Initialize hosted runner directories and toolchain with only a Cargo call in workflow shell.
-pub fn ci_init(no_toolchain: bool) -> Result<()> {
+/// an exported path is accepted only if (1) it is absolute; (2) after the root every
+/// `std::path::Component` is `Normal` — any `CurDir`, `ParentDir`, `Prefix` or `RootDir` after
+/// the first is rejected before anything else is examined; (3) walking from the path upward, the
+/// nearest **existing** ancestor canonicalises to a directory that is neither the repository root
+/// nor inside it; (4) every existing component from that ancestor down to the path is not a
+/// symlink (`symlink_metadata`); (5) after `create_dir_all`, the created directory canonicalises
+/// to a location satisfying (3). Because (2) forbids `..` and (4) forbids symlinks among existing
+/// components, creating the missing tail below a verified-outside ancestor cannot enter the
+/// repository. **Out of scope, stated in the doc:** a symlink inserted into the external ancestor
+/// between the check and the creation — whoever can do that owns the runner's temp directory and
+/// therefore the runner.
+fn checked_external(name: &str, value: &Path, root: &Path) -> Result<PathBuf> {
+    validate_export(name, value)?;
+    let path = crate::external_path(value, root)
+        .map_err(|_| anyhow::anyhow!("ci-init: {name} must point outside the repository"))?;
+    validate_export(name, &path)?;
+    Ok(path)
+}
+
+fn checked_created(name: &str, value: &Path, root: &Path) -> Result<PathBuf> {
+    let created = value
+        .canonicalize()
+        .map_err(|_| anyhow::anyhow!("ci-init: cannot canonicalize {name} after creation"))?;
+    checked_external(name, &created, root)
+}
+
+/// Initialize directory exports with explicit environment inputs for isolated command-file fixtures.
+pub fn ci_init_exports(root: &Path, environment: impl Fn(&str) -> Option<OsString>) -> Result<()> {
+    let required = |name| environment(name).with_context(|| format!("ci-init: missing {name}"));
+    let command_file = |name| -> Result<PathBuf> {
+        let value = required(name)?;
+        checked_external(name, Path::new(&value), root)
+    };
+    let env_file = command_file("GITHUB_ENV")?;
+    let path_file = command_file("GITHUB_PATH")?;
     // Workflow/job env has no runner context; derive paths after the step starts.
     let names = [
         ("STORY584_SCRATCH", "story584-scratch"),
         ("STORY584_TOOLS", "story584-tools"),
         ("STORY584_ARTIFACT_DIR", "story584-artifacts"),
     ];
-    let directories = if let Some(runner_temp) = env::var_os("RUNNER_TEMP") {
-        let runner_temp = crate::external_path(Path::new(&runner_temp), &crate::repository_root())?;
+    let mut directories = if let Some(runner_temp) = environment("RUNNER_TEMP") {
+        let runner_temp = checked_external("RUNNER_TEMP", Path::new(&runner_temp), root)?;
         names.map(|(_, suffix)| runner_temp.join(suffix))
     } else {
         let directory = |name| {
-            crate::external_env(name).context(
+            let path = required(name).context(
                 "ci-init: RUNNER_TEMP or all STORY584_SCRATCH/STORY584_TOOLS/STORY584_ARTIFACT_DIR must be set",
-            )
+            )?;
+            checked_external(name, Path::new(&path), root)
         };
         [
             directory(names[0].0)?,
@@ -225,25 +262,52 @@ pub fn ci_init(no_toolchain: bool) -> Result<()> {
             directory(names[2].0)?,
         ]
     };
-    for ((name, _), directory) in names.iter().zip(&directories) {
-        fs::create_dir_all(directory)?;
-        append_env(name, directory)?;
+    for ((name, _), directory) in names.iter().zip(&mut directories) {
+        *directory = checked_external(name, directory, root)?;
     }
-    let cache = directories[0].join("wasm-pack-cache");
-    fs::create_dir_all(&cache)?;
-    append_env("WASM_PACK_CACHE", &cache)?;
-    append_env(
-        "CARGO_TARGET_DIR",
-        &crate::scratch_directory_in(&directories[0], "target")?,
+    let mut cache = checked_external(
+        "WASM_PACK_CACHE",
+        &directories[0].join("wasm-pack-cache"),
+        root,
     )?;
-    let tools_bin = directories[1].join("bin");
-    fs::create_dir_all(&tools_bin)?;
-    let path_file = env::var_os("GITHUB_PATH").context("ci-init: missing GITHUB_PATH")?;
-    writeln!(
-        OpenOptions::new().append(true).open(path_file)?,
-        "{}",
-        tools_bin.display()
-    )?;
+    let mut tools_bin = checked_external("STORY584_TOOLS/bin", &directories[1].join("bin"), root)?;
+    for (name, directory) in names
+        .iter()
+        .zip(&mut directories)
+        .map(|((name, _), path)| (*name, path))
+        .chain([
+            ("WASM_PACK_CACHE", &mut cache),
+            ("STORY584_TOOLS/bin", &mut tools_bin),
+        ])
+    {
+        fs::create_dir_all(&*directory).with_context(|| format!("ci-init: create {name}"))?;
+        *directory = checked_created(name, directory, root)?;
+    }
+    let target = crate::scratch_directory_in(&directories[0], "target")
+        .context("ci-init: create CARGO_TARGET_DIR")?;
+    let target = checked_created("CARGO_TARGET_DIR", &target, root)?;
+    let mut exports: Vec<_> = names
+        .iter()
+        .zip(&directories)
+        .map(|((name, _), path)| (*name, path))
+        .collect();
+    exports.extend([("WASM_PACK_CACHE", &cache), ("CARGO_TARGET_DIR", &target)]);
+    for (name, value) in &exports {
+        validate_export(name, value)?;
+    }
+    validate_export("STORY584_TOOLS/bin", &tools_bin)?;
+    let mut env_file = OpenOptions::new().append(true).open(env_file)?;
+    let mut path_file = OpenOptions::new().append(true).open(path_file)?;
+    for (name, value) in exports {
+        writeln!(env_file, "{name}={}", value.display())?;
+    }
+    writeln!(path_file, "{}", tools_bin.display())?;
+    Ok(())
+}
+
+/// Initialize hosted runner directories and toolchain with only a Cargo call in workflow shell.
+pub fn ci_init(no_toolchain: bool) -> Result<()> {
+    ci_init_exports(&crate::repository_root(), |name| env::var_os(name))?;
     if no_toolchain {
         return Ok(());
     }

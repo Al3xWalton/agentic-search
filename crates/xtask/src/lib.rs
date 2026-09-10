@@ -18,7 +18,7 @@ pub mod workflow;
 use anyhow::{bail, Context, Result};
 use std::{
     env, fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -71,15 +71,51 @@ pub fn external_env(name: &str) -> Result<PathBuf> {
     external_path(Path::new(&path), &repository_root())
 }
 
-/// Resolve a new or existing path through its nearest existing ancestor.
+/// Require absolute, plain components before resolving the ancestor and checking the tail.
 pub fn resolved_path(path: &Path) -> Result<PathBuf> {
-    if path.exists() {
-        return path.canonicalize().context("cannot resolve path");
+    let mut components = path.components();
+    // Components hides internal `.` segments, so the raw names must be checked too.
+    if !path.is_absolute()
+        || components.next() != Some(Component::RootDir)
+        || components.any(|component| !matches!(component, Component::Normal(_)))
+        || path
+            .as_os_str()
+            .as_encoded_bytes()
+            .split(|byte| *byte == b'/')
+            .any(|name| name == b".")
+    {
+        bail!("output path must be absolute with only normal components");
     }
-    let absolute = std::path::absolute(path)?;
-    let parent = absolute.parent().context("path has no parent")?;
-    let name = absolute.file_name().context("path has no filename")?;
-    Ok(resolved_path(parent)?.join(name))
+    let mut ancestor = path;
+    let mut tail = Vec::new();
+    let mut resolved = loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => {
+                // Path::exists hides dangling links, whose future targets can be in-tree.
+                if metadata.file_type().is_symlink() {
+                    bail!("output path contains a symlink");
+                }
+                break ancestor.canonicalize().context("cannot resolve ancestor")?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                tail.push(ancestor.file_name().context("path has no filename")?);
+                ancestor = ancestor.parent().context("path has no parent")?;
+            }
+            Err(error) => return Err(error).context("cannot inspect output path"),
+        }
+    };
+    for component in tail.into_iter().rev() {
+        resolved.push(component);
+        match fs::symlink_metadata(&resolved) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                bail!("output path contains a symlink");
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("cannot inspect output component"),
+        }
+    }
+    Ok(resolved)
 }
 
 /// Reject output directories within the source tree, including symlink aliases.
@@ -125,5 +161,82 @@ impl Scratch {
 impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn checked_external_rejects_dangling_symlink() {
+        let fixture = Scratch::new("containment-test").unwrap();
+        let root = fixture.0.join("repository");
+        fs::create_dir(&root).unwrap();
+        let target = root.join("not-created");
+        let alias = fixture.0.join("alias");
+        symlink(&target, &alias).unwrap();
+        assert!(!alias.exists());
+        assert!(fs::symlink_metadata(&alias)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        for path in [&alias, &alias.join("child"), &alias.join("child/deeper")] {
+            assert!(
+                external_path(path, &root).is_err(),
+                "accepted dangling link: {path:?}"
+            );
+        }
+        assert!(!target.exists());
+        assert!(external_path(&root, &root).is_err());
+        assert!(external_path(&root.join("missing"), &root).is_err());
+        let outside = fixture.0.join("outside/child");
+        assert_eq!(external_path(&outside, &root).unwrap(), outside);
+        fs::create_dir(fixture.0.join("outside")).unwrap();
+        fs::remove_file(&alias).unwrap();
+        symlink(fixture.0.join("outside"), &alias).unwrap();
+        assert!(external_path(&alias, &root).is_err());
+        assert!(external_path(&alias.join("missing"), &root).is_err());
+    }
+
+    #[test]
+    fn checked_external_rejects_parent_and_current_components() {
+        let fixture = Scratch::new("components-test").unwrap();
+        let missing = fixture.0.join("nonexistent");
+        let root = missing.join("repository");
+        for suffix in [
+            "tmp/x/../y",
+            "tmp/./y",
+            "tmp/x/../../repo/z",
+            "tmp/y/.",
+            "tmp/y/..",
+        ] {
+            let path = missing.join(suffix);
+            let error = format!("{:#}", external_path(&path, &root).unwrap_err());
+            assert_eq!(
+                error, "output path must be absolute with only normal components",
+                "wrong rejection for {path:?}"
+            );
+        }
+        for path in [
+            Path::new(""),
+            Path::new("relative"),
+            Path::new("./relative"),
+        ] {
+            assert_eq!(
+                format!("{:#}", external_path(path, &root).unwrap_err()),
+                "output path must be absolute with only normal components"
+            );
+        }
+        let error = format!(
+            "{:#}",
+            external_path(&missing.join("plain/child"), &root).unwrap_err()
+        );
+        assert_ne!(
+            error,
+            "output path must be absolute with only normal components"
+        );
+        assert!(!missing.exists());
     }
 }

@@ -1,0 +1,7 @@
+name: Flow-map workflow context
+env: { BAD: "${{ runner.temp }}/scratch" }
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cargo xtask workflow-lint
