@@ -1,0 +1,7 @@
+Agentic Search is derived from Stract (https://github.com/StractOrg/stract).
+Upstream base: 8ac40b023e0a49f55cdd5b599841ea46d0503ec9 (8ac40b02).
+Modified for Agentic Search on 2026-09-10: repository identity, build/CI,
+source-offer support and sanitised research evidence.
+The public git history records modified files and their relevant dates.
+Upstream copyright and licence notices are retained. See LICENSE.md
+and SOURCE_OFFER.md.

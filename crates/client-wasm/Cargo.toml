@@ -1,4 +1,5 @@
 [package]
+description = "WebAssembly client for Agentic Search, derived from Stract"
 authors = ['Stract <hello@stract.com>']
 edition = "2021"
 license = "AGPL-3.0"

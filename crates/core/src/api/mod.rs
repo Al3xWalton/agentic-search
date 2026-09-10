@@ -59,6 +59,7 @@ mod hosts;
 pub mod improvement;
 mod metrics;
 pub mod search;
+mod source_offer;
 pub mod user_count;
 pub mod webgraph;
 
@@ -101,7 +102,7 @@ fn build_router(state: Arc<State>) -> Router {
         search = search.layer(ConcurrencyLimitLayer::new(limit));
     }
 
-    Router::new()
+    let router = Router::new()
         .merge(search)
         .route("/favicon.ico", get(favicon))
         .merge(
@@ -143,7 +144,8 @@ fn build_router(state: Arc<State>) -> Router {
                 .route("/api/entity_image", get(search::entity_image))
                 .layer(cors_layer()),
         )
-        .with_state(state)
+        .with_state(state);
+    finish_router(router)
 }
 
 pub async fn router(
@@ -258,15 +260,21 @@ pub async fn router(
 /// different hosts.
 fn cors_layer() -> tower_http::cors::CorsLayer {
     #[cfg(feature = "cors")]
-    return tower_http::cors::CorsLayer::permissive();
+    return tower_http::cors::CorsLayer::permissive()
+        // Keep wildcard exposure while explicitly advertising the source offer.
+        .expose_headers([
+            axum::http::HeaderName::from_static("*"),
+            axum::http::HeaderName::from_static("source-offer"),
+        ]);
     #[cfg(not(feature = "cors"))]
     tower_http::cors::CorsLayer::new()
 }
 
 pub fn metrics_router(registry: crate::metrics::PrometheusRegistry) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/metrics", get(metrics::route))
-        .with_state(Arc::new(registry))
+        .with_state(Arc::new(registry));
+    finish_router(router)
 }
 
 async fn search_metric(
@@ -300,4 +308,213 @@ async fn search_metric(
     }
 
     response
+}
+
+/// Finishes both HTTP routers after their routes, fallbacks and inner middleware.
+fn finish_router(router: Router) -> Router {
+    router
+        .merge(
+            Router::new()
+                .route("/.well-known/ava-search-source", get(source_offer::route))
+                .layer(cors_layer()),
+        )
+        .layer(middleware::from_fn(source_offer::header))
+}
+
+#[cfg(test)]
+mod source_offer_tests {
+    use super::*;
+    use axum::{body::to_bytes, http::Request, Json};
+    use tower::ServiceExt;
+
+    fn stub() -> Router {
+        Router::new()
+            .route(
+                "/ok",
+                get(|| async { ([("source-offer", "conflict")], "original") }),
+            )
+            .route(
+                "/redirect",
+                get(|| async { axum::response::Redirect::temporary("/ok") }),
+            )
+            .route(
+                "/json",
+                post(|Json(_): Json<serde_json::Value>| async { "accepted" }),
+            )
+            .route(
+                "/error",
+                get(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "error body") }),
+            )
+            .merge(
+                Router::new()
+                    .route("/early", get(|| async { "unreachable" }))
+                    .route_layer(middleware::from_fn(
+                        |_: extract::Request, _: middleware::Next| async {
+                            (StatusCode::UNAUTHORIZED, "early body")
+                        },
+                    )),
+            )
+    }
+
+    async fn call(
+        router: Router,
+        method: &str,
+        path: &str,
+    ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = to_bytes(response.into_body(), 8192).await.unwrap().to_vec();
+        (status, headers, body)
+    }
+
+    #[tokio::test]
+    async fn source_offer_header_covers_success_and_errors() {
+        for (method, path, expected) in [
+            ("GET", "/ok", 200),
+            ("GET", "/redirect", 307),
+            ("POST", "/json", 415),
+            ("GET", "/absent", 404),
+            ("POST", "/ok", 405),
+            ("GET", "/early", 401),
+            ("GET", "/error", 500),
+        ] {
+            let original = call(stub(), method, path).await;
+            let (status, headers, body) = call(finish_router(stub()), method, path).await;
+            assert_eq!(status.as_u16(), expected);
+            assert_eq!(status, original.0);
+            assert_eq!(body, original.2);
+            assert_eq!(headers.get_all("source-offer").iter().count(), 1);
+            assert_eq!(
+                headers["source-offer"],
+                crate::source_metadata::embedded().source_url
+            );
+            if path == "/redirect" {
+                assert_eq!(headers["location"], "/ok");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn source_offer_layer_covers_fallback() {
+        let (status, headers, body) = call(finish_router(Router::new()), "GET", "/absent").await;
+        assert_eq!(status, 404);
+        assert!(body.is_empty());
+        assert_eq!(
+            headers["source-offer"],
+            crate::source_metadata::embedded().source_url
+        );
+    }
+
+    #[tokio::test]
+    async fn source_offer_route_shape() {
+        let (status, headers, body) = call(
+            finish_router(Router::new()),
+            "GET",
+            "/.well-known/ava-search-source",
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(headers["content-type"], "application/json");
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let object = json.as_object().unwrap();
+        assert_eq!(object.len(), 4);
+        for key in ["licence", "source_url", "revision", "revision_source"] {
+            assert!(object[key].is_string());
+        }
+        let revision = object["revision"].as_str().unwrap();
+        assert!(
+            revision == "unknown"
+                || (revision.len() == 40
+                    && revision
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        );
+        assert!(["git", "environment", "unknown"]
+            .contains(&object["revision_source"].as_str().unwrap()));
+        if revision == "unknown" {
+            assert_eq!(object["revision_source"], "unknown");
+        }
+        assert_eq!(
+            headers["source-offer"],
+            object["source_url"].as_str().unwrap()
+        );
+    }
+
+    fn function_body<'a>(source: &'a str, signature: &str) -> &'a str {
+        let body = source
+            .split_once(signature)
+            .unwrap()
+            .1
+            .split_once('{')
+            .unwrap()
+            .1;
+        let mut depth = 1;
+        for (i, ch) in body.char_indices() {
+            if ch == '{' {
+                depth += 1;
+            }
+            if ch == '}' {
+                depth -= 1;
+            }
+            if depth == 0 {
+                return &body[..i];
+            }
+        }
+        panic!("unterminated function")
+    }
+
+    #[tokio::test]
+    async fn source_offer_production_wiring() {
+        let source = include_str!("mod.rs");
+        for signature in ["fn build_router(", "pub fn metrics_router("] {
+            let body = function_body(source, signature);
+            assert!(
+                body.trim_end().ends_with("finish_router(router)"),
+                "unwired {signature}"
+            );
+        }
+        let (status, headers, _) = call(finish_router(stub()), "GET", "/ok").await;
+        assert_eq!(status, 200);
+        assert!(headers.contains_key("source-offer"));
+    }
+
+    #[tokio::test]
+    async fn source_offer_cors_exposes_header() {
+        let router = finish_router(stub());
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/.well-known/ava-search-source")
+                    .header("origin", "https://example.invalid")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        #[cfg(feature = "cors")]
+        {
+            assert_eq!(response.headers()["access-control-allow-origin"], "*");
+            let exposed = response.headers()["access-control-expose-headers"]
+                .to_str()
+                .unwrap();
+            assert!(exposed
+                .split(',')
+                .any(|h| h.trim().eq_ignore_ascii_case("source-offer")));
+            assert!(exposed.split(',').any(|h| h.trim() == "*"));
+        }
+        #[cfg(not(feature = "cors"))]
+        assert!(!response
+            .headers()
+            .contains_key("access-control-allow-origin"));
+    }
 }

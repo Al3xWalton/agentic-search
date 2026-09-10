@@ -1,29 +1,13 @@
-<p align="center">
-  <img src="assets/big-logo.svg" height="120" />
-  <br />
-  <br />
-  <a target="_blank" href="https://docs.stract.com/">
-    <img src="https://img.shields.io/badge/api-docs-0b7bff?labelColor=white" style="max-width: 100%;">
-  </a>
-  <a target="_blank" href="https://stract.com/webmasters">
-    <img src="https://img.shields.io/badge/webmaster-info-0b7bff?labelColor=white" style="max-width: 100%;">
-  </a>
-</p>
-<br />
+# Agentic Search
 
-Stract is an open source web search engine hosted at [stract.com](https://stract.com/) targeted towards tinkerers and developers.
+Agentic Search is AVA's open-source web retrieval service for AI agents, built on the archived Stract engine and consumed over HTTP.
 
-<br />
-<p align="center">
-  <img src="assets/screenshot.png" width="80%" />
-</p>
-<br />
-<br />
+[![CI](https://github.com/Al3xWalton/agentic-search/actions/workflows/ci.yaml/badge.svg)](https://github.com/Al3xWalton/agentic-search/actions/workflows/ci.yaml)
 
-# 💡 Features
+## Inherited capabilities
 
 - Keyword search that respects your search query.
-- Fully independent search index [with our own crawler](https://stract.com/webmasters).
+- Fully independent search index with its own crawler.
 - Advanced query syntax (`site:`, `intitle:` etc.).
 - DDG-style [!bang syntax](https://duckduckgo.com/bang)
 - Wikipedia and stackoverflow sidebar
@@ -35,17 +19,47 @@ Stract is an open source web search engine hosted at [stract.com](https://stract
 - Explore the web and find sites similar to the ones you like.
 - And much more!
 
-# 👩‍💻 Setup
+## Build
 
-We recommend everyone to use the hosted version at [stract.com](https://stract.com/), but you can also follow the steps outlined in [CONTRIBUTING.md](CONTRIBUTING.md) to setup the engine locally.
+```sh
+git clone --recurse-submodules https://github.com/Al3xWalton/agentic-search.git
+cd agentic-search
+cargo build --locked --release
+```
 
-# ‍💼 License
+Rust is pinned to 1.98.0 with rustfmt, clippy and the wasm32-unknown-unknown target.
+Linux requires `build-essential clang pkg-config libssl-dev liburing-dev` (install with apt).
+macOS requires the Xcode command-line toolchain and SDK. No model or data is required to
+compile. `just configure` and `just setup` download/build optional development fixtures;
+they are not CI prerequisites. Starting the full API requires configured search nodes.
+Optional frontend tooling uses Node 20.10.0 and wasm-pack 0.15.0: build
+`crates/client-wasm` with `wasm-pack build --target web --locked` before running
+`npm ci`, `npm run check` and `npm run lint` in `frontend`.
 
-Stract is offered under the terms defined under the [LICENSE.md](LICENSE.md) file unless otherwise specified in the relevant subdirectory.
+[CONTRIBUTING.md](CONTRIBUTING.md) is historical upstream guidance. Its Stract CLA and
+commit instructions are not newly adopted Agentic Search policy.
 
-# 📬 Contact
+## Upstream
 
-You can contact us at [hello@stract.com](mailto:hello@stract.com) or open an [issue](https://github.com/StractOrg/stract/issues)/[discussion](https://github.com/StractOrg/stract/discussions) here on GitHub.
+Derived from [StractOrg/stract](https://github.com/StractOrg/stract), archived base 8ac40b02
+(full commit 8ac40b023e0a49f55cdd5b599841ea46d0503ec9). The full upstream history and notices
+are retained. See [NOTICE](NOTICE) and the retained
+[sample-optics submodule](https://github.com/StractOrg/sample-optics).
+Frozen `.spike` evidence retains labels and measurements. Its `<WORKSPACE>` placeholders
+require explicit adaptation in a scratch copy before a future rerun.
+
+## License
+
+Agentic Search offers its source under AGPL-3.0-only. See [LICENSE.md](LICENSE.md),
+[NOTICE](NOTICE), the [source offer template](SOURCE_OFFER.md) and the running
+[source endpoint](./.well-known/ava-search-source). Subdirectory licence exceptions and
+upstream notices are retained; this offer does not rewrite upstream “or later” wording.
+
+If you fork Agentic Search, set the package `repository` and `SOURCE_OFFER.md` to your own corresponding source.
+
+## Contact
+
+Use this repository's [GitHub issues](https://github.com/Al3xWalton/agentic-search/issues).
 
 # 🏆 Thank you!
 
@@ -54,9 +68,9 @@ We truly stand on the shoulders of giants and this project would not have been e
 - The authors and contributors of Tantivy for providing the inverted index library on which Stract is built.
 - The commoncrawl organization for crawling the web and making the dataset readily available. Even though we have our own crawler now, commoncrawl has been a huge help in the early stages of development.
 
-# 💰 Funding
+## Upstream historical funding
 
-This project was previously funded through [NGI0 Entrust](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu) program. Learn more at the [NLnet project page](https://nlnet.nl/project/Stract).
+Upstream Stract was previously funded through [NGI0 Entrust](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu) program. Learn more at the [NLnet project page](https://nlnet.nl/project/Stract).
 
 <div>
   <a href="https://nlnet.nl"><img align=center src="assets/nlnet/banner.png" alt="NLnet foundation logo" width="20%" /></a>
