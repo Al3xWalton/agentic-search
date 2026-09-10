@@ -80,7 +80,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
                 crate::ranking::SignalEnumDiscriminants,
                 crate::ranking::SignalScore,
-                
+
                 crate::bangs::BangHit,
                 crate::bangs::Bang,
 
@@ -115,9 +115,9 @@ struct ApiDoc;
 struct ApiModifier;
 
 fn mark_internal(path: &mut utoipa::openapi::path::PathItem) {
-        let internal_extensions = utoipa::openapi::extensions::ExtensionsBuilder::new()
-            .add("x-internal", true)
-            .build();
+    let internal_extensions = utoipa::openapi::extensions::ExtensionsBuilder::new()
+        .add("x-internal", true)
+        .build();
 
     let mut current_extensions = path.extensions.clone().unwrap_or_default();
     current_extensions.merge(internal_extensions.clone());
@@ -145,9 +145,27 @@ The API might also change quite a bit during the beta period, but we will try to
 Remember to always give proper attributions to the sources you use from the search results.".to_string(),
         );
 
-        mark_internal(openapi.paths.paths.get_mut("/beta/api/explore/export").unwrap());
-        mark_internal(openapi.paths.paths.get_mut("/beta/api/hosts/export").unwrap());
-        mark_internal(openapi.paths.paths.get_mut("/beta/api/webgraph/host/knows").unwrap());
+        mark_internal(
+            openapi
+                .paths
+                .paths
+                .get_mut("/beta/api/explore/export")
+                .unwrap(),
+        );
+        mark_internal(
+            openapi
+                .paths
+                .paths
+                .get_mut("/beta/api/hosts/export")
+                .unwrap(),
+        );
+        mark_internal(
+            openapi
+                .paths
+                .paths
+                .get_mut("/beta/api/webgraph/host/knows")
+                .unwrap(),
+        );
     }
 }
 

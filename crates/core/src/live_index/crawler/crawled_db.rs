@@ -57,11 +57,13 @@ impl redb::Key for TruncatedUrl {
 }
 
 impl redb::Value for TruncatedUrl {
-    type SelfType<'a> = TruncatedUrl
+    type SelfType<'a>
+        = TruncatedUrl
     where
         Self: 'a;
 
-    type AsBytes<'a> = &'a [u8]
+    type AsBytes<'a>
+        = &'a [u8]
     where
         Self: 'a;
 
@@ -97,11 +99,13 @@ impl redb::Key for InsertionTime {
 }
 
 impl redb::Value for InsertionTime {
-    type SelfType<'a> = InsertionTime
+    type SelfType<'a>
+        = InsertionTime
     where
         Self: 'a;
 
-    type AsBytes<'a> = Vec<u8>
+    type AsBytes<'a>
+        = Vec<u8>
     where
         Self: 'a;
 

@@ -37,7 +37,8 @@ impl<I> LendingIterator for Enumerate<I>
 where
     I: LendingIterator,
 {
-    type Item<'a> = (usize, I::Item<'a>)
+    type Item<'a>
+        = (usize, I::Item<'a>)
     where
         I: 'a;
 

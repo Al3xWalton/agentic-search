@@ -28,7 +28,9 @@ use crate::{
         },
     },
     entrypoint::{
-        entity_search_server, live_index::LiveIndexService, search_server::{self, RetrieveReq, SearchService}
+        entity_search_server,
+        live_index::LiveIndexService,
+        search_server::{self, RetrieveReq, SearchService},
     },
     generic_query::{self, Collector},
     inverted_index::{RetrievedWebpage, ShardId, WebpagePointer},
@@ -79,7 +81,7 @@ pub trait SearchClient {
     ) -> impl Future<Output = Result<<Q::Collector as generic_query::Collector>::Fruit>> + Send
     where
         Q: search_server::Query,
-        
+
         Result<
             <Q::Collector as generic_query::Collector>::Fruit,
             search_server::EncodedError,
@@ -134,7 +136,7 @@ pub trait SearchClient {
     ) -> impl Future<Output = Result<Vec<<Q::Collector as generic_query::Collector>::Fruit>>> + Send
     where
         Q: search_server::Query,
-        
+
         Result<<<Q::Collector as generic_query::Collector>::Child as tantivy::collector::SegmentCollector>::Fruit, search_server::EncodedError>:
             From<<Q as sonic::service::Message<SearchService>>::Response>;
 
@@ -144,11 +146,12 @@ pub trait SearchClient {
     ) -> impl Future<Output = Result<Vec<Vec<Q::IntermediateOutput>>>> + Send
     where
         Q: search_server::Query,
-        Result<Q::IntermediateOutput, search_server::EncodedError>: From<
-            <<Q as search_server::Query>::RetrieveReq as sonic::service::Message<
-                SearchService,
-            >>::Response,
-        >,
+        Result<Q::IntermediateOutput, search_server::EncodedError>:
+            From<
+                <<Q as search_server::Query>::RetrieveReq as sonic::service::Message<
+                    SearchService,
+                >>::Response,
+            >,
         <Q::Collector as generic_query::Collector>::Fruit: Clone;
 
     fn batch_search_generic<Q>(&self, queries: Vec<Q>) -> impl Future<Output = Result<Vec<Q::Output>>> + Send
@@ -164,14 +167,14 @@ pub trait SearchClient {
             >,
             <Q::Collector as generic_query::Collector>::Fruit: Clone
         {
-            async {
-                let res = self.batch_search_initial_generic(queries.clone()).await?;
-                let res = self
-                    .batch_retrieve_generic(queries.into_iter().zip(res).collect())
-                    .await?;
-                Ok(res.into_iter().map(|v| Q::merge_results(v)).collect())
-            }
+        async {
+            let res = self.batch_search_initial_generic(queries.clone()).await?;
+            let res = self
+                .batch_retrieve_generic(queries.into_iter().zip(res).collect())
+                .await?;
+            Ok(res.into_iter().map(|v| Q::merge_results(v)).collect())
         }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -209,9 +212,18 @@ impl ReusableClientManager for SearchService {
         for member in cluster.members().await {
             if let Service::Searcher { host, shard } = member.service {
                 shards.entry(shard).or_insert_with(Vec::new).push(host);
-            } else if let Service::LiveIndex { search_host, shard, state, .. } = member.service {
+            } else if let Service::LiveIndex {
+                search_host,
+                shard,
+                state,
+                ..
+            } = member.service
+            {
                 if state == LiveIndexState::Ready {
-                    shards.entry(shard).or_insert_with(Vec::new).push(search_host);
+                    shards
+                        .entry(shard)
+                        .or_insert_with(Vec::new)
+                        .push(search_host);
                 }
             }
         }
@@ -263,7 +275,10 @@ impl ReusableClientManager for LiveIndexService {
     async fn new_client(cluster: &Cluster) -> ShardedClient<Self::Service, Self::ShardId> {
         let mut shards = HashMap::new();
         for member in cluster.members().await {
-            if let Service::LiveIndex { host, shard, state, .. } = member.service {
+            if let Service::LiveIndex {
+                host, shard, state, ..
+            } = member.service
+            {
                 if state == LiveIndexState::Ready {
                     shards.entry(shard).or_insert_with(Vec::new).push(host);
                 }
@@ -413,10 +428,12 @@ impl SearchClient for DistributedSearcher {
             search_server::EncodedError,
         >: From<<Q as sonic::service::Message<SearchService>>::Response>,
         <<Q::Collector as generic_query::Collector>::Child as tantivy::collector::SegmentCollector>::Fruit:
-            From<<Q::Collector as generic_query::Collector>::Fruit> {
+    From<<Q::Collector as generic_query::Collector>::Fruit>{
         let collector = query.coordinator_collector();
 
-        let res = self.conn().await
+        let res = self
+            .conn()
+            .await
             .send(query, &AllShardsSelector, &RandomReplicaSelector)
             .await?;
 
@@ -440,7 +457,7 @@ impl SearchClient for DistributedSearcher {
             .merge_fruits(fruits)
             .map_err(|_| anyhow::anyhow!("failed to merge fruits"))
     }
-    
+
     async fn retrieve_generic<Q>(
         &self,
         query: Q,
@@ -454,7 +471,7 @@ impl SearchClient for DistributedSearcher {
                 <<Q as search_server::Query>::RetrieveReq as sonic::service::Message<
                     SearchService,
                 >>::Response,
-            >
+            >,
     {
         let conn = self.conn().await;
         let mut results = FuturesUnordered::new();
@@ -479,7 +496,7 @@ impl SearchClient for DistributedSearcher {
             })
             .collect())
     }
-    
+
     async fn batch_search_initial_generic<Q>(
         &self,
         queries: Vec<Q>,
@@ -489,50 +506,51 @@ impl SearchClient for DistributedSearcher {
         Result<<<Q::Collector as generic_query::Collector>::Child as tantivy::collector::SegmentCollector>::Fruit, search_server::EncodedError>:
             From<<Q as sonic::service::Message<SearchService>>::Response>,
         {
-            let res = self
-                .conn()
-                .await
-                .batch_send(&queries, &AllShardsSelector, &RandomReplicaSelector)
-                .await?;
-    
-            let mut fruits = Vec::with_capacity(queries.len());
-    
-            for _ in 0..queries.len() {
-                fruits.push(Vec::new());
-            }
-    
-            for (_, replica_results) in res.into_iter() {
-                debug_assert_eq!(replica_results.len(), 1);
-    
-                for (_, shard_results) in replica_results.into_iter() {
-                    for (i, shard_result) in shard_results.into_iter().enumerate() {
-                        if let Ok(shard_result) =
-                            Result::<_, search_server::EncodedError>::from(shard_result)
-                        {
-                            fruits[i].push(shard_result);
-                        }
+        let res = self
+            .conn()
+            .await
+            .batch_send(&queries, &AllShardsSelector, &RandomReplicaSelector)
+            .await?;
+
+        let mut fruits = Vec::with_capacity(queries.len());
+
+        for _ in 0..queries.len() {
+            fruits.push(Vec::new());
+        }
+
+        for (_, replica_results) in res.into_iter() {
+            debug_assert_eq!(replica_results.len(), 1);
+
+            for (_, shard_results) in replica_results.into_iter() {
+                for (i, shard_result) in shard_results.into_iter().enumerate() {
+                    if let Ok(shard_result) =
+                        Result::<_, search_server::EncodedError>::from(shard_result)
+                    {
+                        fruits[i].push(shard_result);
                     }
                 }
             }
-    
-            queries
-                .iter()
-                .zip_eq(fruits.into_iter())
-                .map(|(query, shard_fruits)| query.coordinator_collector().merge_fruits(shard_fruits))
-                .collect::<Result<Vec<_>, _>>()
+        }
+
+        queries
+            .iter()
+            .zip_eq(fruits.into_iter())
+            .map(|(query, shard_fruits)| query.coordinator_collector().merge_fruits(shard_fruits))
+            .collect::<Result<Vec<_>, _>>()
     }
-    
+
     async fn batch_retrieve_generic<Q>(
         &self,
         queries: Vec<(Q, <Q::Collector as generic_query::Collector>::Fruit)>,
     ) -> Result<Vec<Vec<Q::IntermediateOutput>>>
     where
         Q: search_server::Query,
-        Result<Q::IntermediateOutput, search_server::EncodedError>: From<
-            <<Q as search_server::Query>::RetrieveReq as sonic::service::Message<
-                SearchService,
-            >>::Response,
-        >,
+        Result<Q::IntermediateOutput, search_server::EncodedError>:
+            From<
+                <<Q as search_server::Query>::RetrieveReq as sonic::service::Message<
+                    SearchService,
+                >>::Response,
+            >,
         <Q::Collector as generic_query::Collector>::Fruit: Clone,
     {
         let conn = self.conn().await;
@@ -579,8 +597,6 @@ impl SearchClient for DistributedSearcher {
 
         Ok(res)
     }
-
-    
 }
 
 /// This should only be used for testing and benchmarks.
@@ -635,10 +651,10 @@ impl SearchClient for LocalSearchClient {
             search_server::EncodedError,
         >: From<<Q as sonic::service::Message<SearchService>>::Response>,
         <<Q::Collector as generic_query::Collector>::Child as tantivy::collector::SegmentCollector>::Fruit:
-            From<<Q::Collector as generic_query::Collector>::Fruit> {
+    From<<Q::Collector as generic_query::Collector>::Fruit>{
         self.0.search_initial_generic(query).await
     }
-    
+
     async fn retrieve_generic<Q>(
         &self,
         query: Q,
@@ -652,10 +668,11 @@ impl SearchClient for LocalSearchClient {
                 <<Q as search_server::Query>::RetrieveReq as sonic::service::Message<
                     SearchService,
                 >>::Response,
-            > {
+            >,
+    {
         Ok(vec![self.0.retrieve_generic(query, fruit).await?])
     }
-    
+
     async fn batch_search_initial_generic<Q>(
         &self,
         queries: Vec<Q>,
@@ -663,7 +680,7 @@ impl SearchClient for LocalSearchClient {
     where
         Q: search_server::Query,
         Result<<<Q::Collector as generic_query::Collector>::Child as tantivy::collector::SegmentCollector>::Fruit, search_server::EncodedError>:
-            From<<Q as sonic::service::Message<SearchService>>::Response> {
+    From<<Q as sonic::service::Message<SearchService>>::Response>{
         let mut res = Vec::new();
 
         for query in queries {
@@ -672,20 +689,21 @@ impl SearchClient for LocalSearchClient {
 
         Ok(res)
     }
-    
+
     async fn batch_retrieve_generic<Q>(
         &self,
         queries: Vec<(Q, <Q::Collector as generic_query::Collector>::Fruit)>,
     ) -> Result<Vec<Vec<Q::IntermediateOutput>>>
     where
         Q: search_server::Query,
-        Result<Q::IntermediateOutput, search_server::EncodedError>: From<
-            <<Q as search_server::Query>::RetrieveReq as sonic::service::Message<
-                SearchService,
-            >>::Response,
-        >,
+        Result<Q::IntermediateOutput, search_server::EncodedError>:
+            From<
+                <<Q as search_server::Query>::RetrieveReq as sonic::service::Message<
+                    SearchService,
+                >>::Response,
+            >,
         <Q::Collector as generic_query::Collector>::Fruit: Clone,
-       {
+    {
         let mut res = Vec::new();
 
         for (query, fruit) in queries {

@@ -91,7 +91,8 @@ impl<'a, I> LendingIterator for &'a mut I
 where
     I: LendingIterator,
 {
-    type Item<'b> = I::Item<'b>
+    type Item<'b>
+        = I::Item<'b>
     where
         I: 'b,
         'a: 'b;
@@ -113,7 +114,8 @@ impl<I> LendingIterator for IntoLending<I>
 where
     I: Iterator,
 {
-    type Item<'a> = I::Item
+    type Item<'a>
+        = I::Item
     where
         Self: 'a;
 
