@@ -1,13 +1,13 @@
-//! Runs the actual repository guards on disposable fixtures, including ignored bytes and failures.
+//! Exercises the Rust repository guards on disposable fixtures, including ignored bytes and failures.
 //! No fixture downloads data, changes the supplied repositories, or invokes Cargo recursively.
 
 #![deny(missing_docs)]
 
 use std::{
     fs,
-    os::unix::fs::{symlink, PermissionsExt},
+    os::unix::{fs::symlink, process::ExitStatusExt},
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::{Command, ExitStatus, Output},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -34,15 +34,26 @@ impl Fixture {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, contents).unwrap();
     }
-    fn guard(&self, name: &str) -> Output {
-        self.run(name, &["--root", self.0.to_str().unwrap()])
+    fn guard(&self, name: &str) -> anyhow::Result<()> {
+        match name {
+            "toolchain-pin" => xtask::guards::toolchain_pin(&self.0).map(|_| ()),
+            "no-developer-paths" => xtask::guards::no_developer_paths(&self.0),
+            "check-notices" => {
+                xtask::guards::check_notices(&self.0, Some(&self.0.join(".baseline")))
+            }
+            _ => panic!("unknown fixture guard"),
+        }
     }
-    fn run(&self, name: &str, args: &[&str]) -> Output {
-        Command::new(script(name))
-            .args(args)
-            .env("VERIFICATION", self.0.join("reports"))
-            .output()
-            .unwrap()
+    fn run(&self, name: &str, args: &[&str]) -> anyhow::Result<()> {
+        match name {
+            "check-sbom" => xtask::guards::check_sbom(Path::new(args[0])),
+            "no-developer-paths" => xtask::guards::no_developer_paths(Path::new(args[1])),
+            "install-tools" => xtask::install::verify_archive(Path::new(args[1]), args[2]),
+            "source-tree" => {
+                xtask::source_tree::source_tree(Path::new(args[1]), Path::new(args[2]))
+            }
+            _ => panic!("unknown fixture guard"),
+        }
     }
     fn notice(&self) {
         self.write("NOTICE", NOTICE);
@@ -64,21 +75,12 @@ impl Drop for Fixture {
     }
 }
 
-fn script(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scripts/ci")
-        .join(name)
+fn accepts(result: anyhow::Result<()>) {
+    assert!(result.is_ok(), "{result:?}");
 }
-fn accepts(output: Output) {
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-fn rejects(output: Output) {
-    assert!(!output.status.success(), "guard accepted invalid fixture");
-    assert!(!output.stderr.is_empty(), "missing diagnostic");
+fn rejects(result: anyhow::Result<()>) {
+    let error = result.expect_err("guard accepted invalid fixture");
+    assert!(!error.to_string().is_empty(), "missing diagnostic");
 }
 fn forbidden() -> Vec<u8> {
     [b"/".as_slice(), b"Users/fixture-owner/example"].concat()
@@ -166,14 +168,14 @@ fn developer_symlink_targets_are_rejected() {
 fn developer_path_exemption_is_exact() {
     let fixture = Fixture::new();
     fixture.write(
-        "scripts/ci/fixtures/no-developer-paths/forbidden.txt",
+        "crates/xtask/tests/fixtures/no-developer-paths/forbidden.txt",
         forbidden(),
     );
     accepts(fixture.guard("no-developer-paths"));
     for name in [
-        "scripts/ci/fixtures-evil/bad",
-        "nested/scripts/ci/fixtures/no-developer-paths/bad",
-        "scripts/ci/fixtures/no-developer-paths-evil/bad",
+        "crates/xtask/tests/fixtures-evil/bad",
+        "nested/crates/xtask/tests/fixtures/no-developer-paths/bad",
+        "crates/xtask/tests/fixtures/no-developer-paths-evil/bad",
     ] {
         fixture.write(name, forbidden());
         rejects(fixture.guard("no-developer-paths"));
@@ -183,7 +185,7 @@ fn developer_path_exemption_is_exact() {
         String::from_utf8(forbidden()).unwrap(),
         fixture
             .0
-            .join("scripts/ci/fixtures/no-developer-paths/link"),
+            .join("crates/xtask/tests/fixtures/no-developer-paths/link"),
     )
     .unwrap();
     rejects(fixture.guard("no-developer-paths"));
@@ -312,22 +314,44 @@ fn tool_archive_checksum_is_required() {
 #[test]
 fn secret_scanner_failure_is_fatal() {
     let fixture = Fixture::new();
-    fixture.write(
-        "scanner",
-        "#!/bin/sh\necho 'harmless scanner fixture' >&2\nexit 1\n",
-    );
+    fixture.write("scanner", "native command seam");
+    fixture.write(".spike/evidence", "retained evidence");
     let scanner = fixture.0.join("scanner");
-    fs::set_permissions(&scanner, fs::Permissions::from_mode(0o755)).unwrap();
-    let args = [
-        "--root",
-        fixture.0.to_str().unwrap(),
-        "--scanner",
-        scanner.to_str().unwrap(),
-    ];
-    let output = fixture.run("secrets", &args);
-    assert_eq!(output.status.code(), Some(1));
-    fixture.write("scanner", "#!/bin/sh\nexit 0\n");
-    accepts(fixture.run("secrets", &args));
+    let reports = fixture.0.join("reports");
+    let mut calls = 0;
+    let result =
+        xtask::artifacts::secrets_with(&fixture.0, &scanner, &reports, &fixture.0, |command| {
+            let args: Vec<_> = command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            assert_eq!(args.contains(&"--config".to_owned()), calls == 1);
+            assert!(args.contains(&"--ignore-gitleaks-allow".to_owned()));
+            for name in ["GITLEAKS_CONFIG", "GITLEAKS_CONFIG_TOML"] {
+                assert!(command
+                    .get_envs()
+                    .any(|(key, value)| key == name && value.is_none()));
+            }
+            calls += 1;
+            Ok(ExitStatus::from_raw(if calls == 1 { 1 << 8 } else { 0 }))
+        });
+    assert_eq!(calls, 2);
+    assert_eq!(xtask::exit_code(&result.unwrap_err()), 1);
+    accepts(xtask::artifacts::secrets_with(
+        &fixture.0,
+        &scanner,
+        &reports,
+        &fixture.0,
+        |_| Ok(ExitStatus::from_raw(0)),
+    ));
+    fixture.write("bad", forbidden());
+    rejects(xtask::artifacts::secrets_with(
+        &fixture.0,
+        &scanner,
+        &reports,
+        &fixture.0,
+        |_| Ok(ExitStatus::from_raw(0)),
+    ));
 }
 
 #[test]
@@ -344,25 +368,21 @@ fn source_tree_enumeration_failure_is_fatal() {
             dest.to_str().unwrap(),
         ],
     ));
-    fixture.write("bin/git", "#!/bin/sh\ncase \"$*\" in *--show-toplevel*) printf '%s\\n' \"$FIXTURE_ROOT\";; *) echo 'enumeration fixture failure' >&2; exit 1;; esac\n");
-    fs::set_permissions(fixture.0.join("bin/git"), fs::Permissions::from_mode(0o755)).unwrap();
-    let output = Command::new(script("source-tree"))
-        .args([
-            "--root",
-            failing_root.to_str().unwrap(),
-            dest.to_str().unwrap(),
-        ])
-        .env("FIXTURE_ROOT", &failing_root)
-        .env(
-            "PATH",
-            format!(
-                "{}:{}",
-                fixture.0.join("bin").display(),
-                std::env::var("PATH").unwrap()
-            ),
-        )
-        .output()
-        .unwrap();
+    let output = xtask::source_tree::source_tree_with(&failing_root, &dest, |root, args| {
+        if args == ["rev-parse", "--show-toplevel"] {
+            Ok(Output {
+                status: ExitStatus::from_raw(0),
+                stdout: root.as_os_str().as_encoded_bytes().to_vec(),
+                stderr: Vec::new(),
+            })
+        } else {
+            Ok(Output {
+                status: ExitStatus::from_raw(1 << 8),
+                stdout: Vec::new(),
+                stderr: b"enumeration fixture failure".to_vec(),
+            })
+        }
+    });
     rejects(output);
     let source = fixture.0.join("real");
     fs::create_dir(&source).unwrap();
@@ -381,6 +401,7 @@ fn source_tree_enumeration_failure_is_fatal() {
         .unwrap()
         .success());
     fs::write(source.join("authored"), "current bytes").unwrap();
+    fs::write(source.join("tabs\tand\nnewlines"), "NUL-safe name").unwrap();
     symlink("authored", source.join("link")).unwrap();
     accepts(fixture.run(
         "source-tree",
@@ -391,6 +412,10 @@ fn source_tree_enumeration_failure_is_fatal() {
         b"tracked bytes"
     );
     assert_eq!(fs::read(dest.join("authored")).unwrap(), b"current bytes");
+    assert_eq!(
+        fs::read(dest.join("tabs\tand\nnewlines")).unwrap(),
+        b"NUL-safe name"
+    );
     assert_eq!(
         fs::read_link(dest.join("link")).unwrap(),
         Path::new("authored")

@@ -17,6 +17,7 @@ members = [
   "crates/common",
   "crates/simple-wal",
   "crates/web-spell",
+  "crates/xtask",
   "fuzz",
 ]
 resolver = "2"
