@@ -1,0 +1,8 @@
+name: Invalid workflow context
+env:
+  SCRATCH: ${{ runner.temp }}/scratch
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cargo xtask workflow-lint

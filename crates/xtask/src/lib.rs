@@ -12,6 +12,8 @@ pub mod guards;
 pub mod install;
 /// NUL-safe export of the current repository and initialized submodules.
 pub mod source_tree;
+/// Workflow context, action pin and runner checks.
+pub mod workflow;
 
 use anyhow::{bail, Context, Result};
 use std::{
@@ -92,7 +94,12 @@ pub fn external_path(path: &Path, root: &Path) -> Result<PathBuf> {
 /// Create a uniquely named directory under the external scratch root.
 pub fn scratch_directory(prefix: &str) -> Result<PathBuf> {
     let scratch = external_env("STORY584_SCRATCH")?;
-    fs::create_dir_all(&scratch)?;
+    scratch_directory_in(&scratch, prefix)
+}
+
+/// Allocate within a validated scratch root before runner environment exports take effect.
+pub(crate) fn scratch_directory_in(scratch: &Path, prefix: &str) -> Result<PathBuf> {
+    fs::create_dir_all(scratch)?;
     loop {
         let path = scratch.join(format!(
             "{prefix}-{}-{}",

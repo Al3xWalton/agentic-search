@@ -443,3 +443,184 @@ fn secret_allowlist_paths_are_exact() {
         ]
     );
 }
+
+#[test]
+fn ci_init_derives_scratch_from_runner_temp() {
+    let fixture = Fixture::new();
+    fixture.write("env", "EXISTING=value\n");
+    fixture.write("path", "existing-bin\n");
+    let runner = fixture.0.join("runner");
+    let init = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_xtask"));
+        command
+            .args(["ci-init", "--no-toolchain"])
+            .env("GITHUB_ENV", fixture.0.join("env"))
+            .env("GITHUB_PATH", fixture.0.join("path"))
+            .env_remove("RUNNER_TEMP");
+        for name in [
+            "STORY584_SCRATCH",
+            "STORY584_TOOLS",
+            "STORY584_ARTIFACT_DIR",
+            "WASM_PACK_CACHE",
+            "CARGO_TARGET_DIR",
+        ] {
+            command.env_remove(name);
+        }
+        command
+    };
+    let result = init().env("RUNNER_TEMP", &runner).output().unwrap();
+    assert!(result.status.success(), "{result:?}");
+    let contents = fs::read_to_string(fixture.0.join("env")).unwrap();
+    eprintln!("ci-init exports:\n{contents}");
+    let exports: std::collections::BTreeMap<_, _> = contents
+        .lines()
+        .map(|line| line.split_once('=').unwrap())
+        .collect();
+    assert_eq!(exports.len(), 6);
+    assert_eq!(exports["EXISTING"], "value");
+    for (name, suffix) in [
+        ("STORY584_SCRATCH", "story584-scratch"),
+        ("STORY584_TOOLS", "story584-tools"),
+        ("STORY584_ARTIFACT_DIR", "story584-artifacts"),
+        ("WASM_PACK_CACHE", "story584-scratch/wasm-pack-cache"),
+    ] {
+        assert_eq!(Path::new(exports[name]), runner.join(suffix));
+        assert!(Path::new(exports[name]).is_dir());
+    }
+    let target = Path::new(exports["CARGO_TARGET_DIR"]);
+    assert!(target.is_dir());
+    assert_eq!(target.parent().unwrap(), runner.join("story584-scratch"));
+    assert!(target
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("target-"));
+    let bin = runner.join("story584-tools/bin");
+    assert!(bin.is_dir());
+    assert_eq!(
+        fs::read_to_string(fixture.0.join("path")).unwrap(),
+        format!("existing-bin\n{}\n", bin.display())
+    );
+    let second = init().env("RUNNER_TEMP", &runner).output().unwrap();
+    assert!(second.status.success(), "{second:?}");
+    let contents = fs::read_to_string(fixture.0.join("env")).unwrap();
+    let targets: Vec<_> = contents
+        .lines()
+        .filter_map(|line| line.strip_prefix("CARGO_TARGET_DIR="))
+        .collect();
+    assert_eq!(targets.len(), 2);
+    assert_ne!(targets[0], targets[1]);
+    let local = init()
+        .env("STORY584_SCRATCH", fixture.0.join("local-scratch"))
+        .env("STORY584_TOOLS", fixture.0.join("local-tools"))
+        .env("STORY584_ARTIFACT_DIR", fixture.0.join("local-artifacts"))
+        .output()
+        .unwrap();
+    assert!(local.status.success(), "{local:?}");
+    assert!(fs::read_to_string(fixture.0.join("env"))
+        .unwrap()
+        .contains(&format!(
+            "STORY584_SCRATCH={}\n",
+            fixture.0.join("local-scratch").display()
+        )));
+    let missing = init().output().unwrap();
+    assert_eq!(missing.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("RUNNER_TEMP or all STORY584_"));
+}
+
+#[test]
+fn workflow_lint_rejects_runner_context_at_workflow_level() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("ci.yaml");
+    let source = include_str!("fixtures/workflow/workflow-context.yaml");
+    for context in [
+        "runner", "env", "steps", "job", "matrix", "strategy", "needs",
+    ] {
+        fixture.write("ci.yaml", source.replace("runner.", &format!("{context}.")));
+        let error = xtask::workflow::workflow_lint(&path)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("line 3: unavailable context in workflow env"),
+            "{error}"
+        );
+    }
+    for context in ["runner", "env", "steps", "job"] {
+        fixture.write("ci.yaml", format!("jobs:\n  linux:\n    runs-on: ubuntu-latest\n    env:\n      BAD: ${{{{ {context}.value }}}}\n"));
+        let error = xtask::workflow::workflow_lint(&path)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("line 5: unavailable context in job env"),
+            "{error}"
+        );
+    }
+    fixture.write("ci.yaml", source);
+    let result = Command::new(env!("CARGO_BIN_EXE_xtask"))
+        .arg("workflow-lint")
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("line 3:"));
+}
+
+#[test]
+fn workflow_lint_rejects_unpinned_action() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("ci.yaml");
+    let source = include_str!("fixtures/workflow/unpinned-action.yaml");
+    for revision in [
+        "v7",
+        "main",
+        "1234567",
+        &"A".repeat(40),
+        &"a".repeat(39),
+        &"a".repeat(41),
+    ] {
+        fixture.write("ci.yaml", source.replace("v7", revision));
+        let error = xtask::workflow::workflow_lint(&path)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("line 6: uses must end in @ plus 40 lowercase hex"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn workflow_lint_accepts_current_workflow() {
+    accepts(xtask::workflow::workflow_lint(
+        &xtask::repository_root().join(".github/workflows/ci.yaml"),
+    ));
+    let fixture = Fixture::new();
+    let path = fixture.0.join("ci.yaml");
+    let source = include_str!("fixtures/workflow/valid.yaml");
+    fixture.write("ci.yaml", source);
+    accepts(xtask::workflow::workflow_lint(&path));
+    fixture.write(
+        "ci.yaml",
+        source.replace("    runs-on: ubuntu-latest\n", ""),
+    );
+    let error = xtask::workflow::workflow_lint(&path)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("line 5: job linux is missing runs-on"),
+        "{error}"
+    );
+    fixture.write("ci.yaml", "env:\n  BAD: ${{ runner.temp }}\njobs:\n  first:\n    steps:\n      - uses: actions/checkout@v7\n  second:\n    steps: []\n");
+    let error = xtask::workflow::workflow_lint(&path)
+        .unwrap_err()
+        .to_string();
+    for diagnostic in [
+        "line 2:",
+        "line 4: job first is missing runs-on",
+        "line 6:",
+        "line 7: job second is missing runs-on",
+    ] {
+        assert!(error.contains(diagnostic), "{error}");
+    }
+}

@@ -79,6 +79,7 @@ fn cargo(root: &Path, args: &[&str]) -> Result<()> {
 /// Check native feature modes, inherited lint policy, WASM, and the unchanged frontend.
 pub fn check() -> Result<()> {
     let root = crate::repository_root();
+    crate::workflow::workflow_lint(&root.join(".github/workflows/ci.yaml"))?;
     cargo(&root, &["fmt", "--check"])?;
     for args in [
         vec!["check", "--locked"],
@@ -173,6 +174,7 @@ pub fn no_developer_paths(root: Option<&Path>) -> Result<()> {
 /// Run the original CI order, stopping at the first failing command.
 pub fn ci_all() -> Result<()> {
     let root = crate::repository_root();
+    crate::workflow::workflow_lint(&root.join(".github/workflows/ci.yaml"))?;
     println!("{}", crate::guards::toolchain_pin(&root)?);
     no_developer_paths(None)?;
     crate::guards::check_notices(&root, None)?;
@@ -201,7 +203,50 @@ fn append_env(name: &str, value: &Path) -> Result<()> {
 }
 
 /// Initialize hosted runner directories and toolchain with only a Cargo call in workflow shell.
-pub fn ci_init() -> Result<()> {
+pub fn ci_init(no_toolchain: bool) -> Result<()> {
+    // Workflow/job env has no runner context; derive paths after the step starts.
+    let names = [
+        ("STORY584_SCRATCH", "story584-scratch"),
+        ("STORY584_TOOLS", "story584-tools"),
+        ("STORY584_ARTIFACT_DIR", "story584-artifacts"),
+    ];
+    let directories = if let Some(runner_temp) = env::var_os("RUNNER_TEMP") {
+        let runner_temp = crate::external_path(Path::new(&runner_temp), &crate::repository_root())?;
+        names.map(|(_, suffix)| runner_temp.join(suffix))
+    } else {
+        let directory = |name| {
+            crate::external_env(name).context(
+                "ci-init: RUNNER_TEMP or all STORY584_SCRATCH/STORY584_TOOLS/STORY584_ARTIFACT_DIR must be set",
+            )
+        };
+        [
+            directory(names[0].0)?,
+            directory(names[1].0)?,
+            directory(names[2].0)?,
+        ]
+    };
+    for ((name, _), directory) in names.iter().zip(&directories) {
+        fs::create_dir_all(directory)?;
+        append_env(name, directory)?;
+    }
+    let cache = directories[0].join("wasm-pack-cache");
+    fs::create_dir_all(&cache)?;
+    append_env("WASM_PACK_CACHE", &cache)?;
+    append_env(
+        "CARGO_TARGET_DIR",
+        &crate::scratch_directory_in(&directories[0], "target")?,
+    )?;
+    let tools_bin = directories[1].join("bin");
+    fs::create_dir_all(&tools_bin)?;
+    let path_file = env::var_os("GITHUB_PATH").context("ci-init: missing GITHUB_PATH")?;
+    writeln!(
+        OpenOptions::new().append(true).open(path_file)?,
+        "{}",
+        tools_bin.display()
+    )?;
+    if no_toolchain {
+        return Ok(());
+    }
     let channel = crate::guards::toolchain_pin(&crate::repository_root())?;
     crate::run(Command::new("rustup").args([
         "toolchain",
@@ -216,21 +261,6 @@ pub fn ci_init() -> Result<()> {
         "--target",
         "wasm32-unknown-unknown",
     ]))?;
-    for name in [
-        "STORY584_SCRATCH",
-        "STORY584_TOOLS",
-        "STORY584_ARTIFACT_DIR",
-    ] {
-        let directory = crate::external_env(name)?;
-        fs::create_dir_all(&directory)?;
-    }
-    append_env("CARGO_TARGET_DIR", &crate::scratch_directory("target")?)?;
-    let path_file = env::var_os("GITHUB_PATH").context("ci-init: missing GITHUB_PATH")?;
-    writeln!(
-        OpenOptions::new().append(true).open(path_file)?,
-        "{}",
-        crate::external_env("STORY584_TOOLS")?.join("bin").display()
-    )?;
     crate::run(Command::new("rustc").args(["--version", "--verbose"]))?;
     crate::run(Command::new("cargo").arg("--version"))?;
     if env::consts::OS == "macos" {
