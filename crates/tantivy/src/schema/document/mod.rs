@@ -36,6 +36,7 @@
 //!
 //! ## A basic custom document
 //! ```
+//! #![allow(dead_code)] // rustc 1.98 reports the example's never-constructed types under deny(warnings); the example documents shape, not use
 //! use std::collections::{btree_map, BTreeMap};
 //! use tantivy::schema::{Document, Field};
 //! use tantivy::schema::document::{DeserializeError, DocumentDeserialize, DocumentDeserializer};
