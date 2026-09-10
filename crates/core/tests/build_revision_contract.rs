@@ -1,5 +1,5 @@
 //! Exercises the actual std-only build entrypoint and resolver against isolated source roots.
-//! Fixtures use existing local Git history, never commits, recursive Cargo, data or network.
+//! Fixtures use local Git history and disposable commits, never recursive Cargo, data or network.
 
 #![deny(missing_docs)]
 
@@ -692,6 +692,10 @@ fn assert_git_watches(root: &Path, output: &str, branch: bool) {
 fn build_script_tracks_git_and_sources() {
     let fixture = Fixture::new();
     let root = fixture.clone_repo();
+    assert!(
+        root.join("SOURCE_OFFER.md").is_file(),
+        "fixture root must carry the template"
+    );
     git(&root, &["checkout", "-b", "fixture-branch"]);
     prepare_template(&root);
     revision::emit_watches(&root);
@@ -707,11 +711,28 @@ fn build_script_tracks_git_and_sources() {
     .unwrap();
     let output = run_build(&binary, &worktree, &fixture.0.join("worktree-out"), None);
     assert_git_watches(&worktree, &output, false);
-    let previous = String::from_utf8(git(&root, &["rev-parse", "HEAD^"]).stdout).unwrap();
-    git(&root, &["checkout", "--detach", previous.trim_end()]);
+    let before = head(&root);
+    // On pull_request, HEAD^ is the merge commit's base branch, which lacks the Story's
+    // build inputs; an empty fixture commit changes the revision without changing its tree.
+    git(
+        &root,
+        &[
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--allow-empty",
+            "-q",
+            "-m",
+            "fixture: move HEAD",
+        ],
+    );
+    let moved = head(&root);
+    assert_ne!(moved, before);
     let second = run_build(&binary, &root, &fixture.0.join("out"), None);
-    assert!(second.contains(&format!(
-        "cargo:rustc-env=AVA_SEARCH_REVISION={}\n",
-        revision::resolve(&root, None).revision
-    )));
+    assert!(second.contains(&format!("cargo:rustc-env=AVA_SEARCH_REVISION={}\n", moved)));
+    assert!(second.contains("cargo:rustc-env=AVA_SEARCH_REVISION_SOURCE=git\n"));
 }
