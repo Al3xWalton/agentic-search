@@ -12,11 +12,6 @@ concurrency:
 env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
-  STORY584_SCRATCH: ${{ runner.temp }}/story584-scratch
-  STORY584_TOOLS: ${{ runner.temp }}/story584-tools
-  STORY584_ARTIFACT_DIR: ${{ runner.temp }}/story584-artifacts
-  WASM_PACK_CACHE: ${{ runner.temp }}/story584-scratch/wasm-pack-cache
-  CARGO_TARGET_DIR: ${{ runner.temp }}/story584-bootstrap
 jobs:
   linux:
     name: Linux (Rust 1.98.0)
@@ -29,6 +24,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Pin toolchain and initialize scratch
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/story584-bootstrap
         run: cargo xtask ci-init
       - name: Native Linux dependencies
         run: cargo xtask native-deps
@@ -75,6 +72,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Pin toolchain and initialize scratch
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/story584-bootstrap
         run: cargo xtask ci-init
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:

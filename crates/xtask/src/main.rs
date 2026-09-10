@@ -54,10 +54,17 @@ enum Task {
         verify_archive: Option<Vec<String>>,
     },
     CiAll,
+    WorkflowLint {
+        file: Option<PathBuf>,
+    },
     Check,
     SourceOffer,
     Licenses,
-    CiInit,
+    CiInit {
+        /// Skip toolchain installation and version probes for directory-only initialization.
+        #[arg(long)]
+        no_toolchain: bool,
+    },
     NativeDeps,
     NodeVersions,
 }
@@ -96,10 +103,13 @@ fn execute(task: Task) -> Result<()> {
             None => xtask::install::install_tools(&destination.expect("clap requires destination")),
         },
         Task::CiAll => xtask::ci::ci_all(),
+        Task::WorkflowLint { file } => xtask::workflow::workflow_lint(
+            &file.unwrap_or_else(|| default_root.join(".github/workflows/ci.yaml")),
+        ),
         Task::Check => xtask::ci::check(),
         Task::SourceOffer => xtask::ci::source_offer(),
         Task::Licenses => xtask::artifacts::licenses(),
-        Task::CiInit => xtask::ci::ci_init(),
+        Task::CiInit { no_toolchain } => xtask::ci::ci_init(no_toolchain),
         Task::NativeDeps => xtask::ci::native_deps(),
         Task::NodeVersions => xtask::ci::node_versions(),
     }

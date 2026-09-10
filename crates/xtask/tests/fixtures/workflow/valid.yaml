@@ -1,0 +1,14 @@
+name: Valid contexts and pins
+env:
+  VALUE: ${{ github.ref }}-${{ inputs.name }}-${{ vars.NAME }}-${{ secrets.NAME }}
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      VALUE: ${{ needs.build.outputs.name }}-${{ matrix.name }}-${{ strategy.job-index }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Step contexts
+        env:
+          VALUE: ${{ runner.temp }}-${{ env.NAME }}-${{ steps.build.outputs.name }}-${{ job.status }}
+        run: cargo xtask workflow-lint
