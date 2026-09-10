@@ -1,10 +1,12 @@
 [package]
+description = "Agentic Search — AVA's open-source web retrieval service for AI agents"
 authors = ['Stract <hello@stract.com>']
 default-run = "stract"
 edition = "2021"
 license = "AGPL-3.0"
 name = "stract"
 publish = false
+repository = "https://github.com/Al3xWalton/agentic-search"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -123,6 +125,7 @@ web-spell = { path = "../web-spell" }
 tikv-jemallocator.workspace = true
 
 [dev-dependencies]
+tower = { workspace = true, features = ["util"] }
 criterion.workspace = true
 insta.workspace = true
 maplit.workspace = true

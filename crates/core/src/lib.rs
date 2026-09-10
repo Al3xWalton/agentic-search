@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Main library for Stract.
+//! Main library for Agentic Search, derived from the Stract search engine.
 
 #![doc(html_logo_url = "https://stract.com/images/biglogo.svg")]
 #![warn(clippy::too_many_lines)]
@@ -86,6 +86,7 @@ mod simhash;
 pub mod similar_hosts;
 mod sitemap;
 mod snippet;
+mod source_metadata;
 mod stopwords;
 pub mod summarizer;
 pub mod tokenizer;

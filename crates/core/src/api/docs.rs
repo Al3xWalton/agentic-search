@@ -14,7 +14,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use super::{autosuggest, explore, hosts, search, webgraph};
+//! Describes the existing API and its unauthenticated build source offer.
+
+use super::{autosuggest, explore, hosts, search, source_offer, webgraph};
 use axum::Router;
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
@@ -22,6 +24,7 @@ use utoipa_swagger_ui::SwaggerUi;
 #[derive(OpenApi)]
 #[openapi(
         paths(
+            source_offer::route,
             search::search,
             search::widget,
             search::sidebar,
@@ -38,6 +41,7 @@ use utoipa_swagger_ui::SwaggerUi;
         ),
         components(
             schemas(
+                source_offer::SourceOffer,
                 crate::webpage::region::Region,
                 optics::HostRankings,
                 search::ApiSearchQuery,
@@ -138,10 +142,11 @@ fn mark_internal(path: &mut utoipa::openapi::path::PathItem) {
 
 impl Modify for ApiModifier {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        openapi.info.title = "Agentic Search API".to_string();
         openapi.info.description = Some(
-            "Stract is an open source web search engine. The API is totally free while in beta, but some endpoints will be paid by consumption in the future.
-The API might also change quite a bit during the beta period, but we will try to keep it as stable as possible. We look forward to see what you will build!
-
+            "Agentic Search is AVA's open-source web retrieval service for AI agents, derived from Stract. \
+The [source offer](/.well-known/ava-search-source) identifies this build's AGPL-3.0-only source. \
+Every API response includes its source URL in the Source-Offer header.\n\n\
 Remember to always give proper attributions to the sources you use from the search results.".to_string(),
         );
 
@@ -169,6 +174,7 @@ Remember to always give proper attributions to the sources you use from the sear
     }
 }
 
+/// Serves the API schema and Swagger UI with existing paths intact.
 pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
     SwaggerUi::new("/beta/api/docs/swagger")
         .url("/beta/api/docs/openapi.json", ApiDoc::openapi())
@@ -177,4 +183,23 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
                 .use_base_layout()
                 .default_models_expand_depth(0),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_offer_docs_are_discoverable() {
+        let docs = ApiDoc::openapi();
+        assert_eq!(docs.info.title, "Agentic Search API");
+        let description = docs.info.description.as_deref().unwrap();
+        assert!(description.contains("[source offer](/.well-known/ava-search-source)"));
+        assert!(description.contains("Source-Offer"));
+        assert!(!description.contains("paid by consumption"));
+        assert!(docs.paths.paths["/.well-known/ava-search-source"]
+            .get
+            .is_some());
+        assert!(docs.components.unwrap().schemas.contains_key("SourceOffer"));
+    }
 }
