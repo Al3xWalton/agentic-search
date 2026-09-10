@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Exports current source bytes, including authored files and initialized submodules."""
+import argparse
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+
+def git(root, args):
+    result = subprocess.run(['git', '-C', str(root), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        raise RuntimeError('source-tree: git enumeration failed')
+    return result.stdout
+
+
+def export(root, destination):
+    top = git(root, ['rev-parse', '--show-toplevel']).rstrip(b'\n')
+    if Path(os.fsdecode(top)).resolve() != root.resolve():
+        raise RuntimeError('source-tree: root does not own an initialized repository')
+    entries = git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+    stages = git(root, ['ls-files', '--stage', '-z'])
+    links = {row.split(b'\t', 1)[1] for row in stages.split(b'\0') if row.startswith(b'160000 ')}
+    for raw in sorted(set(entries.split(b'\0')) - {b''}):
+        relative = Path(os.fsdecode(raw))
+        if relative.is_absolute() or '..' in relative.parts:
+            raise RuntimeError('source-tree: invalid source path')
+        if any((root / parent).is_symlink() for parent in relative.parents):
+            raise RuntimeError('source-tree: source parent is a symlink')
+        source = root / relative
+        target = destination / relative
+        if raw in links:
+            if not (source / '.git').exists():
+                raise RuntimeError('source-tree: uninitialized submodule')
+            target.mkdir(parents=True, exist_ok=True)
+            export(source, target)
+        elif source.is_symlink():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(os.readlink(source))
+        elif source.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            shutil.copymode(source, target)
+        elif source.exists():
+            raise RuntimeError('source-tree: unreadable or unsupported source entry')
+        # Deleted tracked paths do not belong to the candidate tree.
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument('destination', type=Path)
+    args = parser.parse_args()
+    root = args.root.resolve()
+    destination = args.destination.resolve()
+    if destination == root or root in destination.parents or destination.exists():
+        raise RuntimeError('source-tree: destination must be new and external')
+    destination.mkdir(parents=True)
+    try:
+        export(root, destination)
+    except Exception:
+        shutil.rmtree(destination)
+        raise
+    print('source-tree: exported source')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, RuntimeError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

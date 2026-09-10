@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Upstream test fixtures: saved third-party HTML pages under crates/core/testcases and the sample-optics fediverse node list carry page tokens (fkey, siteKey, node hashes) that are not credentials; reviewed 2026-09-10, 33 findings, all generic-api-key"
+paths = ['''crates/core/testcases/.*''', '''crates/optics/testcases/samples/.*''']

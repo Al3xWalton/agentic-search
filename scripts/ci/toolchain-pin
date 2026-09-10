@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+if [[ ${1:-} == --root && $# == 2 ]]; then root=$2; elif [[ $# != 0 ]]; then exit 2; fi
+file="$root/rust-toolchain.toml"
+if [[ ! -f "$file" ]]; then echo 'toolchain-pin: missing toolchain file' >&2; exit 1; fi
+python3 - "$file" <<'PY'
+import pathlib, re, sys
+try:
+    text = pathlib.Path(sys.argv[1]).read_text()
+    section = ''
+    channels = []
+    for line in text.splitlines():
+        line = line.split('#', 1)[0].strip()
+        if line.startswith('['):
+            section = line
+        elif section == '[toolchain]' and re.match(r'^channel\b', line):
+            match = re.fullmatch(r'channel\s*=\s*"([^"\r\n]*)"', line)
+            if not match:
+                raise ValueError('malformed channel')
+            channels.append(match.group(1))
+    if len(channels) != 1:
+        raise ValueError('exactly one toolchain channel is required')
+    channel = channels[0]
+    if channel != '1.98.0':
+        raise ValueError('channel must be 1.98.0')
+    print(channel)
+except (OSError, UnicodeError, ValueError) as error:
+    print('toolchain-pin: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
