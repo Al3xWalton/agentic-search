@@ -1,14 +1,2 @@
 #!/usr/bin/env bash
-set -euo pipefail
-./scripts/ci/toolchain-pin
-./scripts/ci/no-developer-paths
-./scripts/ci/check-notices
-cargo test --locked -p stract --test repository_guards
-./scripts/ci/source-offer
-./scripts/ci/check
-cargo build --locked --release
-cargo test --locked --workspace
-./scripts/licenses.sh
-./scripts/ci/sbom
-./scripts/ci/check-sbom "${STORY584_ARTIFACT_DIR:?external artifacts required}/sbom.json"
-./scripts/ci/secrets
+cargo xtask ci-all "$@"

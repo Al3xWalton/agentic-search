@@ -1,0 +1,113 @@
+//! Cargo entrypoint for repository guards and serial CI orchestration.
+
+#![deny(missing_docs)]
+
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(about = "Repository verification and pinned tooling")]
+struct Cli {
+    #[command(subcommand)]
+    command: Task,
+}
+
+#[derive(Subcommand)]
+enum Task {
+    ToolchainPin {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    NoDeveloperPaths {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    CheckNotices {
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+    },
+    CheckSbom {
+        file: PathBuf,
+    },
+    Sbom,
+    SourceTree {
+        destination: PathBuf,
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    Secrets {
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long)]
+        scanner: Option<PathBuf>,
+    },
+    InstallTools {
+        #[arg(
+            required_unless_present = "verify_archive",
+            conflicts_with = "verify_archive"
+        )]
+        destination: Option<PathBuf>,
+        #[arg(long, num_args = 2, value_names = ["FILE", "SHA256"])]
+        verify_archive: Option<Vec<String>>,
+    },
+    CiAll,
+    Check,
+    SourceOffer,
+    Licenses,
+    CiInit,
+    NativeDeps,
+    NodeVersions,
+}
+
+fn execute(task: Task) -> Result<()> {
+    let default_root = xtask::repository_root();
+    match task {
+        Task::ToolchainPin { root } => {
+            println!(
+                "{}",
+                xtask::guards::toolchain_pin(root.as_deref().unwrap_or(&default_root))?
+            );
+            Ok(())
+        }
+        Task::NoDeveloperPaths { root } => xtask::ci::no_developer_paths(root.as_deref()),
+        Task::CheckNotices { root, baseline } => {
+            let baseline = baseline.or_else(|| root.as_ref().map(|root| root.join(".baseline")));
+            xtask::guards::check_notices(
+                root.as_deref().unwrap_or(&default_root),
+                baseline.as_deref(),
+            )
+        }
+        Task::CheckSbom { file } => xtask::guards::check_sbom(&file),
+        Task::Sbom => xtask::artifacts::sbom(),
+        Task::SourceTree { root, destination } => {
+            xtask::source_tree::source_tree(root.as_deref().unwrap_or(&default_root), &destination)
+        }
+        Task::Secrets { root, scanner } => {
+            xtask::artifacts::secrets(root.as_deref(), scanner.as_deref())
+        }
+        Task::InstallTools {
+            destination,
+            verify_archive,
+        } => match verify_archive {
+            Some(args) => xtask::install::verify_archive(std::path::Path::new(&args[0]), &args[1]),
+            None => xtask::install::install_tools(&destination.expect("clap requires destination")),
+        },
+        Task::CiAll => xtask::ci::ci_all(),
+        Task::Check => xtask::ci::check(),
+        Task::SourceOffer => xtask::ci::source_offer(),
+        Task::Licenses => xtask::artifacts::licenses(),
+        Task::CiInit => xtask::ci::ci_init(),
+        Task::NativeDeps => xtask::ci::native_deps(),
+        Task::NodeVersions => xtask::ci::node_versions(),
+    }
+}
+
+fn main() {
+    if let Err(error) = execute(Cli::parse().command) {
+        eprintln!("{error:#}");
+        std::process::exit(xtask::exit_code(&error));
+    }
+}
