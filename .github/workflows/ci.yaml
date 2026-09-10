@@ -1,53 +1,122 @@
 # Based on: https://github.com/clap-rs/clap/blob/master/.github/workflows/ci.yml
-
 name: CI
-
 permissions:
   contents: read
-
 on:
   pull_request:
   push:
-
+    branches: [main]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
-  CLICOLOR: 1
-
 jobs:
-  test:
-    name: Test
-    strategy:
-      matrix:
-        build: [linux]
-        include:
-          - build: linux
-            os: ubuntu-latest
-            rust: "stable"
-    runs-on: ${{ matrix.os }}
+  linux:
+    name: Linux (Rust 1.98.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: "recursive"
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@beta
-        with:
-          toolchain: ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@v2
-      - name: Install liburing
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pin toolchain and initialize scratch
+        shell: bash
+        run: |
+          export STORY584_SCRATCH="$RUNNER_TEMP/story584-scratch"
+          export STORY584_TOOLS="$RUNNER_TEMP/story584-tools"
+          export STORY584_ARTIFACT_DIR="$RUNNER_TEMP/story584-artifacts"
+          export WASM_PACK_CACHE="$STORY584_SCRATCH/wasm-pack-cache"
+          echo "STORY584_SCRATCH=$STORY584_SCRATCH" >> "$GITHUB_ENV"
+          echo "STORY584_TOOLS=$STORY584_TOOLS" >> "$GITHUB_ENV"
+          echo "STORY584_ARTIFACT_DIR=$STORY584_ARTIFACT_DIR" >> "$GITHUB_ENV"
+          echo "WASM_PACK_CACHE=$WASM_PACK_CACHE" >> "$GITHUB_ENV"
+          channel=$(./scripts/ci/toolchain-pin)
+          rustup toolchain install "$channel" --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+          mkdir -p "$STORY584_SCRATCH" "$STORY584_TOOLS" "$STORY584_ARTIFACT_DIR"
+          echo "CARGO_TARGET_DIR=$(mktemp -d "$STORY584_SCRATCH/target-XXXXXX")" >> "$GITHUB_ENV"
+          echo "$STORY584_TOOLS/bin" >> "$GITHUB_PATH"
+          rustc --version --verbose
+          cargo --version
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Native Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y liburing-dev
-      - name: Install wasm-pack
-        run: cargo install wasm-pack
-      - uses: taiki-e/install-action@v2
+          sudo apt-get install -y build-essential clang pkg-config libssl-dev liburing-dev
+          clang --version
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          tool: cargo-about
-      - uses: actions/setup-node@v4
+          node-version: 20.10.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          node-version: 20.10.x
-      - name: Run CI
+          key: ${{ runner.os }}-1.98.0-${{ hashFiles('Cargo.lock') }}-wasm0.15.0-about0.9.2-cdx0.5.9
+          cache-targets: false
+          cache-bin: false
+          cache-on-failure: false
+      - name: Install verified tools
+        run: |
+          node --version
+          npm --version
+          ./scripts/ci/install-tools "$STORY584_TOOLS"
+      - name: Verify source and build
         run: ./scripts/ci/all
-      - name: Test
-        run: cargo test
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom.json
+          path: ${{ env.STORY584_ARTIFACT_DIR }}/sbom.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: source-compliance
+          path: |
+            ${{ env.STORY584_ARTIFACT_DIR }}/members
+            ${{ env.STORY584_ARTIFACT_DIR }}/SOURCE_OFFER.md
+            ${{ env.STORY584_ARTIFACT_DIR }}/source-offer.json
+            ${{ env.STORY584_ARTIFACT_DIR }}/licenses.html
+            ${{ env.STORY584_ARTIFACT_DIR }}/gitleaks-*.json
+          if-no-files-found: error
+  macos:
+    name: macOS native (Rust 1.98.0)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pin toolchain and initialize scratch
+        shell: bash
+        run: |
+          export STORY584_SCRATCH="$RUNNER_TEMP/story584-scratch"
+          export STORY584_TOOLS="$RUNNER_TEMP/story584-tools"
+          export STORY584_ARTIFACT_DIR="$RUNNER_TEMP/story584-artifacts"
+          export WASM_PACK_CACHE="$STORY584_SCRATCH/wasm-pack-cache"
+          echo "STORY584_SCRATCH=$STORY584_SCRATCH" >> "$GITHUB_ENV"
+          echo "STORY584_TOOLS=$STORY584_TOOLS" >> "$GITHUB_ENV"
+          echo "STORY584_ARTIFACT_DIR=$STORY584_ARTIFACT_DIR" >> "$GITHUB_ENV"
+          echo "WASM_PACK_CACHE=$WASM_PACK_CACHE" >> "$GITHUB_ENV"
+          channel=$(./scripts/ci/toolchain-pin)
+          rustup toolchain install "$channel" --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+          mkdir -p "$STORY584_SCRATCH" "$STORY584_ARTIFACT_DIR"
+          echo "CARGO_TARGET_DIR=$(mktemp -d "$STORY584_SCRATCH/target-XXXXXX")" >> "$GITHUB_ENV"
+          rustc --version --verbose
+          cargo --version
+          xcodebuild -version
+          clang --version
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ runner.os }}-1.98.0-${{ hashFiles('Cargo.lock') }}-wasm0.15.0-about0.9.2-cdx0.5.9
+          cache-targets: false
+          cache-bin: false
+          cache-on-failure: false
+      - name: Build native release
+        run: cargo build --locked --release
+      - name: Verify source offer
+        run: ./scripts/ci/source-offer

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+fixture=0
+if [[ ${1:-} == --root && $# == 2 ]]; then root=$2; fixture=1; elif [[ $# != 0 ]]; then exit 2; fi
+python3 - "$root" "$fixture" <<'PY'
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+root = Path(sys.argv[1])
+fixture = sys.argv[2] == '1'
+base = '8ac40b023e0a49f55cdd5b599841ea46d0503ec9'
+
+def git(args):
+    return subprocess.check_output(['git', '-C', str(root), *args])
+
+def baseline(path):
+    if fixture:
+        return (root / '.baseline' / path).read_bytes()
+    return git(['show', base + ':' + path])
+
+def leading(data):
+    lines = data.splitlines(keepends=True)
+    block = []
+    for line in lines:
+        if line.startswith(b'//') and not line.startswith(b'//!'):
+            block.append(line)
+        else:
+            break
+    return b''.join(block)
+
+try:
+    notice = root / 'NOTICE'
+    if not notice.is_file():
+        raise ValueError('missing NOTICE')
+    text = notice.read_text()
+    if 'Agentic Search is derived from Stract (https://github.com/StractOrg/stract).' not in text:
+        raise ValueError('missing derivation')
+    if base not in text:
+        raise ValueError('missing upstream base')
+    if not re.search(r'Modified for Agentic Search on \d{4}-\d{2}-\d{2}: repository identity, build/CI,\nsource-offer support and sanitised research evidence\.', text):
+        raise ValueError('missing dated modification statement')
+    if 'The public git history records modified files and their relevant dates.' not in text:
+        raise ValueError('missing public history statement')
+    if (root / 'LICENSE.md').read_bytes() != baseline('LICENSE.md'):
+        raise ValueError('LICENSE bytes changed')
+    if fixture:
+        paths = [str(p.relative_to(root / '.baseline')) for p in (root / '.baseline').rglob('*.rs')]
+    else:
+        paths = [p.decode() for p in git(['diff', '--no-renames', '--diff-filter=MD', '--name-only', '-z', base, '--', '*.rs']).split(b'\0') if p]
+    for path in paths:
+        original = baseline(path)
+        # Rustfmt does not change these leading blocks; their post-fmt bytes equal the base.
+        expected = leading(original)
+        current = root / path
+        if not current.is_file() or leading(current.read_bytes()) != expected:
+            raise ValueError('upstream leading notice changed: ' + path)
+    print('check-notices: provenance and upstream bytes preserved')
+except (OSError, UnicodeError, ValueError, subprocess.CalledProcessError) as error:
+    print('check-notices: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
