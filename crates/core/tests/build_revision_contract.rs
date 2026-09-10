@@ -82,6 +82,27 @@ fn git(root: &Path, args: &[&str]) -> Output {
     output
 }
 
+fn add_worktree(root: &Path, worktree: &Path) {
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            worktree.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+    // Sparse-checkout inheritance differs between Git 2.50 and 2.55.
+    git(worktree, &["sparse-checkout", "disable"]);
+    git(worktree, &["checkout", "--detach", "HEAD"]);
+    assert!(
+        worktree.join("crates/core/Cargo.toml").is_file(),
+        "worktree fixture must contain crates/core"
+    );
+    assert!(worktree.join(".git").is_file());
+}
+
 fn head(root: &Path) -> String {
     String::from_utf8(git(root, &["rev-parse", "HEAD"]).stdout)
         .unwrap()
@@ -249,17 +270,7 @@ fn git_revision_wins() {
     assert_eq!(selected.revision, head(&root));
     assert_eq!(selected.source, "git");
     let worktree = fixture.0.join("worktree");
-    git(
-        &root,
-        &[
-            "worktree",
-            "add",
-            "--detach",
-            worktree.to_str().unwrap(),
-            "HEAD",
-        ],
-    );
-    assert!(worktree.join(".git").is_file());
+    add_worktree(&root, &worktree);
     prepare_checked_inputs(&worktree);
     assert_eq!(resolve_committed(&worktree, Some(ENV_SHA)), selected);
 }
@@ -670,16 +681,7 @@ fn build_script_tracks_git_and_sources() {
     let first = run_build(&binary, &root, &fixture.0.join("out"), None);
     assert_git_watches(&root, &first, true);
     let worktree = fixture.0.join("worktree");
-    git(
-        &root,
-        &[
-            "worktree",
-            "add",
-            "--detach",
-            worktree.to_str().unwrap(),
-            "HEAD",
-        ],
-    );
+    add_worktree(&root, &worktree);
     fs::write(
         worktree.join("SOURCE_OFFER.md"),
         include_bytes!("../../../SOURCE_OFFER.md"),
