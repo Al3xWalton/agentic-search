@@ -313,6 +313,9 @@ mod tests {
                 ..Default::default()
             })
             .expect("failed to insert webpage");
+        // score_timestamp uses a bounded hours-since-update cache and returns 0.0 beyond it, so a fixed 2023 date rots into a tie with the 1999 page.
+        let updated_time =
+            (chrono::Utc::now() - chrono::Duration::hours(1)).format("%Y-%m-%dT%H:%M:%S+00:00");
         index
             .insert(&Webpage {
                 html: Html::parse(
@@ -321,7 +324,7 @@ mod tests {
                     <html>
                         <head>
                             <title>Title</title>
-                            <meta property="og:updated_time" content="2023-06-22T19:37:34+00:00" />
+                            <meta property="og:updated_time" content="{updated_time}" />
                         </head>
                         <body>
                             {CONTENT} {}
