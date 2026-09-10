@@ -1,0 +1,38 @@
+{
+  "cargo": {
+    "logical_bytes": 306642789,
+    "allocated_bytes_du_k": 363532288
+  },
+  "target-stable": {
+    "logical_bytes": 5657284960,
+    "allocated_bytes_du_k": 4924919808
+  },
+  "target-1.98": {
+    "logical_bytes": 7202344478,
+    "allocated_bytes_du_k": 7281364992
+  },
+  "data/index-cc": {
+    "logical_bytes": 491827567,
+    "allocated_bytes_du_k": 513978368
+  },
+  "data/index-seeds": {
+    "logical_bytes": 25158924,
+    "allocated_bytes_du_k": 25972736
+  },
+  "data/centrality-empty": {
+    "logical_bytes": 40,
+    "allocated_bytes_du_k": 8192
+  },
+  "data/seed-pages": {
+    "logical_bytes": 84958123,
+    "allocated_bytes_du_k": 85344256
+  },
+  "data/cc-sample.warc.gz": {
+    "logical_bytes": 909108907,
+    "allocated_bytes_du_k": 922783744
+  },
+  "data/seeds.warc.gz": {
+    "logical_bytes": 13640930,
+    "allocated_bytes_du_k": 13643776
+  }
+}

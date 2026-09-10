@@ -1,0 +1,458 @@
+{
+  "answer_set_sha256": "14ff433c807326a0b37ed984d7e69638e3c4d0fcdfc67923f3122a9c1be8df5e",
+  "started_utc": "2026-09-09T20:25:45.364088+00:00",
+  "mode": "stract",
+  "queries": [
+    {
+      "id": "q01",
+      "query": "What is the capital city of Australia?",
+      "started_utc": "2026-09-09T20:25:45.364385+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q01.json",
+      "success": true,
+      "latency_ms": 10.7365
+    },
+    {
+      "id": "q02",
+      "query": "How long does Mercury take to orbit the Sun?",
+      "started_utc": "2026-09-09T20:25:45.375269+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q02.json",
+      "success": true,
+      "latency_ms": 18.876749999999998
+    },
+    {
+      "id": "q03",
+      "query": "Who developed the theory of general relativity?",
+      "started_utc": "2026-09-09T20:25:45.394346+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q03.json",
+      "success": true,
+      "latency_ms": 9.494542000000001
+    },
+    {
+      "id": "q04",
+      "query": "When was the United Nations founded?",
+      "started_utc": "2026-09-09T20:25:45.404301+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q04.json",
+      "success": true,
+      "latency_ms": 7.923875000000004
+    },
+    {
+      "id": "q05",
+      "query": "Which four SI base units had new definitions in the 2018 revision?",
+      "started_utc": "2026-09-09T20:25:45.412430+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q05.json",
+      "success": true,
+      "latency_ms": 12.350209000000001
+    },
+    {
+      "id": "q06",
+      "query": "How many chambers does a human heart have?",
+      "started_utc": "2026-09-09T20:25:45.424889+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q06.json",
+      "success": true,
+      "latency_ms": 8.524000000000004
+    },
+    {
+      "id": "q07",
+      "query": "What is the tallest mountain above sea level?",
+      "started_utc": "2026-09-09T20:25:45.433524+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q07.json",
+      "success": true,
+      "latency_ms": 11.772375000000002
+    },
+    {
+      "id": "q08",
+      "query": "How long does Mars take to orbit the Sun?",
+      "started_utc": "2026-09-09T20:25:45.445404+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q08.json",
+      "success": true,
+      "latency_ms": 12.20462500000001
+    },
+    {
+      "id": "q09",
+      "query": "What is the chemical symbol for gold?",
+      "started_utc": "2026-09-09T20:25:45.457732+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q09.json",
+      "success": true,
+      "latency_ms": 12.154624999999989
+    },
+    {
+      "id": "q10",
+      "query": "What causes the phases of the Moon?",
+      "started_utc": "2026-09-09T20:25:45.470000+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q10.json",
+      "success": true,
+      "latency_ms": 11.714666999999984
+    },
+    {
+      "id": "q11",
+      "query": "How do I create a Python virtual environment with venv?",
+      "started_utc": "2026-09-09T20:25:45.481824+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q11.json",
+      "success": true,
+      "latency_ms": 1.8551670000000187
+    },
+    {
+      "id": "q12",
+      "query": "How do I parse JSON into a Python dictionary?",
+      "started_utc": "2026-09-09T20:25:45.483790+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q12.json",
+      "success": true,
+      "latency_ms": 1.5696669999999968
+    },
+    {
+      "id": "q13",
+      "query": "How do I read a text file into a string in Rust?",
+      "started_utc": "2026-09-09T20:25:45.485493+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q13.json",
+      "success": true,
+      "latency_ms": 3.6988329999999845
+    },
+    {
+      "id": "q14",
+      "query": "How do I handle recoverable errors using Result in Rust?",
+      "started_utc": "2026-09-09T20:25:45.489330+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q14.json",
+      "success": true,
+      "latency_ms": 1.7270829999999904
+    },
+    {
+      "id": "q15",
+      "query": "How do I make an HTTP request with the JavaScript Fetch API?",
+      "started_utc": "2026-09-09T20:25:45.491174+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q15.json",
+      "success": true,
+      "latency_ms": 3.6663329999999936
+    },
+    {
+      "id": "q16",
+      "query": "How do I parse command line arguments in Python using argparse?",
+      "started_utc": "2026-09-09T20:25:45.494958+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q16.json",
+      "success": true,
+      "latency_ms": 3.931165999999986
+    },
+    {
+      "id": "q17",
+      "query": "How do I run a subprocess and capture its output in Python?",
+      "started_utc": "2026-09-09T20:25:45.499025+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q17.json",
+      "success": true,
+      "latency_ms": 6.221499999999991
+    },
+    {
+      "id": "q18",
+      "query": "How do I undo the last Git commit while keeping the changes?",
+      "started_utc": "2026-09-09T20:25:45.505396+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q18.json",
+      "success": true,
+      "latency_ms": 3.04637499999999
+    },
+    {
+      "id": "q19",
+      "query": "How do I create a PostgreSQL database table?",
+      "started_utc": "2026-09-09T20:25:45.508592+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q19.json",
+      "success": true,
+      "latency_ms": 3.7245409999999977
+    },
+    {
+      "id": "q20",
+      "query": "How do I publish a Rust crate to crates.io?",
+      "started_utc": "2026-09-09T20:25:45.512502+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q20.json",
+      "success": true,
+      "latency_ms": 1.7312090000000113
+    },
+    {
+      "id": "q21",
+      "query": "Find a Singapore supplier page for bulk vanilla pods in different grades.",
+      "started_utc": "2026-09-09T20:25:45.514376+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q21.json",
+      "success": true,
+      "latency_ms": 2.161833000000002
+    },
+    {
+      "id": "q22",
+      "query": "Find the official Framework Laptop 13 product page.",
+      "started_utc": "2026-09-09T20:25:45.516688+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q22.json",
+      "success": true,
+      "latency_ms": 12.81770800000001
+    },
+    {
+      "id": "q23",
+      "query": "Find the Apple MacBook Air technical specifications.",
+      "started_utc": "2026-09-09T20:25:45.529664+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q23.json",
+      "success": true,
+      "latency_ms": 2.541500000000002
+    },
+    {
+      "id": "q24",
+      "query": "Find the official Nintendo Switch OLED model product page.",
+      "started_utc": "2026-09-09T20:25:45.532356+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q24.json",
+      "success": true,
+      "latency_ms": 1.7368749999999988
+    },
+    {
+      "id": "q25",
+      "query": "Find the Felix First Class Wood chef knife with a 21 cm blade and olive handle.",
+      "started_utc": "2026-09-09T20:25:45.534279+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q25.json",
+      "success": true,
+      "latency_ms": 2.415625000000005
+    },
+    {
+      "id": "q26",
+      "query": "Find a product page for Magnesia Red pomegranate drink in a 1.5 litre bottle.",
+      "started_utc": "2026-09-09T20:25:45.536878+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q26.json",
+      "success": true,
+      "latency_ms": 2.3327089999999884
+    },
+    {
+      "id": "q27",
+      "query": "Find a distributor product page for the ABB S203U-C15.",
+      "started_utc": "2026-09-09T20:25:45.539386+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q27.json",
+      "success": true,
+      "latency_ms": 1.7757499999999926
+    },
+    {
+      "id": "q28",
+      "query": "Find the official Prusa MK4S 3D printer product page.",
+      "started_utc": "2026-09-09T20:25:45.541351+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q28.json",
+      "success": true,
+      "latency_ms": 2.7625840000000124
+    },
+    {
+      "id": "q29",
+      "query": "Find the official Arduino Uno Rev3 board specifications.",
+      "started_utc": "2026-09-09T20:25:45.544305+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q29.json",
+      "success": true,
+      "latency_ms": 1.7088749999999986
+    },
+    {
+      "id": "q30",
+      "query": "Find the Black Tourmaline Rough Stone product at Earthbound Trading.",
+      "started_utc": "2026-09-09T20:25:45.546202+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q30.json",
+      "success": true,
+      "latency_ms": 1.800790999999996
+    },
+    {
+      "id": "q31",
+      "query": "What did the September 2026 Rust debugging survey results say?",
+      "started_utc": "2026-09-09T20:25:45.548192+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q31.json",
+      "success": true,
+      "latency_ms": 1.7656250000000207
+    },
+    {
+      "id": "q32",
+      "query": "What did Rust 1.98.1 fix in September 2026?",
+      "started_utc": "2026-09-09T20:25:45.550147+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q32.json",
+      "success": true,
+      "latency_ms": 4.302417000000003
+    },
+    {
+      "id": "q33",
+      "query": "What changed in rustup 1.29.1 released in September 2026?",
+      "started_utc": "2026-09-09T20:25:45.554698+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q33.json",
+      "success": true,
+      "latency_ms": 2.0479169999999822
+    },
+    {
+      "id": "q34",
+      "query": "Who are the first Rust Maintainers in Residence announced in August 2026?",
+      "started_utc": "2026-09-09T20:25:45.556968+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q34.json",
+      "success": true,
+      "latency_ms": 2.0190839999999763
+    },
+    {
+      "id": "q35",
+      "query": "What changed when Rust enabled the next generation trait solver on nightly in August 2026?",
+      "started_utc": "2026-09-09T20:25:45.559203+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q35.json",
+      "success": true,
+      "latency_ms": 2.259834000000016
+    },
+    {
+      "id": "q36",
+      "query": "What happened in the August 2026 arrayref supply chain attack?",
+      "started_utc": "2026-09-09T20:25:45.561699+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q36.json",
+      "success": true,
+      "latency_ms": 1.8112499999999865
+    },
+    {
+      "id": "q37",
+      "query": "What features were stabilised in Rust 1.98.0 in August 2026?",
+      "started_utc": "2026-09-09T20:25:45.563740+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q37.json",
+      "success": true,
+      "latency_ms": 2.032999999999979
+    },
+    {
+      "id": "q38",
+      "query": "When does Firefox switch to a two week release cadence in 2026?",
+      "started_utc": "2026-09-09T20:25:45.565998+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q38.json",
+      "success": true,
+      "latency_ms": 1.8998749999999953
+    },
+    {
+      "id": "q39",
+      "query": "What did Hubble and Webb discover about distant solar system objects in September 2026?",
+      "started_utc": "2026-09-09T20:25:45.568124+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q39.json",
+      "success": true,
+      "latency_ms": 8.127292000000008
+    },
+    {
+      "id": "q40",
+      "query": "What did Hubble find around Saturn south pole in September 2026?",
+      "started_utc": "2026-09-09T20:25:45.576530+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q40.json",
+      "success": true,
+      "latency_ms": 10.477417000000017
+    },
+    {
+      "id": "q41",
+      "query": "Find a page with a photograph of the Eiffel Tower.",
+      "started_utc": "2026-09-09T20:25:45.587278+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q41.json",
+      "success": true,
+      "latency_ms": 5.514083000000003
+    },
+    {
+      "id": "q42",
+      "query": "Find a page showing the Mona Lisa painting.",
+      "started_utc": "2026-09-09T20:25:45.593041+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q42.json",
+      "success": true,
+      "latency_ms": 4.413582999999999
+    },
+    {
+      "id": "q43",
+      "query": "Find a page with images of the Pillars of Creation.",
+      "started_utc": "2026-09-09T20:25:45.597715+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q43.json",
+      "success": true,
+      "latency_ms": 9.04012500000001
+    },
+    {
+      "id": "q44",
+      "query": "Find photographs of the Grand Canyon on an informative page.",
+      "started_utc": "2026-09-09T20:25:45.607021+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q44.json",
+      "success": true,
+      "latency_ms": 7.179250000000026
+    },
+    {
+      "id": "q45",
+      "query": "Find a page illustrating the Japanese cherry blossom.",
+      "started_utc": "2026-09-09T20:25:45.614464+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q45.json",
+      "success": true,
+      "latency_ms": 1.7177090000000117
+    },
+    {
+      "id": "q46",
+      "query": "Find a page with a photograph of a red panda.",
+      "started_utc": "2026-09-09T20:25:45.616437+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q46.json",
+      "success": true,
+      "latency_ms": 4.298583999999995
+    },
+    {
+      "id": "q47",
+      "query": "Find a page with pictures of the Sydney Opera House.",
+      "started_utc": "2026-09-09T20:25:45.621001+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q47.json",
+      "success": true,
+      "latency_ms": 10.90920900000003
+    },
+    {
+      "id": "q48",
+      "query": "Find a page showing the Rosetta Stone.",
+      "started_utc": "2026-09-09T20:25:45.632188+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q48.json",
+      "success": true,
+      "latency_ms": 3.660624999999973
+    },
+    {
+      "id": "q49",
+      "query": "Find a page with a picture of the aurora borealis.",
+      "started_utc": "2026-09-09T20:25:45.636119+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q49.json",
+      "success": true,
+      "latency_ms": 4.739166999999989
+    },
+    {
+      "id": "q50",
+      "query": "Find a page with images of the James Webb Space Telescope.",
+      "started_utc": "2026-09-09T20:25:45.641489+00:00",
+      "http_status": 200,
+      "output_file": "<WORKSPACE>/.spike/data/stract-q50.json",
+      "success": true,
+      "latency_ms": 8.009375000000041
+    }
+  ],
+  "finished_utc": "2026-09-09T20:25:45.649774+00:00"
+}

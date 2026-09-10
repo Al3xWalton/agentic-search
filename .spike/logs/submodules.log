@@ -1,0 +1,3 @@
+Submodule 'crates/optics/testcases/samples' (https://github.com/StractOrg/sample-optics) registered for path 'crates/optics/testcases/samples'
+Cloning into '<WORKSPACE>/crates/optics/testcases/samples'...
+Submodule path 'crates/optics/testcases/samples': checked out 'db4d485972914065dcf0763a0716644bd31fbe6f'

@@ -1,0 +1,31 @@
+{
+  "requested_stop": [
+    {
+      "name": "cc",
+      "pid": 50247,
+      "command": [
+        "<WORKSPACE>/.spike/target-1.98/release/stract",
+        "search-server",
+        "<WORKSPACE>/.spike/configs/search-cc.toml"
+      ]
+    },
+    {
+      "name": "seeds",
+      "pid": 50248,
+      "command": [
+        "<WORKSPACE>/.spike/target-1.98/release/stract",
+        "search-server",
+        "<WORKSPACE>/.spike/configs/search-seeds.toml"
+      ]
+    },
+    {
+      "name": "api",
+      "pid": 50249,
+      "command": [
+        "<WORKSPACE>/.spike/target-1.98/release/stract",
+        "api",
+        "<WORKSPACE>/.spike/configs/api.toml"
+      ]
+    }
+  ]
+}

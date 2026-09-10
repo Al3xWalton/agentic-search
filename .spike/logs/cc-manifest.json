@@ -1,0 +1,21 @@
+{
+  "name": "cc-manifest",
+  "command": [
+    "curl",
+    "--fail",
+    "--location",
+    "--max-time",
+    "120",
+    "https://data.commoncrawl.org/crawl-data/CC-MAIN-2026-34/warc.paths.gz",
+    "--output",
+    ".spike/data/warc.paths.gz"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:07:37.321115+00:00",
+  "exit_code": 0,
+  "wall_seconds": 1.013313708,
+  "cpu_user_seconds": 0.007917,
+  "cpu_system_seconds": 0.007613999999999999,
+  "peak_rss_bytes": 7766016,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}

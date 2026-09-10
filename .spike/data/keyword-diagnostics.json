@@ -1,0 +1,142 @@
+{
+  "note": "Post-hoc, hand-chosen diagnostic subset; not a replacement recall result; no Firecrawl queries repeated.",
+  "rows": [
+    {
+      "original_id": "q11",
+      "diagnostic_query": "python venv",
+      "http_status": 200,
+      "latency_ms": 3.0595419999999987,
+      "urls": [
+        "https://docs.python.org/3/library/venv.html",
+        "https://www.dfrobot.com/forum/topic/335631"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q12",
+      "diagnostic_query": "python json",
+      "http_status": 200,
+      "latency_ms": 3.9419169999999997,
+      "urls": [
+        "https://docs.python.org/3/library/json.html",
+        "https://docs.python.org/3/library/io.html",
+        "https://docs.python.org/3/library/argparse.html",
+        "https://handsonlabs.org/decoding-kaggle-kernel-csv-analysis-insights-from-meta-kaggle-hackathon-data/?v=c6a82504ceeb",
+        "https://tech.xebia.ms/github-copilot/roundups/weekly-github-copilot-roundup-2026-08-03",
+        "https://listcomp.com/python/2017/10/05/digest-of-essential-sqlalchemy",
+        "https://assets.transloadit.com/demos/video-encoding/add-audio-track-to-video-footage/",
+        "https://beltxman.com/archives",
+        "https://docs.bokeh.org/en/3.4.3/docs/reference/models/glyphs/multi_line.html",
+        "https://docs.redotengine.org/tutorials/platform/android/android_in_app_purchases"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q13",
+      "diagnostic_query": "read_to_string",
+      "http_status": 200,
+      "latency_ms": 8.864832999999999,
+      "urls": [
+        "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html",
+        "https://doc.rust-lang.org/std/fs/fn.read_to_string.html",
+        "https://www.unix.com/man-page/netbsd/3/ppath_copydel_uint64",
+        "https://docs.redotengine.org/tutorials/platform/android/android_in_app_purchases",
+        "https://doc.rust-lang.org/book/ch08-02-strings.html",
+        "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html",
+        "https://doc.rust-lang.org/book/ch02-00-guessing-game-tutorial.html",
+        "https://docs.python.org/3/library/argparse.html",
+        "https://docs.python.org/3/library/enum.html",
+        "https://doc.rust-lang.org/book/ch11-01-writing-tests.html"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q21",
+      "diagnostic_query": "vanilla pods",
+      "http_status": 200,
+      "latency_ms": 1.655541999999996,
+      "urls": [
+        "https://naturalvanilla.sg/vanilla-pods/",
+        "https://jokes.purpee.com/category/celebrities/"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q25",
+      "diagnostic_query": "Felix First Class",
+      "http_status": 200,
+      "latency_ms": 6.423707999999993,
+      "urls": [
+        "https://pizzini.at/felix-first-class-wood-chef-knife-21-cm-olive-aktion.html?language=en",
+        "https://en.chessbase.com/post/prague-festival-2026-4",
+        "https://en.wikipedia.org/wiki/Albert_Einstein",
+        "https://en.wikipedia.org/wiki/Charles_Darwin",
+        "https://en.wikipedia.org/wiki/Climate_change",
+        "https://en.wikipedia.org/wiki/Berlin",
+        "https://en.wikipedia.org/wiki/Helena_(empress)",
+        "https://www.claudia-oestreich.com/en/page/2/?amp%3Btype=841132&%3BcHash=c1db173ee5a3ad7b050f447dfdb14807&cHash=eca32ee3e387368cca00c914f0ce75f8",
+        "https://www.syncrophone.fr/artists/lea-lisa-copie-c5226.html"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q27",
+      "diagnostic_query": "S203U-C15",
+      "http_status": 200,
+      "latency_ms": 1.0362910000000016,
+      "urls": [
+        "https://proax.ca/en/product/21451/abbs203uc15"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q32",
+      "diagnostic_query": "Rust 1.98.1",
+      "http_status": 200,
+      "latency_ms": 7.398624999999999,
+      "urls": [
+        "https://blog.rust-lang.org/2026/09/03/Rust-1.98.1/",
+        "https://blog.rust-lang.org/2026/08/20/Rust-1.98.0/",
+        "https://doc.rust-lang.org/book/ch03-02-data-types.html",
+        "https://doc.rust-lang.org/book/ch02-00-guessing-game-tutorial.html",
+        "https://doc.rust-lang.org/std/fs/fn.read_to_string.html",
+        "https://en.wikipedia.org/wiki/Mars",
+        "https://en.wikipedia.org/wiki/Solar_System",
+        "https://en.wikipedia.org/wiki/Lion",
+        "https://en.wikipedia.org/wiki/Oxygen",
+        "https://en.wikipedia.org/wiki/Grand_Canyon"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q33",
+      "diagnostic_query": "rustup 1.29.1",
+      "http_status": 200,
+      "latency_ms": 1.2014170000000033,
+      "urls": [
+        "https://blog.rust-lang.org/2026/09/01/Rustup-1.29.1/"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q36",
+      "diagnostic_query": "arrayref",
+      "http_status": 200,
+      "latency_ms": 0.9568340000000036,
+      "urls": [
+        "https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/"
+      ],
+      "known_answer_in_top10": true
+    },
+    {
+      "original_id": "q38",
+      "diagnostic_query": "Firefox release cadence",
+      "http_status": 200,
+      "latency_ms": 1.3434589999999982,
+      "urls": [
+        "https://blog.mozilla.org/sumo/2026/08/19/firefox-new-release-cadence-and-what-to-expect/"
+      ],
+      "known_answer_in_top10": true
+    }
+  ]
+}

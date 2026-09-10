@@ -1,0 +1,18 @@
+# Keep bulky local artifacts/caches and the original brief out of evidence commits.
+/cargo/
+/target-*/
+/tmp/
+/.firecrawl/
+/SPIKE-BRIEF.md
+/data/*-indexed.jsonl
+/data/cc-parsed.jsonl
+/data/*.warc.gz
+/data/warc.paths.gz
+/data/index-*/
+/data/centrality-empty/
+/data/seed-pages/
+/data/final-validation.json
+/scripts/__pycache__/
+# Upstream ignores *.log globally; only retained benchmark logs are unignored here.
+!/logs/*.log
+/data/seed-manifest.jsonl

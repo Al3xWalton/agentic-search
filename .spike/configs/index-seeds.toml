@@ -1,0 +1,9 @@
+host_centrality_store_path = ".spike/data/centrality-empty"
+limit_warc_files = 1
+output_path = ".spike/data/index-seeds"
+batch_size = 512
+autocommit_after_num_inserts = 5000
+[warc_source]
+type = "Local"
+folder = ".spike/data"
+names = ["seeds.warc.gz"]

@@ -1,0 +1,26 @@
+{
+  "name": "harness-build-1",
+  "command": [
+    "env",
+    "CARGO_HOME=<WORKSPACE>/.spike/cargo",
+    "CARGO_TARGET_DIR=<WORKSPACE>/.spike/target-1.98",
+    "TMPDIR=<WORKSPACE>/.spike/tmp",
+    "cargo",
+    "+1.98.0",
+    "build",
+    "--locked",
+    "--release",
+    "-p",
+    "stract",
+    "--example",
+    "spike"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:13:35.803419+00:00",
+  "exit_code": 101,
+  "wall_seconds": 39.302114374999995,
+  "cpu_user_seconds": 161.566152,
+  "cpu_system_seconds": 3.871467,
+  "peak_rss_bytes": 5511380992,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}

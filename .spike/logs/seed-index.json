@@ -1,0 +1,27 @@
+{
+  "name": "seed-index",
+  "command": [
+    "env",
+    "TMPDIR=<WORKSPACE>/.spike/tmp",
+    "RUST_LOG=stract=info",
+    ".spike/target-1.98/release/stract",
+    "indexer",
+    "search",
+    ".spike/configs/index-seeds.toml"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:21:25.454083+00:00",
+  "exit_code": 0,
+  "wall_seconds": 4.0341095,
+  "cpu_user_seconds": 4.583469,
+  "cpu_system_seconds": 0.1629,
+  "peak_rss_bytes": 1946157056,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "disk_path": "<WORKSPACE>/.spike/data/index-seeds",
+  "disk_before_bytes": 0,
+  "disk_final_bytes": 25158924,
+  "disk_peak_sampled_bytes": 5033694,
+  "disk_sample_interval_seconds": 1,
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

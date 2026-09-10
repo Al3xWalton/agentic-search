@@ -1,0 +1,21 @@
+{
+  "name": "seed-index-dump",
+  "command": [
+    "env",
+    "TMPDIR=<WORKSPACE>/.spike/tmp",
+    ".spike/target-1.98/release/examples/spike",
+    "dump-index",
+    ".spike/data/index-seeds",
+    ".spike/data/seeds-indexed.jsonl"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:21:59.585987+00:00",
+  "exit_code": 0,
+  "wall_seconds": 0.016467416999999998,
+  "cpu_user_seconds": 0.008258999999999999,
+  "cpu_system_seconds": 0.005863,
+  "peak_rss_bytes": 20283392,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

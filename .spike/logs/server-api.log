@@ -1,0 +1,6 @@
+ INFO Waiting for search nodes to join the cluster    
+ INFO Search nodes joined the cluster    
+ INFO Building autosuggest    
+ INFO api server listening on 127.0.0.1:57300
+ INFO prometheus exporter listening on 127.0.0.1:57301
+ INFO management interface is ready to accept requests on 127.0.0.1:57311

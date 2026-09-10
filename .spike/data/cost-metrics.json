@@ -1,0 +1,54 @@
+[
+  {
+    "stage": "seed-crawl",
+    "pages_denominator": 178,
+    "wall_seconds": 221.98653345800003,
+    "cpu_seconds": 8.977504999999999,
+    "peak_rss_bytes": 90472448,
+    "disk_logical_bytes": 13640930,
+    "disk_allocated_bytes": 13643776,
+    "wall_hours_per_million": 346.42093236267175,
+    "cpu_hours_per_million": 14.009839263420723,
+    "disk_gib_per_million": 71.37138229072764,
+    "rss_arithmetic_gib_per_million_not_capacity": 473.36535507373594
+  },
+  {
+    "stage": "seed-index",
+    "pages_denominator": 178,
+    "wall_seconds": 4.0341095,
+    "cpu_seconds": 4.746369,
+    "peak_rss_bytes": 1946157056,
+    "disk_logical_bytes": 25158924,
+    "disk_allocated_bytes": 25972736,
+    "wall_hours_per_million": 6.295426810237203,
+    "cpu_hours_per_million": 7.40694288389513,
+    "disk_gib_per_million": 131.63524648446716,
+    "rss_arithmetic_gib_per_million_not_capacity": 10182.58426966292
+  },
+  {
+    "stage": "cc-download",
+    "pages_denominator": 21174,
+    "wall_seconds": 277.79369375000005,
+    "cpu_seconds": 13.149196,
+    "peak_rss_bytes": 11059200,
+    "disk_logical_bytes": 909108907,
+    "disk_allocated_bytes": 922783744,
+    "wall_hours_per_million": 3.644323931734938,
+    "cpu_hours_per_million": 0.172501862871656,
+    "disk_gib_per_million": 39.98647623845772,
+    "rss_arithmetic_gib_per_million_not_capacity": 0.48643065160987536
+  },
+  {
+    "stage": "cc-index",
+    "pages_denominator": 19285,
+    "wall_seconds": 97.09514974999999,
+    "cpu_seconds": 114.45772099999999,
+    "peak_rss_bytes": 3185672192,
+    "disk_logical_bytes": 491827567,
+    "disk_allocated_bytes": 513978368,
+    "wall_hours_per_million": 1.3985416090513636,
+    "cpu_hours_per_million": 1.6486290582778782,
+    "disk_gib_per_million": 23.75162644362493,
+    "rss_arithmetic_gib_per_million_not_capacity": 153.84435715501036
+  }
+]

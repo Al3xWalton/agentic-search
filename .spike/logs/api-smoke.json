@@ -1,0 +1,17 @@
+{
+  "name": "api-smoke",
+  "command": [
+    "python3",
+    "-"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:25:36.144387+00:00",
+  "exit_code": 0,
+  "wall_seconds": 0.056138916,
+  "cpu_user_seconds": 0.022543999999999998,
+  "cpu_system_seconds": 0.010542,
+  "peak_rss_bytes": 14680064,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

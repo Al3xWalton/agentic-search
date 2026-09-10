@@ -1,0 +1,18 @@
+{
+  "name": "server-stop",
+  "command": [
+    "python3",
+    ".spike/scripts/serve.py",
+    "stop"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:28:57.568170+00:00",
+  "exit_code": 0,
+  "wall_seconds": 0.03265,
+  "cpu_user_seconds": 0.018415,
+  "cpu_system_seconds": 0.01102,
+  "peak_rss_bytes": 12009472,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

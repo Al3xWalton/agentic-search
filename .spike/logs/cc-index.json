@@ -1,0 +1,23 @@
+{
+  "name": "cc-index",
+  "command": [
+    "env",
+    "SPIKE_DISK_PATH=<WORKSPACE>/.spike/data/index-cc",
+    "TMPDIR=<WORKSPACE>/.spike/tmp",
+    "RUST_LOG=stract=info",
+    ".spike/target-1.98/release/stract",
+    "indexer",
+    "search",
+    ".spike/configs/index-cc.toml"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:19:29.093671+00:00",
+  "exit_code": 0,
+  "wall_seconds": 97.09514974999999,
+  "cpu_user_seconds": 112.767141,
+  "cpu_system_seconds": 1.69058,
+  "peak_rss_bytes": 3185672192,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

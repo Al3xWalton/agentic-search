@@ -1,0 +1,10 @@
+
+  [38;5;208m🔥 [1mfirecrawl[0m [2mcli[0m [2mv1.19.27[0m
+
+  [32m●[0m Authenticated [2mvia stored credentials[0m
+  [2mConcurrency:[0m 0/2 jobs [2m(parallel scrape limit)[0m
+  [2mCredits:[0m -35 / 1,000 [2m(-4% left this cycle)[0m
+  [2m.firecrawl:[0m present [2m- 0 sites[0m
+  [2m.gitignore:[0m missing [2m- add .firecrawl/ to ignore cache[0m
+  [2mSearch feedback:[0m [31mdisabled[0m [2m(FIRECRAWL_NO_SEARCH_FEEDBACK is set)[0m
+

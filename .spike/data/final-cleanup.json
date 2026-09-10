@@ -1,0 +1,15 @@
+{
+  "server_pids_absent": true,
+  "tcp_ports_closed": {
+    "57300": true,
+    "57301": true,
+    "57302": true,
+    "57303": true,
+    "57305": true,
+    "57306": true,
+    "57307": true,
+    "57311": true
+  },
+  "docker_containers_created": 0,
+  "no_ava_codebase_access": true
+}

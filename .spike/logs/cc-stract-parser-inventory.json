@@ -1,0 +1,21 @@
+{
+  "name": "cc-stract-parser-inventory",
+  "command": [
+    "env",
+    "TMPDIR=<WORKSPACE>/.spike/tmp",
+    ".spike/target-1.98/release/examples/spike",
+    "inventory",
+    ".spike/data/cc-sample.warc.gz",
+    ".spike/data/cc-parsed.jsonl"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:28:56.367852+00:00",
+  "exit_code": 0,
+  "wall_seconds": 43.1465095,
+  "cpu_user_seconds": 42.749712,
+  "cpu_system_seconds": 0.371558,
+  "peak_rss_bytes": 1241006080,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)",
+  "block_input_operations": 0,
+  "block_output_operations": 0
+}

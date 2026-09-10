@@ -1,0 +1,26 @@
+{
+  "name": "macos-stable-build",
+  "command": [
+    "env",
+    "CARGO_HOME=<WORKSPACE>/.spike/cargo",
+    "CARGO_TARGET_DIR=<WORKSPACE>/.spike/target-stable",
+    "TMPDIR=<WORKSPACE>/.spike/tmp",
+    "CARGO_NET_RETRY=1",
+    "cargo",
+    "+stable",
+    "build",
+    "--locked",
+    "-p",
+    "stract",
+    "--bin",
+    "stract"
+  ],
+  "cwd": "<WORKSPACE>",
+  "started_utc": "2026-09-09T20:06:56.171114+00:00",
+  "exit_code": 0,
+  "wall_seconds": 102.984132125,
+  "cpu_user_seconds": 267.908969,
+  "cpu_system_seconds": 54.721311,
+  "peak_rss_bytes": 3267657728,
+  "peak_rss_scope": "max child process RSS (not summed concurrent process tree)"
+}
