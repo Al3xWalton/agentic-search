@@ -179,6 +179,13 @@ enum LiveIndex {
 
 #[derive(Subcommand)]
 enum Crawler {
+    /// Render deterministic crawler policy from validated configuration.
+    PolicyRender {
+        #[arg(long)]
+        config: std::path::PathBuf,
+        #[arg(long)]
+        out: std::path::PathBuf,
+    },
     /// Deploy the crawl worker. The worker is responsible for downloading webpages to managed local storage,
     /// and sending newly discovered urls back to the crawl coordinator.
     Worker { config_path: String },
@@ -423,6 +430,9 @@ fn main() -> Result<()> {
             configure::run(skip_download)?;
         }
         Commands::Crawler { options } => match options {
+            Crawler::PolicyRender { config, out } => {
+                entrypoint::crawler::policy_render(&config, &out)?;
+            }
             Crawler::Sample { seeds, out, config } => {
                 tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
