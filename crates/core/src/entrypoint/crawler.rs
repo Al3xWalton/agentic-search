@@ -62,6 +62,13 @@ pub fn retention(store: &std::path::Path, config: &std::path::Path, dry_run: boo
     Ok(())
 }
 
+/// Writes deterministic policy Markdown after loading the same validated ingestion configuration.
+pub fn policy_render(config: &std::path::Path, out: &std::path::Path) -> Result<()> {
+    let policy = config::ingestion::IngestionPolicy::load(config)?;
+    crawler::policy::write_rendered(out, &crawler::policy::render(&policy))?;
+    Ok(())
+}
+
 pub async fn worker(config: config::CrawlerConfig) -> Result<()> {
     let crawler = Crawler::new(config).await?;
 

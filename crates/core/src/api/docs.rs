@@ -16,7 +16,7 @@
 
 //! Describes the existing API and its unauthenticated build source offer.
 
-use super::{autosuggest, explore, hosts, search, source_offer, webgraph};
+use super::{autosuggest, crawler_policy, explore, hosts, search, source_offer, webgraph};
 use axum::Router;
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
@@ -25,6 +25,7 @@ use utoipa_swagger_ui::SwaggerUi;
 #[openapi(
         paths(
             source_offer::route,
+            crawler_policy::route,
             search::search,
             search::widget,
             search::sidebar,
@@ -114,7 +115,8 @@ use utoipa_swagger_ui::SwaggerUi;
             (name = "stract"),
         )
     )]
-struct ApiDoc;
+/// Shared API schema used by the documentation route and local contract witnesses.
+pub(super) struct ApiDoc;
 
 struct ApiModifier;
 
@@ -146,6 +148,7 @@ impl Modify for ApiModifier {
         openapi.info.description = Some(
             "Agentic Search is AVA's open-source web retrieval service for AI agents, derived from Stract. \
 The [source offer](/.well-known/ava-search-source) identifies this build's AGPL-3.0-only source. \
+Read the [crawler policy](/.well-known/ava-search-crawler) for identity, access rules and pending founder approvals. \
 Every API response includes its source URL in the Source-Offer header.\n\n\
 Remember to always give proper attributions to the sources you use from the search results.".to_string(),
         );

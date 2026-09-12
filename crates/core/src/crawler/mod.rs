@@ -46,6 +46,8 @@ pub mod identity;
 pub mod ledger;
 pub mod local_sink;
 pub mod network;
+/// Deterministic crawler policy publication capability.
+pub mod policy;
 pub mod politeness;
 pub mod record;
 pub mod retention;

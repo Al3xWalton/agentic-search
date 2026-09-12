@@ -267,6 +267,8 @@ pub struct QueryStoreConfig {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct ApiConfig {
+    /// Optional validated crawler policy file; None uses the embedded template.
+    pub crawler_policy_config_path: Option<std::path::PathBuf>,
     pub host: SocketAddr,
     pub prometheus_host: SocketAddr,
     pub crossencoder_model_path: Option<String>,

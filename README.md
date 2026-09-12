@@ -57,6 +57,9 @@ upstream notices are retained; this offer does not rewrite upstream â€œor laterâ
 
 If you fork Agentic Search, set the package `repository` and `SOURCE_OFFER.md` to your own corresponding source.
 
+The bounded sample runner is `stract crawler sample --seeds <seeds.json> --out <external-directory>`; it accepts only the frozen 200-seed scope.
+Read the [crawler policy](CRAWLER_POLICY.md); hosted policy publication and founder-owned content are pending while production crawling is disabled.
+Production crawling requires an approved DPIA with linked LIA and Article 14 measures; see the crawler configuration template.
 ## Contact
 
 Use this repository's [GitHub issues](https://github.com/Al3xWalton/agentic-search/issues).

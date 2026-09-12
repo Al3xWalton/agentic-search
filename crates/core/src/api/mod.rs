@@ -53,6 +53,7 @@ use axum::{
 };
 
 mod autosuggest;
+mod crawler_policy;
 mod docs;
 mod explore;
 mod hosts;
@@ -153,6 +154,7 @@ pub async fn router(
     counters: Counters,
     cluster: Arc<Cluster>,
 ) -> Result<Router> {
+    let policy_router = crawler_policy::router(config.crawler_policy_config_path.as_deref())?;
     let lambda_model = match &config.lambda_model_path {
         Some(path) => Some(LambdaMART::open(path)?),
         None => None,
@@ -253,7 +255,7 @@ pub async fn router(
         })
     };
 
-    Ok(build_router(state))
+    Ok(build_router(state).merge(policy_router))
 }
 
 /// Enables CORS for development where the API and frontend are on
