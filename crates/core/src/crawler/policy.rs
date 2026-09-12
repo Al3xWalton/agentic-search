@@ -135,6 +135,7 @@ pub fn render(policy: &ValidatedPolicy) -> String {
     for (heading, content) in sections {
         out.push_str(&format!("## {heading}\n\n{content}\n\n"));
     }
+    out.pop();
     out
 }
 

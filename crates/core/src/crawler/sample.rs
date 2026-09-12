@@ -261,8 +261,11 @@ pub async fn run_loopback(
     let client = RobotClient::loopback(out, policy, endpoint, clock, 2)?;
     execute(seeds, client, "owned-loopback").await
 }
-async fn execute(seeds: &[Seed], client: RobotClient, scope: &str) -> Result<SampleSummary> {
-    let started = Instant::now();
+fn start_sample(
+    seeds: &[Seed],
+    client: &RobotClient,
+    scope: &str,
+) -> Result<(PathBuf, SampleSummary)> {
     let started_at_utc = client.clock().utc();
     let ledger = client.ledger();
     let root = client.host_registry().root().to_owned();
@@ -285,7 +288,7 @@ async fn execute(seeds: &[Seed], client: RobotClient, scope: &str) -> Result<Sam
         .filter_map(|s| normalized_url(&s.url).ok())
         .map(|u| u.to_string())
         .collect();
-    let mut summary = SampleSummary {
+    let summary = SampleSummary {
         schema_version: 1,
         run_id: ledger.run_id().into(),
         store_id: client.host_registry().identity().store_id.clone(),
@@ -310,6 +313,13 @@ async fn execute(seeds: &[Seed], client: RobotClient, scope: &str) -> Result<Sam
         manifest_file: format!("runs/{}/manifest.json", ledger.run_id()),
     };
     json_create(&run_dir.join("manifest.json"), &summary)?;
+
+    Ok((run_dir, summary))
+}
+async fn execute(seeds: &[Seed], client: RobotClient, scope: &str) -> Result<SampleSummary> {
+    let started = Instant::now();
+    let ledger = client.ledger();
+    let (run_dir, mut summary) = start_sample(seeds, &client, scope)?;
     let mut groups = BTreeMap::<String, Vec<_>>::new();
     for (ordinal, seed) in seeds.iter().enumerate() {
         let parsed = parse_fetch_url(&seed.url).ok();
@@ -501,8 +511,63 @@ pub fn reconcile(
         .map(Ledger::read_rows)
         .transpose()?
         .unwrap_or_default();
-    let mut by_ordinal = BTreeMap::new();
+    let by_ordinal = validate_current_rows(&seeds, &rows, ledger_path)?;
     let mut histogram = BTreeMap::new();
+    for row in &rows {
+        *histogram.entry(row.outcome.kind().to_owned()).or_insert(0) += 1;
+    }
+    let mut saved_crosswalk = Vec::new();
+    let mut nonsaved_crosswalk = Vec::new();
+    let mut known_robots_denials = 0;
+    for (ordinal, seed) in seeds.iter().enumerate() {
+        let key = historic_key(&seed.url)?;
+        let was_saved = saved.contains(&key);
+        let denied = denied.contains(&key) && !was_saved;
+        known_robots_denials += usize::from(denied);
+        let current = by_ordinal.get(&ordinal);
+        let row = Crosswalk {
+            input_ordinal: ordinal,
+            url: safe_url_for_record(&normalized_url(&seed.url)?),
+            baseline_saved: was_saved,
+            historical_reason: if was_saved {
+                "saved in #573"
+            } else if denied {
+                "robots denial recorded in #573"
+            } else {
+                "unrecorded in #573"
+            }
+            .into(),
+            current_outcome: current.map(|r| r.outcome.kind().into()),
+            current_observed_at_utc: current.map(|r| r.finished_at_utc),
+        };
+        if was_saved {
+            saved_crosswalk.push(row);
+        } else {
+            nonsaved_crosswalk.push(row);
+        }
+    }
+    let result = Reconciliation {
+        schema_version: 1,
+        seeds: seeds.len(),
+        baseline_saved: saved_crosswalk.len(),
+        baseline_not_saved: nonsaved_crosswalk.len(),
+        known_robots_denials,
+        historical_unrecorded: nonsaved_crosswalk.len() - known_robots_denials,
+        spike_events: events,
+        current_rows: rows.len(),
+        current_histogram: histogram,
+        saved_crosswalk,
+        nonsaved_crosswalk,
+    };
+    json_create(out, &result)?;
+    Ok(result)
+}
+fn validate_current_rows<'a>(
+    seeds: &[Seed],
+    rows: &'a [LedgerRow],
+    ledger_path: Option<&Path>,
+) -> Result<BTreeMap<usize, &'a LedgerRow>> {
+    let mut by_ordinal = BTreeMap::new();
     if let Some(path) = ledger_path {
         ensure!(
             rows.len() == seeds.len(),
@@ -522,7 +587,7 @@ pub fn reconcile(
             })
             .collect::<std::result::Result<_, _>>()?;
         let store = ledger_store(path)?;
-        for row in &rows {
+        for row in rows {
             ensure!(
                 row.kind == TargetKind::Seed && !row.fatal,
                 "non-seed or fatal current row"
@@ -576,54 +641,10 @@ pub fn reconcile(
                     "nonsaved row claims a body object"
                 );
             }
-            *histogram.entry(row.outcome.kind().to_owned()).or_insert(0) += 1;
         }
     }
-    let mut saved_crosswalk = Vec::new();
-    let mut nonsaved_crosswalk = Vec::new();
-    let mut known_robots_denials = 0;
-    for (ordinal, seed) in seeds.iter().enumerate() {
-        let key = historic_key(&seed.url)?;
-        let was_saved = saved.contains(&key);
-        let denied = denied.contains(&key) && !was_saved;
-        known_robots_denials += usize::from(denied);
-        let current = by_ordinal.get(&ordinal);
-        let row = Crosswalk {
-            input_ordinal: ordinal,
-            url: safe_url_for_record(&normalized_url(&seed.url)?),
-            baseline_saved: was_saved,
-            historical_reason: if was_saved {
-                "saved in #573"
-            } else if denied {
-                "robots denial recorded in #573"
-            } else {
-                "unrecorded in #573"
-            }
-            .into(),
-            current_outcome: current.map(|r| r.outcome.kind().into()),
-            current_observed_at_utc: current.map(|r| r.finished_at_utc),
-        };
-        if was_saved {
-            saved_crosswalk.push(row);
-        } else {
-            nonsaved_crosswalk.push(row);
-        }
-    }
-    let result = Reconciliation {
-        schema_version: 1,
-        seeds: seeds.len(),
-        baseline_saved: saved_crosswalk.len(),
-        baseline_not_saved: nonsaved_crosswalk.len(),
-        known_robots_denials,
-        historical_unrecorded: nonsaved_crosswalk.len() - known_robots_denials,
-        spike_events: events,
-        current_rows: rows.len(),
-        current_histogram: histogram,
-        saved_crosswalk,
-        nonsaved_crosswalk,
-    };
-    json_create(out, &result)?;
-    Ok(result)
+
+    Ok(by_ordinal)
 }
 fn ledger_store(path: &Path) -> Result<PathBuf> {
     let parent = path.parent().context("ledger parent missing")?;

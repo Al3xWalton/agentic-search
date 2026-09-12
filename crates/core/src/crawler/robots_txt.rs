@@ -91,6 +91,24 @@ pub struct RobotsSnapshot {
     pub failure_code: Option<String>,
 }
 
+impl RobotsSnapshot {
+    fn pending(origin: &Url, now: chrono::DateTime<chrono::Utc>) -> Self {
+        Self {
+            origin: safe_url_for_record(origin),
+            fetched_at_utc: now,
+            expires_at_utc: now,
+            http_status: Observation::absent(AbsenceReason::NoResponse),
+            body_sha256: Observation::absent(AbsenceReason::IncompleteBody),
+            body_state: RobotsBodyState::NotReceived,
+            decision: RobotsDecision::DisallowUnreachable,
+            matched_rule_kind: "unreachable".into(),
+            matched_rule_sha256: None,
+            crawl_delay_ms: None,
+            failure_code: None,
+        }
+    }
+}
+
 struct Cached {
     parsed: Option<robotstxt::Robots>,
     selected: String,
@@ -287,20 +305,7 @@ impl RobotsTxtManager {
         origin.set_query(None);
         origin.set_fragment(None);
         let mut target = origin.join("robots.txt").map_err(|_| Error::InvalidUrl)?;
-        let fetched_at_utc = self.inner.clock.utc();
-        let mut snapshot = RobotsSnapshot {
-            origin: safe_url_for_record(&origin),
-            fetched_at_utc,
-            expires_at_utc: fetched_at_utc,
-            http_status: Observation::absent(AbsenceReason::NoResponse),
-            body_sha256: Observation::absent(AbsenceReason::IncompleteBody),
-            body_state: RobotsBodyState::NotReceived,
-            decision: RobotsDecision::DisallowUnreachable,
-            matched_rule_kind: "unreachable".into(),
-            matched_rule_sha256: None,
-            crawl_delay_ms: None,
-            failure_code: None,
-        };
+        let mut snapshot = RobotsSnapshot::pending(&origin, self.inner.clock.utc());
         let mut parsed = None;
         let mut selected = String::new();
         let mut visited = std::collections::BTreeSet::new();
@@ -315,29 +320,7 @@ impl RobotsTxtManager {
             snapshot.http_status = Observation::absent(AbsenceReason::NoResponse);
             snapshot.body_sha256 = Observation::absent(AbsenceReason::IncompleteBody);
             snapshot.body_state = RobotsBodyState::NotReceived;
-            let attempt = async {
-                let prepared = self.inner.transport.prepare(&target, trace).await?;
-                let permit = acquire_host(
-                    self.inner.registry.clone(),
-                    HostKey::from_url(&target)?,
-                    &self.inner.policy,
-                    self.inner.clock.clone(),
-                    None,
-                )
-                .await?;
-                self.inner
-                    .transport
-                    .send(
-                        prepared,
-                        &[],
-                        permit,
-                        ROBOTS_BODY_LIMIT,
-                        FetchKind::Robots,
-                        trace,
-                    )
-                    .await
-            }
-            .await;
+            let attempt = self.fetch_response(&target, trace).await;
             let response = match attempt {
                 Ok(response) => response,
                 Err(
@@ -409,33 +392,78 @@ impl RobotsTxtManager {
                 snapshot.failure_code = Some("http-unreachable".into());
                 break;
             }
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                let body = std::str::from_utf8(&bytes).map_err(|_| Error::RobotsUnreachable)?;
-                let selected = select_exact_groups(body);
-                let declared_delay = validate_declared_delays(&selected)?;
-                let robots = robotstxt::Robots::parse("AVASearchBot", &selected)
-                    .map_err(|_| Error::RobotsUnreachable)?;
-                let delay = robots
-                    .crawl_delay()
-                    .map(|duration| {
-                        u64::try_from(duration.as_nanos().div_ceil(1_000_000))
-                            .map_err(|_| Error::RobotsUnreachable)
-                    })
-                    .transpose()?;
-                Ok::<_, Error>((robots, selected, delay.max(declared_delay)))
-            }));
-            match result {
-                Ok(Ok((robots, text, delay))) => {
-                    parsed = Some(robots);
-                    selected = text;
-                    snapshot.crawl_delay_ms = delay;
-                    snapshot.decision = RobotsDecision::AllowRule;
-                    snapshot.matched_rule_kind = "default".into();
-                }
-                _ => snapshot.failure_code = Some("parser-failure".into()),
-            }
+            (parsed, selected) = Self::parse_robots_body(&bytes, &mut snapshot);
             break;
         }
+        self.cache_result(parsed, selected, snapshot, trace, trace_start)
+    }
+    async fn fetch_response(
+        &self,
+        target: &Url,
+        trace: Option<&AttemptTrace>,
+    ) -> Result<super::network::BoundedResponse> {
+        let prepared = self.inner.transport.prepare(target, trace).await?;
+        let permit = acquire_host(
+            self.inner.registry.clone(),
+            HostKey::from_url(target)?,
+            &self.inner.policy,
+            self.inner.clock.clone(),
+            None,
+        )
+        .await?;
+        self.inner
+            .transport
+            .send(
+                prepared,
+                &[],
+                permit,
+                ROBOTS_BODY_LIMIT,
+                FetchKind::Robots,
+                trace,
+            )
+            .await
+    }
+    fn parse_robots_body(
+        bytes: &[u8],
+        snapshot: &mut RobotsSnapshot,
+    ) -> (Option<robotstxt::Robots>, String) {
+        let mut parsed = None;
+        let mut selected = String::new();
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let body = std::str::from_utf8(bytes).map_err(|_| Error::RobotsUnreachable)?;
+            let selected = select_exact_groups(body);
+            let declared_delay = validate_declared_delays(&selected)?;
+            let robots = robotstxt::Robots::parse("AVASearchBot", &selected)
+                .map_err(|_| Error::RobotsUnreachable)?;
+            let delay = robots
+                .crawl_delay()
+                .map(|duration| {
+                    u64::try_from(duration.as_nanos().div_ceil(1_000_000))
+                        .map_err(|_| Error::RobotsUnreachable)
+                })
+                .transpose()?;
+            Ok::<_, Error>((robots, selected, delay.max(declared_delay)))
+        }));
+        match result {
+            Ok(Ok((robots, text, delay))) => {
+                parsed = Some(robots);
+                selected = text;
+                snapshot.crawl_delay_ms = delay;
+                snapshot.decision = RobotsDecision::AllowRule;
+                snapshot.matched_rule_kind = "default".into();
+            }
+            _ => snapshot.failure_code = Some("parser-failure".into()),
+        }
+        (parsed, selected)
+    }
+    fn cache_result(
+        &self,
+        parsed: Option<robotstxt::Robots>,
+        selected: String,
+        mut snapshot: RobotsSnapshot,
+        trace: Option<&AttemptTrace>,
+        trace_start: usize,
+    ) -> Result<Cached> {
         let ttl_ms = if snapshot.decision == RobotsDecision::DisallowUnreachable {
             ROBOTS_FAILURE_RETRY_SECS * 1000
         } else {

@@ -214,7 +214,7 @@ impl<S: DatumSink> JobExecutor<S> {
             self.wander().await?;
             wander_steps += 1;
         }
-        let urls = self.job.urls.drain(..).collect();
+        let urls = std::mem::take(&mut self.job.urls);
         self.process_urls(urls).await?;
         if self.wandered_urls < self.job.wandering_urls {
             self.crawl_sitemaps().await?;
@@ -437,46 +437,7 @@ impl<S: DatumSink> JobExecutor<S> {
         row.record.content_policies = classes.policies;
         row.record.exclusion_matches = classes.matches;
         if self.fetch_kind == FetchKind::Robots {
-            let snapshot = self
-                .client
-                .robots_txt_manager()
-                .snapshot_traced(&url, Some(trace))
-                .await?;
-            trace.robots(snapshot.clone())?;
-            self.finish_observations(raw, trace, row)?;
-            if snapshot.decision == super::robots_txt::RobotsDecision::DisallowUnreachable {
-                return Err(Error::RobotsUnreachable);
-            }
-            let links = self
-                .client
-                .robots_txt_manager()
-                .cached_sitemaps(&url)
-                .await?
-                .unwrap_or_default();
-            if row.fetch_attempts.is_empty() {
-                row.outcome = Outcome::AlreadyCrawled;
-            } else {
-                row.record.content_sha256 = snapshot.body_sha256.clone();
-                row.record.content_hash_source = ContentHashSource::CurrentResponse;
-                row.record.parsed_at_utc = Observation::Present(self.client.clock().utc());
-                row.record.canonical_url = row.record.final_url.clone();
-                row.record.canonical_key = row
-                    .record
-                    .final_url
-                    .value()
-                    .map(|value| {
-                        parse_fetch_url(value.as_str()).map(|u| Observation::Present(url_key(&u)))
-                    })
-                    .transpose()?
-                    .unwrap_or_else(|| {
-                        Observation::absent(super::record::AbsenceReason::NotAttempted)
-                    });
-                row.record.body_retention = BodyRetentionReason::Policy;
-                row.record.index_only = true;
-                row.record.index_eligible = false;
-                row.outcome = Outcome::ParsedNotRetained;
-            }
-            return Ok(ProcessedTarget { links, body: None });
+            return self.run_robots(raw, url, row, trace).await;
         }
         let previous = self.client.ledger().previous_success(&url)?;
         let mut request = self
@@ -529,56 +490,14 @@ impl<S: DatumSink> JobExecutor<S> {
             return Ok(ProcessedTarget::default());
         }
         if status == 304 && previous.is_some() {
-            let mut saved = previous.ok_or(Error::InternalInvariant)?;
-            let observed = row.record.clone();
-            let original_expiry = saved.raw_expires_at_utc;
-            let original_parsed = saved.parsed_at_utc.clone();
-            let original_retained = saved.retained_body_bytes;
-            let mut parsed = super::directives::parse_headers(&headers, &url);
-            parsed.no_store |= saved.body_retention == BodyRetentionReason::NoStore;
-            parsed.effective.restrictive_merge(&saved.directives);
-            parsed.rights.restrictive_merge(&saved.rights);
-            saved.apply_policy(parsed, self.client.policy(), now)?;
-            saved.raw_expires_at_utc = if saved.body_retention == BodyRetentionReason::Retained {
-                original_expiry
-            } else {
-                None
-            };
-            saved.parsed_at_utc = original_parsed;
-            saved.retained_body_bytes = if saved.body_retention == BodyRetentionReason::Retained {
-                original_retained
-            } else {
-                0
-            };
-            if saved.raw_expires_at_utc.is_some_and(|expiry| expiry <= now) {
-                saved.body_retention = BodyRetentionReason::Expired;
-                saved.raw_expires_at_utc = None;
-                saved.retained_body_bytes = 0;
-            }
-            saved.target_id = observed.target_id;
-            saved.run_id = observed.run_id;
-            saved.crawl_policy_version = observed.crawl_policy_version;
-            saved.exclusion_version = observed.exclusion_version;
-            saved.retention_policy_version = observed.retention_policy_version;
-            saved.policy_config_sha256 = observed.policy_config_sha256;
-            saved.exclusion_matches = observed.exclusion_matches;
-            saved.content_classes = observed.content_classes;
-            saved.content_policies = observed.content_policies;
-            saved.requested_url = observed.requested_url;
-            saved.final_url = observed.final_url;
-            saved.http_status = observed.http_status;
-            saved.retrieved_at_utc = observed.retrieved_at_utc;
-            saved.fetch_time_ms = observed.fetch_time_ms;
-            saved.queue_time_ms = observed.queue_time_ms;
-            saved.body_bytes = observed.body_bytes;
-            saved.robots = observed.robots;
-            saved.hosting_country = observed.hosting_country;
-            saved.content_hash_source = ContentHashSource::PreviousSuccess;
-            self.client.host_registry().valid_not_modified(&host)?;
-            self.client.local_sink().enforce_record(&saved)?;
-            row.record = saved;
-            row.outcome = Outcome::NotModified;
-            return Ok(ProcessedTarget::default());
+            return self.apply_not_modified(
+                previous.ok_or(Error::InternalInvariant)?,
+                headers,
+                url,
+                host,
+                row,
+                now,
+            );
         }
         let bytes = body?;
         if super::host_state::detect_challenge(&headers, &bytes).is_some() {
@@ -589,61 +508,7 @@ impl<S: DatumSink> JobExecutor<S> {
             return Ok(ProcessedTarget::default());
         }
         if matches!(status, 301 | 302 | 303 | 307 | 308) {
-            let locations = headers.all("location");
-            if headers.invalid("location") {
-                row.outcome = Outcome::RedirectInvalid {
-                    reason: RedirectReason::InvalidLocation,
-                };
-                return Ok(ProcessedTarget::default());
-            }
-            if locations.len() != 1 {
-                row.outcome = Outcome::RedirectInvalid {
-                    reason: RedirectReason::MissingOrConflictingLocation,
-                };
-                return Ok(ProcessedTarget::default());
-            }
-            let raw = &locations[0];
-            if raw.is_empty() || raw.chars().any(|c| c.is_control() || c.is_whitespace()) {
-                row.outcome = Outcome::RedirectInvalid {
-                    reason: RedirectReason::InvalidLocation,
-                };
-                return Ok(ProcessedTarget::default());
-            }
-            let next = match url.join(raw) {
-                Ok(url) => url,
-                Err(_) => {
-                    row.outcome = Outcome::RedirectInvalid {
-                        reason: RedirectReason::InvalidLocation,
-                    };
-                    return Ok(ProcessedTarget::default());
-                }
-            };
-            if let Err(error) = parse_fetch_url(next.as_str()) {
-                row.outcome = if matches!(error, Error::RefusedPrivateAddress) {
-                    Outcome::RefusedPrivateAddress
-                } else {
-                    Outcome::RedirectInvalid {
-                        reason: RedirectReason::InvalidLocation,
-                    }
-                };
-                return Ok(ProcessedTarget::default());
-            }
-            if reject_https_downgrade(&url, &next) {
-                row.outcome = Outcome::RedirectInvalid {
-                    reason: RedirectReason::HttpsDowngrade,
-                };
-                return Ok(ProcessedTarget::default());
-            }
-            row.redirect_destination = Observation::Present(safe_url_for_record(&next));
-            trace.redirect(&next)?;
-            if !self.client.scope().contains_exact(&next) {
-                row.outcome = Outcome::RedirectedOffSeed { status };
-                return Ok(ProcessedTarget::default());
-            }
-            let (outcome, destination) = self.client.ledger().redirect(target, &next, status)?;
-            row.outcome = outcome;
-            row.destination_target_id = destination;
-            return Ok(ProcessedTarget::default());
+            return self.redirect_response(target, url, headers, status, row, trace);
         }
         if status != 200 {
             row.outcome = if (300..400).contains(&status) && status != 304 {
@@ -662,6 +527,229 @@ impl<S: DatumSink> JobExecutor<S> {
             };
             return Ok(ProcessedTarget::default());
         }
+        self.save_response(target, url, headers, bytes, row, now)
+            .await
+    }
+    async fn run_robots(
+        &self,
+        raw: &str,
+        url: Url,
+        row: &mut LedgerRow,
+        trace: &AttemptTrace,
+    ) -> Result<ProcessedTarget> {
+        let snapshot = self
+            .client
+            .robots_txt_manager()
+            .snapshot_traced(&url, Some(trace))
+            .await?;
+        trace.robots(snapshot.clone())?;
+        self.finish_observations(raw, trace, row)?;
+        if snapshot.decision == super::robots_txt::RobotsDecision::DisallowUnreachable {
+            return Err(Error::RobotsUnreachable);
+        }
+        let links = self
+            .client
+            .robots_txt_manager()
+            .cached_sitemaps(&url)
+            .await?
+            .unwrap_or_default();
+        if row.fetch_attempts.is_empty() {
+            row.outcome = Outcome::AlreadyCrawled;
+        } else {
+            row.record.content_sha256 = snapshot.body_sha256.clone();
+            row.record.content_hash_source = ContentHashSource::CurrentResponse;
+            row.record.parsed_at_utc = Observation::Present(self.client.clock().utc());
+            row.record.canonical_url = row.record.final_url.clone();
+            row.record.canonical_key = row
+                .record
+                .final_url
+                .value()
+                .map(|value| {
+                    parse_fetch_url(value.as_str()).map(|u| Observation::Present(url_key(&u)))
+                })
+                .transpose()?
+                .unwrap_or_else(|| Observation::absent(super::record::AbsenceReason::NotAttempted));
+            row.record.body_retention = BodyRetentionReason::Policy;
+            row.record.index_only = true;
+            row.record.index_eligible = false;
+            row.outcome = Outcome::ParsedNotRetained;
+        }
+        Ok(ProcessedTarget { links, body: None })
+    }
+    fn apply_not_modified(
+        &self,
+        mut saved: super::record::DocumentRecord,
+        headers: ResponseHeaders,
+        url: Url,
+        host: HostKey,
+        row: &mut LedgerRow,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<ProcessedTarget> {
+        let observed = row.record.clone();
+        let original_expiry = saved.raw_expires_at_utc;
+        let original_parsed = saved.parsed_at_utc.clone();
+        let original_retained = saved.retained_body_bytes;
+        let mut parsed = super::directives::parse_headers(&headers, &url);
+        parsed.no_store |= saved.body_retention == BodyRetentionReason::NoStore;
+        parsed.effective.restrictive_merge(&saved.directives);
+        parsed.rights.restrictive_merge(&saved.rights);
+        saved.apply_policy(parsed, self.client.policy(), now)?;
+        saved.raw_expires_at_utc = if saved.body_retention == BodyRetentionReason::Retained {
+            original_expiry
+        } else {
+            None
+        };
+        saved.parsed_at_utc = original_parsed;
+        saved.retained_body_bytes = if saved.body_retention == BodyRetentionReason::Retained {
+            original_retained
+        } else {
+            0
+        };
+        if saved.raw_expires_at_utc.is_some_and(|expiry| expiry <= now) {
+            saved.body_retention = BodyRetentionReason::Expired;
+            saved.raw_expires_at_utc = None;
+            saved.retained_body_bytes = 0;
+        }
+        saved.target_id = observed.target_id;
+        saved.run_id = observed.run_id;
+        saved.crawl_policy_version = observed.crawl_policy_version;
+        saved.exclusion_version = observed.exclusion_version;
+        saved.retention_policy_version = observed.retention_policy_version;
+        saved.policy_config_sha256 = observed.policy_config_sha256;
+        saved.exclusion_matches = observed.exclusion_matches;
+        saved.content_classes = observed.content_classes;
+        saved.content_policies = observed.content_policies;
+        saved.requested_url = observed.requested_url;
+        saved.final_url = observed.final_url;
+        saved.http_status = observed.http_status;
+        saved.retrieved_at_utc = observed.retrieved_at_utc;
+        saved.fetch_time_ms = observed.fetch_time_ms;
+        saved.queue_time_ms = observed.queue_time_ms;
+        saved.body_bytes = observed.body_bytes;
+        saved.robots = observed.robots;
+        saved.hosting_country = observed.hosting_country;
+        saved.content_hash_source = ContentHashSource::PreviousSuccess;
+        self.client.host_registry().valid_not_modified(&host)?;
+        self.client.local_sink().enforce_record(&saved)?;
+        row.record = saved;
+        row.outcome = Outcome::NotModified;
+        Ok(ProcessedTarget::default())
+    }
+    fn redirect_response(
+        &self,
+        target: &Target,
+        url: Url,
+        headers: ResponseHeaders,
+        status: u16,
+        row: &mut LedgerRow,
+        trace: &AttemptTrace,
+    ) -> Result<ProcessedTarget> {
+        let locations = headers.all("location");
+        if headers.invalid("location") {
+            row.outcome = Outcome::RedirectInvalid {
+                reason: RedirectReason::InvalidLocation,
+            };
+            return Ok(ProcessedTarget::default());
+        }
+        if locations.len() != 1 {
+            row.outcome = Outcome::RedirectInvalid {
+                reason: RedirectReason::MissingOrConflictingLocation,
+            };
+            return Ok(ProcessedTarget::default());
+        }
+        let raw = &locations[0];
+        if raw.is_empty() || raw.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            row.outcome = Outcome::RedirectInvalid {
+                reason: RedirectReason::InvalidLocation,
+            };
+            return Ok(ProcessedTarget::default());
+        }
+        let next = match url.join(raw) {
+            Ok(url) => url,
+            Err(_) => {
+                row.outcome = Outcome::RedirectInvalid {
+                    reason: RedirectReason::InvalidLocation,
+                };
+                return Ok(ProcessedTarget::default());
+            }
+        };
+        if let Err(error) = parse_fetch_url(next.as_str()) {
+            row.outcome = if matches!(error, Error::RefusedPrivateAddress) {
+                Outcome::RefusedPrivateAddress
+            } else {
+                Outcome::RedirectInvalid {
+                    reason: RedirectReason::InvalidLocation,
+                }
+            };
+            return Ok(ProcessedTarget::default());
+        }
+        if reject_https_downgrade(&url, &next) {
+            row.outcome = Outcome::RedirectInvalid {
+                reason: RedirectReason::HttpsDowngrade,
+            };
+            return Ok(ProcessedTarget::default());
+        }
+        row.redirect_destination = Observation::Present(safe_url_for_record(&next));
+        trace.redirect(&next)?;
+        if !self.client.scope().contains_exact(&next) {
+            row.outcome = Outcome::RedirectedOffSeed { status };
+            return Ok(ProcessedTarget::default());
+        }
+        let (outcome, destination) = self.client.ledger().redirect(target, &next, status)?;
+        row.outcome = outcome;
+        row.destination_target_id = destination;
+        Ok(ProcessedTarget::default())
+    }
+    fn parse_html(
+        &self,
+        body: &str,
+        headers: &ResponseHeaders,
+        url: &Url,
+        row: &mut LedgerRow,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<Url>> {
+        let links = {
+            let html = Html::parse_without_text(body, url.as_str())
+                .map_err(|_| Error::InternalInvariant)?;
+            html.capture_ingestion_metadata(&mut row.record, headers, url);
+            let parsed = html.ingestion_policy_observations(headers, url);
+            row.record.parsed_at_utc = Observation::Present(now);
+            row.record.validators = Validators::from_headers(headers);
+            row.record.apply_policy(parsed, self.client.policy(), now)?;
+            if let Err(error) = self
+                .client
+                .exclusions()
+                .language(&row.record.declared_languages, ExclusionPhase::PostParse)
+            {
+                row.record.index_eligible = false;
+                row.record.index_only = true;
+                row.record.body_retention = BodyRetentionReason::Policy;
+                row.record.raw_expires_at_utc = None;
+                self.client.local_sink().enforce_record(&row.record)?;
+                return Err(error);
+            }
+            if row.record.directives.nofollow {
+                Vec::new()
+            } else {
+                self.new_urls(&html)
+                    .into_iter()
+                    .filter(|new_url| new_url.root_domain() == url.root_domain())
+                    .take(MAX_OUTGOING_URLS_PER_PAGE)
+                    .collect()
+            }
+        };
+
+        Ok(links)
+    }
+    async fn save_response(
+        &self,
+        target: &Target,
+        url: Url,
+        headers: ResponseHeaders,
+        bytes: Vec<u8>,
+        row: &mut LedgerRow,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<ProcessedTarget> {
         let mime = if matches!(self.fetch_kind, FetchKind::Feed | FetchKind::Sitemap) {
             auxiliary_mime(&headers)?
         } else {
@@ -699,36 +787,7 @@ impl<S: DatumSink> JobExecutor<S> {
                 body: Some(body),
             });
         }
-        let links = {
-            let html = Html::parse_without_text(&body, url.as_str())
-                .map_err(|_| Error::InternalInvariant)?;
-            html.capture_ingestion_metadata(&mut row.record, &headers, &url);
-            let parsed = html.ingestion_policy_observations(&headers, &url);
-            row.record.parsed_at_utc = Observation::Present(now);
-            row.record.validators = Validators::from_headers(&headers);
-            row.record.apply_policy(parsed, self.client.policy(), now)?;
-            if let Err(error) = self
-                .client
-                .exclusions()
-                .language(&row.record.declared_languages, ExclusionPhase::PostParse)
-            {
-                row.record.index_eligible = false;
-                row.record.index_only = true;
-                row.record.body_retention = BodyRetentionReason::Policy;
-                row.record.raw_expires_at_utc = None;
-                self.client.local_sink().enforce_record(&row.record)?;
-                return Err(error);
-            }
-            if row.record.directives.nofollow {
-                Vec::new()
-            } else {
-                self.new_urls(&html)
-                    .into_iter()
-                    .filter(|new_url| new_url.root_domain() == url.root_domain())
-                    .take(MAX_OUTGOING_URLS_PER_PAGE)
-                    .collect()
-            }
-        };
+        let links = self.parse_html(&body, &headers, &url, row, now)?;
         self.client.local_sink().enforce_record(&row.record)?;
         if row.record.body_retention != BodyRetentionReason::Retained || row.record.index_only {
             row.outcome = Outcome::ParsedNotRetained;
