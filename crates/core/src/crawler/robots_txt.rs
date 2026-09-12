@@ -75,10 +75,10 @@ struct InnerRobotsTxtManager {
 impl InnerRobotsTxtManager {
     fn new(config: &CrawlerConfig) -> Self {
         let client = crawler::robot_client::reqwest_client(config).unwrap();
-        let cache_expiration = Duration::from_secs(config.robots_txt_cache_sec);
-        let user_agent = config.user_agent.token.clone();
-        let min_crawl_delay = Duration::from_millis(config.min_crawl_delay_ms);
-        let max_crawl_delay = Duration::from_millis(config.max_crawl_delay_ms);
+        let cache_expiration = Duration::from_secs(config.ingestion.robots.cache_secs);
+        let user_agent = super::identity::ROBOTS_TOKEN;
+        let min_crawl_delay = Duration::from_millis(config.ingestion.politeness.gap_ms);
+        let max_crawl_delay = Duration::from_secs(super::politeness::MAX_ACCEPTED_CRAWL_DELAY_SECS);
 
         Self {
             client,

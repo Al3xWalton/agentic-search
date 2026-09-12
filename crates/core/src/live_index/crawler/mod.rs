@@ -51,8 +51,6 @@ use url::Url;
 const DEFAULT_CONSISTENCY_FRACTION: f64 = 0.5;
 const BLOG_FRACTION_THRESHOLD: f64 = 0.5;
 const NEWS_FRACTION_THRESHOLD: f64 = 0.5;
-const MIN_CRAWL_DELAY: Duration = Duration::from_secs(30);
-const MAX_CRAWL_DELAY: Duration = Duration::from_secs(300);
 const TICK_INTERVAL: Duration = Duration::from_secs(5);
 
 struct Client {
@@ -125,14 +123,8 @@ impl From<LiveCrawlerConfig> for CrawlerConfig {
     fn from(config: LiveCrawlerConfig) -> Self {
         Self {
             num_worker_threads: 1,
-            user_agent: config.user_agent,
-            robots_txt_cache_sec: crate::config::defaults::Crawler::robots_txt_cache_sec(),
-            min_politeness_factor: 0,
-            start_politeness_factor: 1,
-            min_crawl_delay_ms: MIN_CRAWL_DELAY.as_millis() as u64,
-            max_crawl_delay_ms: MAX_CRAWL_DELAY.as_millis() as u64,
-            max_politeness_factor: crate::config::defaults::Crawler::max_politeness_factor(),
-            max_url_slowdown_retry: crate::config::defaults::Crawler::max_url_slowdown_retry(),
+            ingestion: config.ingestion,
+            local_store_path: config.local_store_path,
             timeout_seconds: 60,
             s3: crate::config::S3Config {
                 bucket: String::new(),
@@ -185,6 +177,10 @@ pub struct Crawler {
 
 impl Crawler {
     pub async fn new(config: LiveCrawlerConfig) -> Result<Self> {
+        config.ingestion.require_production_approval(
+            chrono::Utc::now(),
+            std::env::var("DPIA_ID").ok().as_deref(),
+        )?;
         let crawler_config = Arc::new(CrawlerConfig::from(config.clone()));
 
         let cluster = Arc::new(

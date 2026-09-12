@@ -22,27 +22,12 @@ use std::time::Duration;
 use url::Url;
 
 pub(super) fn reqwest_client(config: &CrawlerConfig) -> Result<reqwest::Client> {
-    let timeout = Duration::from_secs(config.timeout_seconds);
-
-    let mut headers = reqwest::header::HeaderMap::default();
-    headers.insert(
-        reqwest::header::ACCEPT,
-        reqwest::header::HeaderValue::from_static("text/html"),
-    );
-    headers.insert(
-        reqwest::header::ACCEPT_LANGUAGE,
-        reqwest::header::HeaderValue::from_static("en-US,en;q=0.9,*;q=0.8"),
-    );
-
-    reqwest::Client::builder()
-        .timeout(timeout)
-        .connect_timeout(timeout)
-        .http2_keep_alive_interval(None)
-        .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::limited(0))
-        .user_agent(&config.user_agent.full)
-        .build()
-        .map_err(|e| Error::from(anyhow!(e)))
+    config.ingestion.validate()?;
+    super::identity::build_http_client(
+        &config.ingestion.identity,
+        Duration::from_secs(config.timeout_seconds),
+    )
+    .map_err(Error::from)
 }
 
 /// Reqwest client that respects robots.txt for each request.

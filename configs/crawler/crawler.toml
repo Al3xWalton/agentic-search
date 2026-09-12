@@ -1,17 +1,89 @@
-dry_run = true
-num_jobs_per_fetch = 10
+# Production remains disabled until the founder supplies matching approved records
+# and coordinated host ownership. The sample uses a separate frozen scope.
 num_worker_threads = 1
-politeness_factor = 1.0
-router_hosts = ["0.0.0.0:8181"]
-timeout_seconds = 30
+timeout_seconds = 20
+router_hosts = []
+local_store_path = "/var/lib/ava-search/crawl"
 
-[user_agent]
-full = "<user_agent>" 
-token = "<user_agent_token>" # e.g. 'CrawlBot'
-
+# Compatibility fields only; the bounded sample never starts remote storage.
 [s3]
-access_key = "<access_key>"
-bucket = "crawl"
-endpoint = "http://s3.stract.com"
-folder = "test"
-secret_key = "<secret_key>"
+access_key = ""
+bucket = ""
+endpoint = ""
+folder = ""
+secret_key = ""
+
+[ingestion]
+version = "585.1"
+
+[ingestion.identity]
+policy_url = "https://github.com/Al3xWalton/agentic-search/blob/main/CRAWLER_POLICY.md"
+contact = "https://github.com/Al3xWalton/agentic-search/issues"
+
+[ingestion.robots]
+# Usable snapshots: 1..=86400 seconds. Unreachable retry starts at 300 seconds.
+cache_secs = 3600
+
+[ingestion.politeness]
+# Minimum 500 ms, maximum 86400000 ms; publisher delays only raise the gap.
+gap_ms = 10000
+# 1..=2, held through body consumption. Default 1.
+max_concurrent_per_host = 1
+# At least 86400 seconds for 401/403/429/challenges, including robots responses.
+block_secs = 86400
+# Eligible retries only; the bounded sample fetches each page at most once.
+retry_budget = 3
+
+[ingestion.retention]
+# Days from parse; 0 means metadata-only, maximum 30. 304 never renews expiry.
+raw_body_max_age_days = 30
+# Ledger and metadata have no automatic TTL; the founder decides record retention.
+snippet_max_chars = 300
+query_log_max_age_days = 90
+query_ip_v4_prefix = 24
+query_ip_v6_prefix = 48
+query_rotating_salt_required = true
+cached_copy = false
+profiling_allowed = false
+advertising_allowed = false
+
+[ingestion.exclusions]
+version = "585.1"
+changed_at_utc = "2026-09-11T00:00:00Z"
+# DNS suffixes (uk), declared language tags, and uppercase country shapes (GB).
+# Empty allow lists impose no allow restriction; deny always wins.
+cctld_allow = []
+cctld_deny = []
+language_allow = []
+language_deny = []
+# Nonempty country restrictions require an installed offline provider.
+hosting_country_allow = []
+hosting_country_deny = []
+# Real host lists and their rationale remain founder-owned. No classifications implied.
+rules = []
+# Separate listing-site budgets count every page attempt in a rolling 24 hours.
+listing_sites = []
+
+[[ingestion.exclusions.change_log]]
+version = "585.1"
+date_utc = "2026-09-11T00:00:00Z"
+reason = "Initial empty lists; founder review pending"
+review_ref = "Story #585"
+
+[ingestion.exclusions.serving]
+# Stored contracts for Story #588; the crawler does not implement user classification.
+uk_or_unknown_measures = true
+non_uk_policy = "same-as-uk"
+missing_adult_is_child = true
+
+[ingestion.production]
+# dpia_id is intentionally absent. Each matching record must include id, status,
+# approver, approved_at_utc, lia_id, lia_summary_url, article14_measures_id,
+# and policy_version. DPIA_ID cannot override a missing or rejected record.
+approved_records = []
+distributed_host_lease_configured = false
+
+[ingestion.policy_content]
+# Optional founder-approved fields: controller_identity, lia_summary_url,
+# removal_url, osa_report_url, complaints_url, ico_url, article14_measures,
+# egress_file_url. Omitted values render explicit pending placeholders.

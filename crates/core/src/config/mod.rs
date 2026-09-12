@@ -15,6 +15,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 pub mod defaults;
+/// Validated ingestion configuration shared by crawling, retention and policy rendering.
+pub mod ingestion;
 
 pub use web_spell::CorrectionConfig;
 
@@ -386,36 +388,13 @@ pub struct CrawlCoordinatorConfig {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
-pub struct UserAgent {
-    pub full: String,
-    pub token: String,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct CrawlerConfig {
     pub num_worker_threads: usize,
-    pub user_agent: UserAgent,
-
-    #[serde(default = "defaults::Crawler::robots_txt_cache_sec")]
-    pub robots_txt_cache_sec: u64,
-
-    #[serde(default = "defaults::Crawler::min_politeness_factor")]
-    pub min_politeness_factor: u32,
-
-    #[serde(default = "defaults::Crawler::start_politeness_factor")]
-    pub start_politeness_factor: u32,
-
-    #[serde(default = "defaults::Crawler::min_crawl_delay_ms")]
-    pub min_crawl_delay_ms: u64,
-
-    #[serde(default = "defaults::Crawler::max_crawl_delay_ms")]
-    pub max_crawl_delay_ms: u64,
-
-    #[serde(default = "defaults::Crawler::max_politeness_factor")]
-    pub max_politeness_factor: u32,
-
-    #[serde(default = "defaults::Crawler::max_url_slowdown_retry")]
-    pub max_url_slowdown_retry: u8,
+    /// Policy is validated again before any crawler side effects.
+    pub ingestion: ingestion::IngestionPolicy,
+    /// Owner-private local crawl store; remote storage is not used by the sample.
+    pub local_store_path: PathBuf,
 
     pub timeout_seconds: u64,
     pub s3: S3Config,
@@ -427,17 +406,8 @@ impl CrawlerConfig {
     pub fn for_tests() -> Self {
         Self {
             num_worker_threads: 1,
-            user_agent: UserAgent {
-                full: "test".to_string(),
-                token: "test".to_string(),
-            },
-            robots_txt_cache_sec: defaults::Crawler::robots_txt_cache_sec(),
-            min_politeness_factor: defaults::Crawler::min_politeness_factor(),
-            start_politeness_factor: defaults::Crawler::start_politeness_factor(),
-            min_crawl_delay_ms: defaults::Crawler::min_crawl_delay_ms(),
-            max_crawl_delay_ms: defaults::Crawler::max_crawl_delay_ms(),
-            max_politeness_factor: defaults::Crawler::max_politeness_factor(),
-            max_url_slowdown_retry: defaults::Crawler::max_url_slowdown_retry(),
+            ingestion: ingestion::IngestionPolicy::default(),
+            local_store_path: PathBuf::new(),
             timeout_seconds: defaults::Crawler::timeout_seconds(),
             s3: S3Config {
                 bucket: "".to_string(),
@@ -501,12 +471,16 @@ impl Default for DailyLiveIndexCrawlerBudget {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct LiveCrawlerConfig {
     pub crawled_db_path: PathBuf,
     pub gossip: GossipConfig,
     pub site_stats_path: PathBuf,
     pub host_centrality_path: PathBuf,
-    pub user_agent: UserAgent,
+    /// Same validated ingestion policy used by the bounded and distributed crawlers.
+    pub ingestion: ingestion::IngestionPolicy,
+    /// Owner-private store holding host state and auxiliary outcome records.
+    pub local_store_path: PathBuf,
     pub num_worker_threads: usize,
     #[serde(default)]
     pub check_intervals: CheckIntervals,
