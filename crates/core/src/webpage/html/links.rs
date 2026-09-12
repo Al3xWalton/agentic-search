@@ -22,6 +22,28 @@ use crate::webpage::{url_ext::UrlExt, Link};
 
 use super::Html;
 
+impl Html {
+    /// Captures declared title/site/canonical/language and structured publisher metadata only.
+    /// Uses the exact fetched URL for resolution and never extracts or requests frontier links.
+    pub fn capture_ingestion_metadata(
+        &self,
+        record: &mut crate::crawler::record::DocumentRecord,
+        headers: &crate::crawler::network::ResponseHeaders,
+        final_url: &Url,
+    ) {
+        crate::crawler::record::capture_metadata(&self.root, record, headers, final_url);
+    }
+    /// Reads publisher directives and rights from the existing DOM without frontier extraction.
+    /// Relative signal URLs use the exact last fetched URL; no linked resource is requested.
+    pub fn ingestion_policy_observations(
+        &self,
+        headers: &crate::crawler::network::ResponseHeaders,
+        final_url: &Url,
+    ) -> crate::crawler::directives::ParsedDirectives {
+        crate::crawler::directives::parse_document(&self.root, headers, final_url)
+    }
+}
+
 #[derive(PartialEq, Eq, Debug)]
 pub struct FaviconLink {
     pub link: Url,

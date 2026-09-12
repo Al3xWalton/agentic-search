@@ -18,7 +18,6 @@ use url::Url;
 
 use crate::config::CheckIntervals;
 use crate::crawler::robot_client::RobotClient;
-use crate::webpage::Html;
 use crate::Result;
 use crate::{entrypoint::site_stats, webpage::url_ext::UrlExt};
 
@@ -44,16 +43,17 @@ impl Frontpage {
 
 impl Checker for Frontpage {
     async fn get_urls(&self) -> Result<Vec<CrawlableUrl>> {
-        let res = self.client.get(self.url.clone()).await?.send().await?;
-        let body = res.text().await?;
-
-        let page = Html::parse(&body, self.url.as_str())?;
-
-        let urls = page
-            .anchor_links()
+        let response = self
+            .client
+            .fetch_auxiliary(
+                self.url.clone(),
+                crate::crawler::ledger::FetchKind::Frontpage,
+            )
+            .await?;
+        let urls = response
+            .links
             .into_iter()
-            .filter(|link| matches!(link.destination.scheme(), "http" | "https"))
-            .map(|link| CrawlableUrl::from(link.destination))
+            .map(CrawlableUrl::from)
             .collect::<Vec<_>>();
 
         Ok(urls)

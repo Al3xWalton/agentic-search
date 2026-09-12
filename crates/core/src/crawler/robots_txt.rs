@@ -21,8 +21,10 @@
 
 use super::{
     host_state::HostRegistry,
+    ledger::{AttemptTrace, FetchKind},
     network::{safe_url_for_record, sha256, HostKey, OriginKey, SafeUrl, Transport},
     politeness::{acquire_host, Clock, ROBOTS_FAILURE_RETRY_SECS},
+    record::{AbsenceReason, Observation},
     Error, Result,
 };
 use crate::config::ingestion::ValidatedPolicy;
@@ -72,9 +74,9 @@ pub struct RobotsSnapshot {
     /// UTC freshness/retry deadline; queue validation also checks monotonic age.
     pub expires_at_utc: DateTime<Utc>,
     /// Actual last policy HTTP status, absent when no response arrived.
-    pub http_status: Option<u16>,
+    pub http_status: Observation<u16>,
     /// SHA-256 of a completed robots entity; absent for incomplete transport.
-    pub body_sha256: Option<String>,
+    pub body_sha256: Observation<String>,
     /// Explicit presence state for body/hash observations.
     pub body_state: RobotsBodyState,
     /// Result for the exact content target, including unavailable and unreachable states.
@@ -152,6 +154,17 @@ impl RobotsTxtManager {
     }
     /// Resolves one immutable robots decision; concurrent misses perform only one refresh.
     pub async fn snapshot(&self, url: &Url) -> Result<RobotsSnapshot> {
+        self.snapshot_traced(url, None).await
+    }
+    pub(crate) async fn snapshot_traced(
+        &self,
+        url: &Url,
+        trace: Option<&AttemptTrace>,
+    ) -> Result<RobotsSnapshot> {
+        if trace.is_none() && !self.inner.transport.scope.is_loopback() {
+            return Err(Error::InternalInvariant);
+        }
+        self.inner.transport.exclusions.frontier(url, None)?;
         let entry = self.entry(url)?;
         let singleflight = &entry.cache;
         let mut cache = singleflight.lock().await;
@@ -159,7 +172,7 @@ impl RobotsTxtManager {
             .as_ref()
             .is_none_or(|entry| entry.expired(self.inner.clock.ticks()))
         {
-            *cache = Some(self.refresh(url).await?);
+            *cache = Some(self.refresh(url, trace).await?);
         }
         let entry = cache.as_ref().ok_or(Error::InternalInvariant)?;
         let mut snapshot = entry.snapshot.clone();
@@ -216,24 +229,40 @@ impl RobotsTxtManager {
         if self.snapshot(url).await.is_err() {
             return vec![];
         }
-        let Ok(entry) = self.entry(url) else {
-            return vec![];
-        };
-        let cache = entry.cache.lock().await;
-        cache
-            .as_ref()
-            .and_then(|e| e.parsed.as_ref())
-            .and_then(|robots| {
-                catch_unwind(AssertUnwindSafe(|| {
-                    robots
-                        .sitemaps()
-                        .iter()
-                        .filter_map(|s| Url::parse(s).ok())
-                        .collect()
-                }))
-                .ok()
-            })
+        self.cached_sitemaps(url)
+            .await
+            .ok()
+            .flatten()
             .unwrap_or_default()
+    }
+    /// Reads declarations without any HTTP/DNS; None means a journalled refresh is required.
+    pub(crate) async fn cached_sitemaps(&self, url: &Url) -> Result<Option<Vec<Url>>> {
+        self.inner.transport.scope.validate(url, true)?;
+        self.inner.transport.exclusions.frontier(url, None)?;
+        let entry = self.entry(url)?;
+        let cache = entry.cache.lock().await;
+        if cache
+            .as_ref()
+            .is_none_or(|entry| entry.expired(self.inner.clock.ticks()))
+        {
+            return Ok(None);
+        }
+        Ok(Some(
+            cache
+                .as_ref()
+                .and_then(|e| e.parsed.as_ref())
+                .and_then(|robots| {
+                    catch_unwind(AssertUnwindSafe(|| {
+                        robots
+                            .sitemaps()
+                            .iter()
+                            .filter_map(|s| Url::parse(s).ok())
+                            .collect()
+                    }))
+                    .ok()
+                })
+                .unwrap_or_default(),
+        ))
     }
     /// Revalidates freshness after waiting for a permit; expiry requires another refresh before send.
     pub(super) async fn revalidate_snapshot_before_send(
@@ -248,7 +277,11 @@ impl RobotsTxtManager {
                 && e.snapshot.fetched_at_utc == snapshot.fetched_at_utc
         }))
     }
-    async fn refresh(&self, url: &Url) -> Result<Cached> {
+    async fn refresh(&self, url: &Url, trace: Option<&AttemptTrace>) -> Result<Cached> {
+        let mut trace_start = trace
+            .map(|trace| trace.attempts().map(|a| a.len()))
+            .transpose()?
+            .unwrap_or(0);
         let mut origin = url.clone();
         origin.set_path("/");
         origin.set_query(None);
@@ -259,8 +292,8 @@ impl RobotsTxtManager {
             origin: safe_url_for_record(&origin),
             fetched_at_utc,
             expires_at_utc: fetched_at_utc,
-            http_status: None,
-            body_sha256: None,
+            http_status: Observation::absent(AbsenceReason::NoResponse),
+            body_sha256: Observation::absent(AbsenceReason::IncompleteBody),
             body_state: RobotsBodyState::NotReceived,
             decision: RobotsDecision::DisallowUnreachable,
             matched_rule_kind: "unreachable".into(),
@@ -279,8 +312,11 @@ impl RobotsTxtManager {
             if hop == 0 {
                 self.inner.transport.scope.validate(&target, true)?;
             }
+            snapshot.http_status = Observation::absent(AbsenceReason::NoResponse);
+            snapshot.body_sha256 = Observation::absent(AbsenceReason::IncompleteBody);
+            snapshot.body_state = RobotsBodyState::NotReceived;
             let attempt = async {
-                self.inner.transport.prepare(&target).await?;
+                let prepared = self.inner.transport.prepare(&target, trace).await?;
                 let permit = acquire_host(
                     self.inner.registry.clone(),
                     HostKey::from_url(&target)?,
@@ -291,22 +327,31 @@ impl RobotsTxtManager {
                 .await?;
                 self.inner
                     .transport
-                    .send(target.clone(), &[], permit, ROBOTS_BODY_LIMIT)
+                    .send(
+                        prepared,
+                        &[],
+                        permit,
+                        ROBOTS_BODY_LIMIT,
+                        FetchKind::Robots,
+                        trace,
+                    )
                     .await
             }
             .await;
             let response = match attempt {
                 Ok(response) => response,
-                Err(error @ (Error::HostStateWrite | Error::InternalInvariant)) => {
-                    return Err(error)
-                }
+                Err(
+                    error @ (Error::HostStateWrite
+                    | Error::InternalInvariant
+                    | Error::ExcludedByPolicy { .. }),
+                ) => return Err(error),
                 Err(error) => {
                     snapshot.failure_code = Some(failure_code(&error).into());
                     break;
                 }
             };
             let status = response.status();
-            snapshot.http_status = Some(status);
+            snapshot.http_status = Observation::Present(status);
             let headers = response.headers().clone();
             let bytes = match response.bytes().await {
                 Ok(bytes) => bytes,
@@ -318,7 +363,7 @@ impl RobotsTxtManager {
                     break;
                 }
             };
-            snapshot.body_sha256 = Some(sha256(&bytes));
+            snapshot.body_sha256 = Observation::Present(sha256(&bytes));
             snapshot.body_state = RobotsBodyState::Received;
             if matches!(status, 301 | 302 | 303 | 307 | 308) {
                 let destinations = headers.all("location");
@@ -346,6 +391,11 @@ impl RobotsTxtManager {
                 {
                     snapshot.failure_code = Some("redirect-off-scope".into());
                     break;
+                }
+                if let Some(trace) = trace {
+                    trace.redirect(&next)?;
+                    trace.bootstrap_result(&snapshot, trace_start)?;
+                    trace_start = trace.attempts()?.len();
                 }
                 target = next;
                 continue;
@@ -396,6 +446,9 @@ impl RobotsTxtManager {
             .fetched_at_utc
             .checked_add_signed(chrono::TimeDelta::milliseconds(ttl_ms as i64))
             .ok_or(Error::InternalInvariant)?;
+        if let Some(trace) = trace {
+            trace.bootstrap_result(&snapshot, trace_start)?;
+        }
         Ok(Cached {
             parsed,
             selected,
@@ -430,6 +483,7 @@ fn failure_code(error: &Error) -> &'static str {
     match error {
         Error::Timeout => "timeout",
         Error::TlsError => "tls",
+        Error::ConnectError => "connect",
         Error::ContentTooLarge => "body-too-large",
         Error::HostBlocked => "host-blocked",
         Error::RefusedPrivateAddress => "private-address",

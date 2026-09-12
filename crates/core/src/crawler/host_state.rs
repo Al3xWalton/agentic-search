@@ -423,7 +423,7 @@ impl HostRegistry {
                     }
                 }
                 state.retry_at_utc = state.retry_at_utc.max(retry);
-            } else if (200..300).contains(&status) || status == 304 {
+            } else if (200..300).contains(&status) {
                 state.consecutive_rate_responses = 0;
                 state.retry_at_utc = None;
             }
@@ -441,6 +441,14 @@ impl HostRegistry {
                         .unwrap_or(BlockReason::HttpStatus(status)),
                 );
             }
+            Ok(())
+        })
+    }
+    /// Resets rate counters only after the executor verifies a 304 has a prior successful representation.
+    pub fn valid_not_modified(&self, host: &HostKey) -> Result<()> {
+        self.update(host, |state| {
+            state.consecutive_rate_responses = 0;
+            state.retry_at_utc = None;
             Ok(())
         })
     }

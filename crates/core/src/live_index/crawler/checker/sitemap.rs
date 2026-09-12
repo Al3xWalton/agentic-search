@@ -46,14 +46,14 @@ impl Sitemap {
         })
     }
 
-    async fn sitemap_urls(&self) -> Vec<Url> {
-        self.client
-            .robots_txt_manager()
-            .sitemaps(&self.robots_url)
-            .await
+    async fn sitemap_urls(&self) -> Result<Vec<Url>> {
+        Ok(self
+            .client
+            .discover_sitemaps(self.robots_url.clone())
+            .await?)
     }
 
-    async fn urls_from_sitemap(&self, sitemap: Url) -> Vec<DatedUrl> {
+    async fn urls_from_sitemap(&self, sitemap: Url) -> Result<Vec<DatedUrl>> {
         let mut stack = vec![(sitemap, 0)];
         let mut urls = vec![];
 
@@ -62,29 +62,17 @@ impl Sitemap {
                 continue;
             }
 
-            let Ok(req) = self.client.get(url).await else {
+            let response = self
+                .client
+                .fetch_auxiliary(url, crate::crawler::ledger::FetchKind::Sitemap)
+                .await?;
+            tokio::time::sleep(SITEMAP_DELAY).await;
+            if response.row.record.directives.nofollow {
+                continue;
+            }
+            let Some(body) = response.body else {
                 continue;
             };
-            let res = req.send().await;
-            tokio::time::sleep(SITEMAP_DELAY).await;
-
-            if res.is_err() {
-                continue;
-            }
-
-            let res = res.unwrap();
-
-            if res.status() != 200 {
-                continue;
-            }
-
-            let body = res.text().await;
-
-            if body.is_err() {
-                continue;
-            }
-
-            let body = body.unwrap();
 
             let entries = parse_sitemap(&body);
 
@@ -100,19 +88,19 @@ impl Sitemap {
             }
         }
 
-        urls
+        Ok(urls)
     }
 }
 
 impl Checker for Sitemap {
     async fn get_urls(&self) -> Result<Vec<CrawlableUrl>> {
-        let sitemap_urls = self.sitemap_urls().await;
+        let sitemap_urls = self.sitemap_urls().await?;
         let mut urls = vec![];
 
         for sitemap_url in sitemap_urls {
             urls.extend(
                 self.urls_from_sitemap(sitemap_url)
-                    .await
+                    .await?
                     .into_iter()
                     .map(CrawlableUrl::from),
             );

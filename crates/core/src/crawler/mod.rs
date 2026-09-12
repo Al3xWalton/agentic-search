@@ -33,14 +33,22 @@ use url::Url;
 
 use crate::{config::CrawlerConfig, warc, webpage::url_ext::UrlExt};
 
-use self::{warc_writer::WarcWriter, worker::WorkerThread};
+use self::{local_sink::LocalSink, worker::WorkerThread};
+pub use warc_writer::WarcWriter;
+pub use worker::AuxiliaryResult;
 pub use worker::JobExecutor;
 
 pub mod coordinator;
+pub mod directives;
+pub mod exclusions;
 pub mod host_state;
 pub mod identity;
+pub mod ledger;
+pub mod local_sink;
 pub mod network;
 pub mod politeness;
+pub mod record;
+pub mod retention;
 pub mod robots_txt;
 pub mod router;
 pub use router::Router;
@@ -103,6 +111,25 @@ pub enum Error {
     StoreOwned,
     #[error("configured offline country provider is unavailable")]
     CountryProviderUnavailable,
+    #[error("excluded by policy")]
+    ExcludedByPolicy {
+        reason: exclusions::ExclusionReason,
+        phase: exclusions::ExclusionPhase,
+    },
+    #[error("invalid ingestion record")]
+    RecordInvalid,
+    #[error("durable body write failed")]
+    SinkWrite,
+    #[error("durable ledger write failed")]
+    LedgerWrite,
+    #[error("ledger has incomplete or inconsistent target coverage")]
+    LedgerIncomplete,
+    #[error("duplicate target admission or completion")]
+    DuplicateTarget,
+    #[error("crawl completed with a fatal target failure")]
+    FatalRun,
+    #[error("raw retention scan found failed or outstanding deletions")]
+    RetentionBacklog,
     #[error("listing page-attempt budget exhausted")]
     ListingBudgetExhausted,
     #[error("crawl cancelled")]
@@ -126,14 +153,8 @@ pub enum Error {
     #[error("couldn't read response body")]
     ResponseBodyReadFailed,
 
-    #[error("invalid politeness factor")]
-    InvalidPolitenessFactor,
-
     #[error("invalid redirect")]
     InvalidRedirect,
-
-    #[error("couldn't parse html")]
-    InvalidHtml,
 
     #[error("request path is disallowed by robots.txt")]
     DisallowedPath,
@@ -313,6 +334,8 @@ impl From<Job> for WorkerJob {
 
 #[derive(Debug, Clone)]
 pub struct CrawlDatum {
+    /// Mandatory evidence for every new capture; only legacy WARC may lack an extension.
+    pub record: record::DocumentRecord,
     pub url: Url,
     pub payload_type: warc::PayloadType,
     pub body: String,
@@ -321,7 +344,8 @@ pub struct CrawlDatum {
 }
 
 pub struct Crawler {
-    writer: Arc<WarcWriter>,
+    writer: Arc<LocalSink>,
+    client: RobotClient,
     handles: Vec<tokio::task::JoinHandle<Result<()>>>,
 }
 
@@ -331,10 +355,10 @@ impl Crawler {
             chrono::Utc::now(),
             std::env::var("DPIA_ID").ok().as_deref(),
         )?;
-        let writer = Arc::new(WarcWriter::new(config.s3.clone()));
         let mut handles = Vec::new();
         let mut router_hosts = Vec::new();
         let client = RobotClient::new(&config)?;
+        let writer = client.local_sink();
 
         for host in &config.router_hosts {
             router_hosts.push(
@@ -354,7 +378,11 @@ impl Crawler {
             handles.push(tokio::spawn(async move { worker.run().await }));
         }
 
-        Ok(Self { writer, handles })
+        Ok(Self {
+            writer,
+            handles,
+            client,
+        })
     }
 
     pub async fn run(self) -> Result<()> {
@@ -362,7 +390,8 @@ impl Crawler {
             handle.await.map_err(|_| Error::InternalInvariant)??;
         }
 
-        self.writer.finish().await
+        self.writer.finish().await?;
+        self.client.ledger().finish()
     }
 }
 

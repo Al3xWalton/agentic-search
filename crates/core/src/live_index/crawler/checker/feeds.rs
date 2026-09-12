@@ -45,9 +45,16 @@ impl Checker for Feeds {
         let mut urls = Vec::new();
 
         for feed in &self.feeds {
-            let req = self.client.get(feed.url.clone()).await?;
-            let resp = req.send().await?;
-            let text = resp.text().await?;
+            let response = self
+                .client
+                .fetch_auxiliary(feed.url.clone(), crate::crawler::ledger::FetchKind::Feed)
+                .await?;
+            if response.row.record.directives.nofollow {
+                continue;
+            }
+            let Some(text) = response.body else {
+                continue;
+            };
 
             let Ok(parsed_feed) = parse(&text, feed.kind) else {
                 continue;
