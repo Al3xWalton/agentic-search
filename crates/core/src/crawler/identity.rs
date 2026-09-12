@@ -83,7 +83,8 @@ pub fn build_user_agent(identity: &IdentityConfig) -> Result<String> {
 pub(super) fn build_http_client(
     identity: &IdentityConfig,
     timeout: Duration,
-) -> Result<reqwest::Client> {
+    resolver: std::sync::Arc<super::network::VettedResolver>,
+) -> Result<HttpClient> {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::ACCEPT,
@@ -93,7 +94,7 @@ pub(super) fn build_http_client(
         reqwest::header::ACCEPT_LANGUAGE,
         reqwest::header::HeaderValue::from_static("en-US,en;q=0.9,*;q=0.8"),
     );
-    reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .timeout(timeout)
         .connect_timeout(timeout)
         .default_headers(headers)
@@ -101,15 +102,140 @@ pub(super) fn build_http_client(
         .referer(false)
         .http1_only()
         .pool_max_idle_per_host(0)
+        .dns_resolver(resolver)
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(build_user_agent(identity)?)
         .build()
-        .map_err(|_| anyhow::anyhow!("crawler HTTP client initialization failed"))
+        .map_err(|_| anyhow::anyhow!("crawler HTTP client initialization failed"))?;
+    Ok(HttpClient { client })
+}
+
+/// Keeps the raw client private to the sole transport boundary.
+pub(super) struct HttpClient {
+    client: reqwest::Client,
+}
+
+impl reqwest::dns::Resolve for super::network::VettedResolver {
+    fn resolve(&self, name: hyper::client::connect::dns::Name) -> reqwest::dns::Resolving {
+        let result = self.admitted(name.as_str());
+        Box::pin(async move {
+            match result {
+                Ok(addresses) => Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs),
+                Err(_) => Err(
+                    Box::new(std::io::Error::other("unadmitted crawler DNS name"))
+                        as Box<dyn std::error::Error + Send + Sync>,
+                ),
+            }
+        })
+    }
+}
+
+fn transport_error(error: reqwest::Error) -> super::Error {
+    if error.is_timeout() {
+        return super::Error::Timeout;
+    }
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+    while let Some(source) = cause {
+        if source.is::<native_tls::Error>() {
+            return super::Error::TlsError;
+        }
+        cause = source.source();
+    }
+    if error.is_connect() {
+        super::Error::ConnectError
+    } else {
+        super::Error::ResponseBodyReadFailed
+    }
+}
+
+impl HttpClient {
+    pub(super) async fn send(
+        &self,
+        url: Url,
+        validators: &[(String, String)],
+    ) -> super::Result<HttpResponse> {
+        #[cfg(test)]
+        {
+            let _ = (&self.client, url, validators);
+            Err(super::Error::TestNetworkDisabled)
+        }
+        #[cfg(not(test))]
+        {
+            let mut request = self.client.get(url);
+            for (name, value) in validators {
+                request = request.header(name, value);
+            }
+            let response = request.send().await.map_err(transport_error)?;
+            let mut headers = super::network::ResponseHeaders::default();
+            for name in [
+                "content-type",
+                "content-length",
+                "location",
+                "x-robots-tag",
+                "tdm-reservation",
+                "tdm-policy",
+                "cache-control",
+                "etag",
+                "last-modified",
+                "content-language",
+                "retry-after",
+                "cf-mitigated",
+            ] {
+                for value in response.headers().get_all(name).iter() {
+                    headers.observe(name, value.to_str().ok());
+                }
+            }
+            Ok(HttpResponse { response, headers })
+        }
+    }
+}
+
+/// Keeps the raw response private while the outer wrapper owns the host permit.
+pub(super) struct HttpResponse {
+    response: reqwest::Response,
+    headers: super::network::ResponseHeaders,
+}
+impl HttpResponse {
+    pub(super) fn status(&self) -> u16 {
+        self.response.status().as_u16()
+    }
+    pub(super) fn headers(&self) -> &super::network::ResponseHeaders {
+        &self.headers
+    }
+    pub(super) async fn chunk(&mut self) -> super::Result<Option<Vec<u8>>> {
+        self.response
+            .chunk()
+            .await
+            .map(|value| value.map(|bytes| bytes.to_vec()))
+            .map_err(transport_error)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn unit_send_refused() {
+        let resolver = std::sync::Arc::new(super::super::network::VettedResolver::new(
+            std::sync::Arc::new(NoLookup),
+        ));
+        let client =
+            build_http_client(&IdentityConfig::default(), Duration::from_secs(1), resolver)
+                .unwrap();
+        assert!(matches!(
+            client
+                .send(Url::parse("https://never.fixture.invalid/").unwrap(), &[])
+                .await,
+            Err(super::super::Error::TestNetworkDisabled)
+        ));
+    }
+    struct NoLookup;
+    impl super::super::network::AddressResolver for NoLookup {
+        fn lookup<'a>(&'a self, _: &'a str) -> super::super::network::LookupFuture<'a> {
+            panic!("unit send must refuse before DNS")
+        }
+    }
 
     #[test]
     fn ua_format() {

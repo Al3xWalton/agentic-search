@@ -74,7 +74,7 @@ impl Sitemap {
 
             let res = res.unwrap();
 
-            if res.status() != reqwest::StatusCode::OK {
+            if res.status() != 200 {
                 continue;
             }
 

@@ -59,6 +59,9 @@ flate2.workspace = true
 fnv.workspace = true
 fst.workspace = true
 futures.workspace = true
+fs4 = "=0.8.4"
+hyper = "=0.14.31"
+native-tls = "=0.2.12"
 hashbrown.workspace = true
 http.workspace = true
 image.workspace = true

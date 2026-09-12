@@ -28,7 +28,6 @@ use std::{collections::VecDeque, future::Future, net::SocketAddr, sync::Arc};
 type HashMap<K, V> = std::collections::HashMap<K, V, ahash::RandomState>;
 
 use anyhow::anyhow;
-use futures::StreamExt;
 use robot_client::RobotClient;
 use url::Url;
 
@@ -38,7 +37,9 @@ use self::{warc_writer::WarcWriter, worker::WorkerThread};
 pub use worker::JobExecutor;
 
 pub mod coordinator;
+pub mod host_state;
 pub mod identity;
+pub mod network;
 pub mod politeness;
 pub mod robots_txt;
 pub mod router;
@@ -64,9 +65,60 @@ pub enum Error {
 
     #[error("fetch failed: {status_code}")]
     FetchFailed {
-        status_code: reqwest::StatusCode,
-        headers: reqwest::header::HeaderMap,
+        status_code: u16,
+        headers: network::ResponseHeaders,
     },
+
+    #[error("invalid URL")]
+    InvalidUrl,
+    #[error("URL exceeds byte limit")]
+    UrlTooLong,
+    #[error("scheme refused")]
+    SchemeRefused,
+    #[error("port refused")]
+    PortRefused,
+    #[error("target outside authorized scope")]
+    OffScope,
+    #[error("private or special-use address refused")]
+    RefusedPrivateAddress,
+    #[error("connection failed")]
+    ConnectError,
+    #[error("TLS handshake failed")]
+    TlsError,
+    #[error("request timed out")]
+    Timeout,
+    #[error("host is blocked or awaiting its retry deadline")]
+    HostBlocked,
+    #[error("challenge detected")]
+    Challenge,
+    #[error("publisher delay exceeds policy skip threshold")]
+    CrawlDelayExceedsCeiling,
+    #[error("robots is unreachable")]
+    RobotsUnreachable,
+    #[error("host state could not be persisted")]
+    HostStateWrite,
+    #[error("store ownership or containment refused")]
+    StoreRefused,
+    #[error("store already has an owner")]
+    StoreOwned,
+    #[error("configured offline country provider is unavailable")]
+    CountryProviderUnavailable,
+    #[error("listing page-attempt budget exhausted")]
+    ListingBudgetExhausted,
+    #[error("crawl cancelled")]
+    Cancelled,
+    #[error("internal crawl invariant failed")]
+    InternalInvariant,
+    #[error("network disabled in library unit tests")]
+    TestNetworkDisabled,
+    #[error("target belongs to another job domain")]
+    DomainMismatch,
+    #[error("target already completed under this crawl policy")]
+    AlreadyCrawled,
+    #[error("selected target has an ignored extension")]
+    IgnoredExtension,
+    #[error("successful response contained no body")]
+    EmptyBody,
 
     #[error("content too large")]
     ContentTooLarge,
@@ -229,7 +281,6 @@ pub struct DomainCrawled {
 
 pub struct RetrieableUrl {
     weighted_url: WeightedUrl,
-    retries: u8,
 }
 
 impl RetrieableUrl {
@@ -240,10 +291,7 @@ impl RetrieableUrl {
 
 impl From<WeightedUrl> for RetrieableUrl {
     fn from(weighted_url: WeightedUrl) -> Self {
-        Self {
-            weighted_url,
-            retries: 0,
-        }
+        Self { weighted_url }
     }
 }
 
@@ -274,7 +322,7 @@ pub struct CrawlDatum {
 
 pub struct Crawler {
     writer: Arc<WarcWriter>,
-    handles: Vec<tokio::task::JoinHandle<()>>,
+    handles: Vec<tokio::task::JoinHandle<Result<()>>>,
 }
 
 impl Crawler {
@@ -303,20 +351,18 @@ impl Crawler {
                 router_hosts.clone(),
             )?;
 
-            handles.push(tokio::spawn(async move {
-                worker.run().await;
-            }));
+            handles.push(tokio::spawn(async move { worker.run().await }));
         }
 
         Ok(Self { writer, handles })
     }
 
-    pub async fn run(self) {
+    pub async fn run(self) -> Result<()> {
         for handle in self.handles {
-            handle.await.ok();
+            handle.await.map_err(|_| Error::InternalInvariant)??;
         }
 
-        self.writer.finish().await.unwrap();
+        self.writer.finish().await
     }
 }
 
@@ -325,36 +371,7 @@ pub trait DatumSink: Send + Sync {
     fn finish(&self) -> impl Future<Output = Result<()>> + Send;
 }
 
-pub async fn encoded_body(res: reqwest::Response) -> Result<String> {
-    let content_type = res
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<mime::Mime>().ok());
-    let encoding_name = content_type
-        .as_ref()
-        .and_then(|mime| mime.get_param("charset").map(|charset| charset.as_str()))
-        .unwrap_or("utf-8");
-    let encoding =
-        encoding_rs::Encoding::for_label(encoding_name.as_bytes()).unwrap_or(encoding_rs::UTF_8);
-
-    let mut bytes = Vec::new();
-
-    let mut stream = res.bytes_stream();
-    while let Some(b) = stream.next().await {
-        if b.is_err() {
-            return Err(Error::ResponseBodyReadFailed);
-        }
-
-        let b = b.unwrap();
-
-        bytes.extend_from_slice(&b);
-
-        if bytes.len() > MAX_CONTENT_LENGTH {
-            return Err(Error::ContentTooLarge);
-        }
-    }
-
-    let (text, _, _) = encoding.decode(&bytes);
-    Ok(text.to_string())
+/// Decodes an entity through the common bounded response path.
+pub async fn encoded_body(res: network::BoundedResponse) -> Result<String> {
+    res.text().await
 }
