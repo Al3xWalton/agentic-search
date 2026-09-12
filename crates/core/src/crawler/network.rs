@@ -267,8 +267,32 @@ pub struct LoopbackEndpoint {
     resolver: Arc<dyn AddressResolver>,
     country_provider: Option<Arc<dyn HostingCountryProvider>>,
     aliases: BTreeSet<String>,
+    targets: Option<BTreeSet<String>>,
 }
 impl LoopbackEndpoint {
+    /// Narrows this owned endpoint to exact selected URLs; robots bootstrap is admitted by origin.
+    /// A later restriction can only remove targets from an existing restriction.
+    pub fn restrict_targets(mut self, urls: &[Url]) -> Result<Self> {
+        let mut targets = BTreeSet::new();
+        for url in urls {
+            let host = HostKey::from_url(url)?;
+            if !self.admits_host(&host) || url.port_or_known_default() != Some(self.address.port())
+            {
+                return Err(Error::OffScope);
+            }
+            let key = safe_url_for_record(url).0;
+            if self
+                .targets
+                .as_ref()
+                .is_some_and(|allowed| !allowed.contains(&key))
+            {
+                return Err(Error::OffScope);
+            }
+            targets.insert(key);
+        }
+        self.targets = Some(targets);
+        Ok(self)
+    }
     /// Adds explicit DNS-shaped fixture aliases; they still connect only to this owned descriptor.
     pub fn with_aliases(mut self, hosts: &[&str]) -> Result<Self> {
         for host in hosts {
@@ -301,6 +325,7 @@ impl LoopbackEndpoint {
             resolver: Arc::new(FixtureResolver),
             country_provider: None,
             aliases: BTreeSet::new(),
+            targets: None,
         })
     }
     /// Clones the owned descriptor for the fixture server; never binds a new endpoint.
@@ -356,9 +381,15 @@ impl CrawlScope {
             kind: ScopeKind::Production,
         }
     }
-    pub(crate) fn sample(urls: &[Url]) -> Self {
+    pub(crate) fn sample(scope: &super::sample::SeedScope) -> Self {
         Self {
-            kind: ScopeKind::Sample(urls.iter().map(|u| safe_url_for_record(u).0).collect()),
+            kind: ScopeKind::Sample(
+                scope
+                    .urls()
+                    .iter()
+                    .map(|u| safe_url_for_record(u).0)
+                    .collect(),
+            ),
         }
     }
     pub(super) fn loopback(endpoint: LoopbackEndpoint) -> Self {
@@ -374,6 +405,10 @@ impl CrawlScope {
             ScopeKind::Loopback(endpoint) => {
                 url.port_or_known_default() == Some(endpoint.address.port())
                     && HostKey::from_url(url).is_ok_and(|h| endpoint.admits_host(&h))
+                    && endpoint
+                        .targets
+                        .as_ref()
+                        .is_none_or(|urls| urls.contains(safe_url_for_record(url).as_str()))
             }
         }
     }
@@ -394,7 +429,12 @@ impl CrawlScope {
             return Ok(());
         }
         if robots && url.path() == "/robots.txt" && url.query().is_none() {
-            if let ScopeKind::Sample(urls) = &self.kind {
+            let selected = match &self.kind {
+                ScopeKind::Sample(urls) => Some(urls),
+                ScopeKind::Loopback(endpoint) => endpoint.targets.as_ref(),
+                ScopeKind::Production => None,
+            };
+            if let Some(urls) = selected {
                 let origin = OriginKey::from_url(url)?;
                 if urls.iter().any(|value| {
                     Url::parse(value)
@@ -780,7 +820,10 @@ mod tests {
         assert!(scope
             .validate(&Url::parse("https://example.org/").unwrap(), false)
             .is_err());
-        let sample = CrawlScope::sample(&[Url::parse("https://example.org/a?x=1").unwrap()]);
+        let seeds: Vec<super::super::sample::Seed> =
+            serde_json::from_str(include_str!("../../../../.spike/data/seeds.json")).unwrap();
+        let frozen = super::super::sample::SeedScope::frozen(&seeds).unwrap();
+        let sample = CrawlScope::sample(&frozen);
         assert!(!sample.contains_exact(&Url::parse("https://example.org/a?x=2").unwrap()));
     }
 }

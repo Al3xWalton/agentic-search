@@ -1014,6 +1014,22 @@ impl Ledger {
         }
         Ok(None)
     }
+    /// Returns the latest parsed declaration even when language policy excluded that response.
+    /// A failed or bodyless later request cannot erase previously observed frontier restrictions.
+    pub fn previous_languages(&self, url: &Url) -> Result<Option<Vec<String>>> {
+        let key = url_key(url);
+        let state = self.state.lock().map_err(|_| Error::LedgerWrite)?;
+        Ok(state
+            .journal
+            .completions
+            .values()
+            .filter(|row| {
+                row.record.url_key.value() == Some(&key)
+                    && row.record.parsed_at_utc.value().is_some()
+            })
+            .max_by_key(|row| (row.finished_at_utc, row.input_ordinal))
+            .map(|row| row.record.declared_languages.clone()))
+    }
     /// Returns all current-run inputs, used for explicit cancellation and exact redirect joins.
     pub fn targets(&self) -> Result<Vec<Target>> {
         let state = self.state.lock().map_err(|_| Error::LedgerWrite)?;

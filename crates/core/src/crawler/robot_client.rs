@@ -113,13 +113,13 @@ impl RobotClient {
     pub(crate) fn sample(
         store: &Path,
         policy: ValidatedPolicy,
-        urls: &[Url],
+        scope: &super::sample::SeedScope,
         timeout_seconds: u64,
     ) -> Result<Self> {
         Self::construct(
             store,
             policy,
-            CrawlScope::sample(urls),
+            CrawlScope::sample(scope),
             Arc::new(SystemClock::default()),
             timeout_seconds,
         )
@@ -241,13 +241,9 @@ impl RobotClient {
     ) -> Result<RequestBuilder> {
         let url = super::network::parse_fetch_url(url.as_str())?;
         self.inner.transport.scope.validate(&url, false)?;
-        let previous = self.inner.ledger.previous_success(&url)?;
-        self.exclusions().frontier(
-            &url,
-            previous
-                .as_ref()
-                .map(|record| record.declared_languages.as_slice()),
-        )?;
+        let previous_languages = self.inner.ledger.previous_languages(&url)?;
+        self.exclusions()
+            .frontier(&url, previous_languages.as_deref())?;
         let state = self.inner.registry.state(&HostKey::from_url(&url)?)?;
         if state
             .blocked_until_utc
