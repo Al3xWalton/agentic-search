@@ -45,17 +45,9 @@ impl Checker for Feeds {
         let mut urls = Vec::new();
 
         for feed in &self.feeds {
-            let Ok(req) = self.client.get(feed.url.clone()).await else {
-                continue;
-            };
-
-            let Ok(resp) = req.send().await else {
-                continue;
-            };
-
-            let Ok(text) = resp.text().await else {
-                continue;
-            };
+            let req = self.client.get(feed.url.clone()).await?;
+            let resp = req.send().await?;
+            let text = resp.text().await?;
 
             let Ok(parsed_feed) = parse(&text, feed.kind) else {
                 continue;

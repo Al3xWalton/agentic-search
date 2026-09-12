@@ -235,6 +235,17 @@ impl Robots {
         self.is_path_allowed(path)
     }
 
+    /// Matches the exact transmitted path and query without the index.html fallback.
+    /// Access-control callers must check their conservative URL forms separately; an
+    /// explicit denial of a directory cannot be erased by permission for its index page.
+    pub fn is_allowed_strict(&self, url: &Url) -> bool {
+        let path = match url.query() {
+            Some(query) => format!("{}?{}", url.path(), query),
+            None => url.path().to_owned(),
+        };
+        self.is_precise_path_allowed(&path)
+    }
+
     fn prepare_path(url: &Url) -> String {
         let path = url.path();
 

@@ -72,7 +72,7 @@ impl Client {
         })
     }
 
-    pub fn reqwest(&self) -> RobotClient {
+    pub fn robot_client(&self) -> RobotClient {
         self.client.clone()
     }
 
