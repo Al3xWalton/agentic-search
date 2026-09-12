@@ -53,4 +53,3 @@ You may complain to AVA using [FOUNDER REQUIRED: private controller complaints r
 ## P12 Public sources and Article 14 measures
 
 Sources are publicly accessible pages; public availability does not remove data-protection duties. Measures and notice rationale: [FOUNDER REQUIRED: approved Article 14 measures and notice rationale]. Production remains disabled until the selected founder-approved DPIA links the LIA and Article 14 measures for this policy version.
-

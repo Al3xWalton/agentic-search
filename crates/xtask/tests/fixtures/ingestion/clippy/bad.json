@@ -1,0 +1,1 @@
+{"reason":"compiler-message","package_id":"path+file:///fixture#stract@0.1.0","target":{"name":"stract","kind":["lib"]},"message":{"level":"error","message":"fixture warning","code":{"code":"clippy::large_enum_variant"},"spans":[{"file_name":"crates/core/src/crawler/new.rs","is_primary":true,"expansion":null}]}}

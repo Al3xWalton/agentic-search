@@ -10,7 +10,8 @@ use std::{
     process::Command,
 };
 
-const INHERITED_LINTS: &[&str] = &[
+/// Enumerated inherited lints accepted only on untouched source by the strict diagnostic checker.
+pub(crate) const INHERITED_LINTS: &[&str] = &[
     // 2 inherited files; upstream clippy repair — orchestrator files the Story.
     "clippy::chunks_exact_to_as_chunks",
     // 1 inherited files; upstream clippy repair — orchestrator files the Story.
@@ -129,6 +130,7 @@ pub fn check() -> Result<()> {
                 .args(args),
         )?;
     }
+    crate::ingestion::strict_clippy_touched(None)?;
     Ok(())
 }
 
@@ -182,6 +184,20 @@ pub fn ci_all() -> Result<()> {
     cargo(
         &root,
         &["test", "--locked", "-p", "xtask", "--test", "guards"],
+    )?;
+    crate::ingestion::crawler_user_agent(&root)?;
+    crate::ingestion::crawler_dependency_deny(&root)?;
+    crate::ingestion::crawler_policy_check(&root.join("CRAWLER_POLICY.md"))?;
+    cargo(
+        &root,
+        &[
+            "test",
+            "--locked",
+            "-p",
+            "xtask",
+            "--test",
+            "ingestion_guards",
+        ],
     )?;
     source_offer()?;
     check()?;

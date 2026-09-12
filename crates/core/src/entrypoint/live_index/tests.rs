@@ -405,7 +405,7 @@ async fn test_replica_recovery() -> Result<()> {
     rep2.kill().await?;
 
     loop {
-        if let Ok(_) = rep1
+        if rep1
             .index_pages(
                 vec![IndexableWebpage {
                     record: None,
@@ -420,6 +420,7 @@ async fn test_replica_recovery() -> Result<()> {
                 Some(1.0),
             )
             .await
+            .is_ok()
         {
             break;
         }

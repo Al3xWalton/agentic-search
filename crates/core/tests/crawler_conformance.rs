@@ -2000,7 +2000,17 @@ async fn ua_fetch_types() {
     let pattern = regex::Regex::new(&format!(r"^AVASearchBot/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)? \(\+{}; {}\)$", regex::escape(&fixture.client.policy().get().identity.policy_url), regex::escape(&fixture.client.policy().get().identity.contact))).unwrap();
     assert_eq!(requests.len(), 7);
     for request in requests {
+        assert_eq!(
+            request.host,
+            format!(
+                "a.fixture.invalid:{}",
+                fixture.url("a.fixture.invalid", "/").port().unwrap()
+            )
+        );
         assert_eq!(request.user_agent, expected);
+        for forbidden in ["cookie", "authorization", "proxy-authorization", "referer"] {
+            assert!(!request.headers.contains_key(forbidden));
+        }
         assert!(pattern.is_match(&request.user_agent));
     }
     let rows =

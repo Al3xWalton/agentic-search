@@ -8,6 +8,8 @@ pub mod artifacts;
 pub mod ci;
 /// Pure file guards used by CI and disposable fixtures.
 pub mod guards;
+/// Closed crawler transport boundary, policy and strict lint guards.
+pub mod ingestion;
 /// Pinned tool installation and archive verification.
 pub mod install;
 /// NUL-safe export of the current repository and initialized submodules.

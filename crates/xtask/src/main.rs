@@ -15,6 +15,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Task {
+    CrawlerUserAgent {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    CrawlerDependencyDeny {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    CrawlerPolicyCheck {
+        file: PathBuf,
+    },
+    StrictClippyTouched {
+        #[arg(long)]
+        base: Option<String>,
+    },
     ToolchainPin {
         #[arg(long)]
         root: Option<PathBuf>,
@@ -72,6 +87,16 @@ enum Task {
 fn execute(task: Task) -> Result<()> {
     let default_root = xtask::repository_root();
     match task {
+        Task::CrawlerUserAgent { root } => {
+            xtask::ingestion::crawler_user_agent(root.as_deref().unwrap_or(&default_root))
+        }
+        Task::CrawlerDependencyDeny { root } => {
+            xtask::ingestion::crawler_dependency_deny(root.as_deref().unwrap_or(&default_root))
+        }
+        Task::CrawlerPolicyCheck { file } => xtask::ingestion::crawler_policy_check(&file),
+        Task::StrictClippyTouched { base } => {
+            xtask::ingestion::strict_clippy_touched(base.as_deref())
+        }
         Task::ToolchainPin { root } => {
             println!(
                 "{}",

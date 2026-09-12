@@ -41,7 +41,7 @@ impl DatumSink for WarcWriter {
             return Err(Error::SinkWrite);
         }
         self.tx
-            .send(WarcWriterMessage::Crawl(crawl_datum))
+            .send(WarcWriterMessage::Crawl(Box::new(crawl_datum)))
             .await
             .map_err(|e| Error::from(anyhow!(e)))?;
 
@@ -63,7 +63,7 @@ impl DatumSink for WarcWriter {
 
 #[derive(Debug, Clone)]
 pub enum WarcWriterMessage {
-    Crawl(CrawlDatum),
+    Crawl(Box<CrawlDatum>),
     Finish,
 }
 
@@ -97,7 +97,7 @@ async fn commit(writer: warc::DeduplicatedWarcWriter, s3: config::S3Config) {
 
             if let Err(err) = bucket
                 .put_object_with_content_type(
-                    &format!("{}/{}", &s3.folder, filename),
+                    &format!("{}/{}", s3.folder, filename),
                     &data,
                     "application/warc",
                 )

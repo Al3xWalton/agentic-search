@@ -84,7 +84,7 @@ struct DualEncoder {
 
 pub(super) enum Webgraph {
     Remote(RemoteWebgraph),
-    Local(webgraph::Webgraph),
+    Local(Box<webgraph::Webgraph>),
 }
 
 impl Webgraph {
@@ -160,11 +160,11 @@ impl Webgraph {
 impl Webgraph {
     async fn new(config: &IndexerGraphConfig) -> Self {
         match config {
-            IndexerGraphConfig::Local { path } => Self::Local(
+            IndexerGraphConfig::Local { path } => Self::Local(Box::new(
                 webgraph::WebgraphBuilder::new(path, 0u64.into())
                     .open()
                     .expect("webgraph should open"),
-            ),
+            )),
             IndexerGraphConfig::Remote { gossip } => {
                 let cluster = crate::start_gossip_cluster_thread(gossip.clone(), None);
                 let remote = RemoteWebgraph::new(cluster).await;
@@ -553,6 +553,27 @@ mod tests {
     }
     fn ingestion_page() -> IndexableWebpage {
         IndexableWebpage {record: None, url:"https://fixture.invalid/page".into(), body:"<title>Indexable fixture</title><p>A complete nonempty document with enough text to remain indexable.</p>".into(), fetch_time_ms:1}
+    }
+    #[test]
+    fn index_skip_reasons() {
+        let mut page = ingestion_page();
+        assert!(IndexingWorker::audit_page(&page).is_ok());
+        for (body, reason) in [
+            ("<title> </title><p>text</p>", "empty title"),
+            (
+                "<title>Refused</title><meta name='robots' content='noindex'><p>text</p>",
+                "noindex",
+            ),
+        ] {
+            page.body = body.into();
+            assert_eq!(IndexingWorker::audit_page(&page).unwrap_err(), reason);
+        }
+        page = ingestion_page();
+        page.url = "not a URL".into();
+        assert_eq!(
+            IndexingWorker::audit_page(&page).unwrap_err(),
+            "invalid-url"
+        );
     }
     #[test]
     fn empty_centrality_defaults() {
