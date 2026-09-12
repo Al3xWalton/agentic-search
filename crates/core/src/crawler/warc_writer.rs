@@ -32,12 +32,21 @@ pub struct WarcWriter {
 
 impl DatumSink for WarcWriter {
     async fn write(&self, crawl_datum: CrawlDatum) -> Result<()> {
+        crawl_datum.record.validate()?;
+        super::record::validate_success_fields(&crawl_datum.record)?;
+        if crawl_datum.body.is_empty()
+            || crawl_datum.record.index_only
+            || crawl_datum.record.body_retention != super::record::BodyRetentionReason::Retained
+        {
+            return Err(Error::SinkWrite);
+        }
         self.tx
             .send(WarcWriterMessage::Crawl(crawl_datum))
             .await
             .map_err(|e| Error::from(anyhow!(e)))?;
 
-        Ok(())
+        // Remote enqueue cannot acknowledge the durable local write required by Saved.
+        Err(Error::SinkWrite)
     }
 
     async fn finish(&self) -> Result<()> {
@@ -47,7 +56,8 @@ impl DatumSink for WarcWriter {
             .map_err(|e| Error::from(anyhow!(e)))?;
         self.tx.closed().await;
 
-        Ok(())
+        // Remote completion/retention is not implemented by the Slice 1 local sink contract.
+        Err(Error::SinkWrite)
     }
 }
 
@@ -122,6 +132,7 @@ async fn writer_task(mut rx: tokio::sync::mpsc::Receiver<WarcWriterMessage>, s3:
                             },
                             metadata: warc::Metadata {
                                 fetch_time_ms: datum.fetch_time_ms,
+                                document: Some(datum.record),
                             },
                         };
 

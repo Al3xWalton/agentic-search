@@ -136,14 +136,21 @@ impl CrawlableSite {
     }
 }
 
-impl crawler::DatumSink for tokio::sync::Mutex<Vec<crawler::CrawlDatum>> {
+struct LiveSink {
+    local: Arc<crawler::local_sink::LocalSink>,
+    data: tokio::sync::Mutex<Vec<crawler::CrawlDatum>>,
+}
+impl crawler::DatumSink for LiveSink {
     async fn write(&self, crawl_datum: crawler::CrawlDatum) -> Result<(), crawler::Error> {
-        self.lock().await.push(crawl_datum);
+        self.local.write(crawl_datum.clone()).await?;
+        if crawl_datum.record.index_eligible {
+            self.data.lock().await.push(crawl_datum);
+        }
         Ok(())
     }
 
     async fn finish(&self) -> Result<(), crawler::Error> {
-        Ok(())
+        self.local.finish().await
     }
 }
 
@@ -195,30 +202,15 @@ impl CrawlableSiteGuard {
         let mut urls = Vec::new();
 
         if site.feeds.should_check(interval) {
-            urls.extend(
-                site.feeds
-                    .get_urls_and_update_last_check()
-                    .await
-                    .unwrap_or_default(),
-            );
+            urls.extend(site.feeds.get_urls_and_update_last_check().await?);
         }
 
         if site.sitemap.should_check(interval) {
-            urls.extend(
-                site.sitemap
-                    .get_urls_and_update_last_check()
-                    .await
-                    .unwrap_or_default(),
-            );
+            urls.extend(site.sitemap.get_urls_and_update_last_check().await?);
         }
 
         if site.frontpage.should_check(interval) {
-            urls.extend(
-                site.frontpage
-                    .get_urls_and_update_last_check()
-                    .await
-                    .unwrap_or_default(),
-            );
+            urls.extend(site.frontpage.get_urls_and_update_last_check().await?);
         }
 
         let url = site.site.url()?;
@@ -227,10 +219,6 @@ impl CrawlableSiteGuard {
             .into_iter()
             .filter(|u| u.url.icann_domain() == icann_domain)
             .unique_by(|u| u.url.clone())
-            .map(|mut u| {
-                u.url.normalize_in_place();
-                u
-            })
             .collect();
 
         urls.retain(|url| !self.crawled_db.has_crawled(&url.url).unwrap_or(false));
@@ -253,12 +241,10 @@ impl CrawlableSiteGuard {
             site.site.as_str()
         );
 
-        for crawlable_url in &urls {
-            self.crawled_db
-                .insert(&crawlable_url.url.clone().normalize())?;
-        }
-
-        let crawl_data = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let crawl_data = Arc::new(LiveSink {
+            local: client.robot_client().local_sink(),
+            data: tokio::sync::Mutex::new(Vec::new()),
+        });
 
         let executor = crawler::JobExecutor::new(
             crawler::WorkerJob {
@@ -284,7 +270,8 @@ impl CrawlableSiteGuard {
 
         executor.run().await?;
 
-        let crawl_data = crawl_data.lock().await.clone();
+        let crawl_data = crawl_data.data.lock().await.clone();
+        let successful_urls: Vec<_> = crawl_data.iter().map(|datum| datum.url.clone()).collect();
 
         tracing::debug!(
             "Indexing {} urls for site {}",
@@ -294,6 +281,9 @@ impl CrawlableSiteGuard {
         client
             .index(crawl_data.into_iter().map(IndexableWebpage::from).collect())
             .await?;
+        for url in successful_urls {
+            self.crawled_db.insert(&url)?;
+        }
 
         tracing::debug!("Finished crawling site {}", site.site.as_str());
 

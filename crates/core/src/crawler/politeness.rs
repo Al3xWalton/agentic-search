@@ -280,6 +280,10 @@ pub struct HostPermit {
     pub queue_time_ms: u64,
 }
 impl HostPermit {
+    /// Returns acknowledged host deadlines for the completed attempt record.
+    pub(super) fn state(&self) -> Result<HostState> {
+        self.registry.state(&self.host)
+    }
     /// Ends connection/header admission; body reads retain the connection allowance.
     pub(super) fn headers_received(&mut self) {
         if self.start_guard.is_some() {

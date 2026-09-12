@@ -6,8 +6,11 @@
 #![deny(missing_docs)]
 
 use super::{
+    exclusions::{Exclusions, HostingCountry, HostingCountryProvider},
     identity::{HttpClient, HttpResponse},
-    politeness::HostPermit,
+    ledger::{AttemptTrace, FetchKind, WireError, WireGuard},
+    politeness::{Clock, HostPermit},
+    record::Observation,
     Error, Result, MAX_URL_LEN_BYTES,
 };
 use crate::config::ingestion::ProductionPermit;
@@ -262,8 +265,30 @@ pub struct LoopbackEndpoint {
     listener: Arc<TcpListener>,
     address: SocketAddr,
     resolver: Arc<dyn AddressResolver>,
+    country_provider: Option<Arc<dyn HostingCountryProvider>>,
+    aliases: BTreeSet<String>,
 }
 impl LoopbackEndpoint {
+    /// Adds explicit DNS-shaped fixture aliases; they still connect only to this owned descriptor.
+    pub fn with_aliases(mut self, hosts: &[&str]) -> Result<Self> {
+        for host in hosts {
+            let url = parse_fetch_url(&format!("http://{host}/"))?;
+            let key = HostKey::from_url(&url)?;
+            if key.as_str().parse::<IpAddr>().is_ok() {
+                return Err(Error::RefusedPrivateAddress);
+            }
+            self.aliases.insert(key.as_str().into());
+        }
+        Ok(self)
+    }
+    fn admits_host(&self, host: &HostKey) -> bool {
+        host.as_str().ends_with(".fixture.invalid") || self.aliases.contains(host.as_str())
+    }
+    /// Supplies deterministic offline country answers only for this already owned fixture endpoint.
+    pub fn with_country_provider(mut self, provider: Arc<dyn HostingCountryProvider>) -> Self {
+        self.country_provider = Some(provider);
+        self
+    }
     /// Accepts only an already-bound loopback listener owned by the caller.
     pub fn new(listener: TcpListener) -> Result<Self> {
         let address = listener.local_addr().map_err(|_| Error::ConnectError)?;
@@ -274,6 +299,8 @@ impl LoopbackEndpoint {
             listener: Arc::new(listener),
             address,
             resolver: Arc::new(FixtureResolver),
+            country_provider: None,
+            aliases: BTreeSet::new(),
         })
     }
     /// Clones the owned descriptor for the fixture server; never binds a new endpoint.
@@ -308,6 +335,16 @@ pub struct CrawlScope {
     kind: ScopeKind,
 }
 impl CrawlScope {
+    /// Reports whether this is an owned-loopback capability; it never grants production authority.
+    pub fn is_loopback(&self) -> bool {
+        matches!(self.kind, ScopeKind::Loopback(_))
+    }
+    pub(super) fn country_provider(&self) -> Option<Arc<dyn HostingCountryProvider>> {
+        match &self.kind {
+            ScopeKind::Loopback(endpoint) => endpoint.country_provider.clone(),
+            _ => None,
+        }
+    }
     pub(super) fn candidate_resolver(&self) -> Arc<dyn AddressResolver> {
         match &self.kind {
             ScopeKind::Loopback(endpoint) => endpoint.resolver.clone(),
@@ -336,8 +373,7 @@ impl CrawlScope {
             ScopeKind::Sample(urls) => urls.contains(safe_url_for_record(url).as_str()),
             ScopeKind::Loopback(endpoint) => {
                 url.port_or_known_default() == Some(endpoint.address.port())
-                    && HostKey::from_url(url)
-                        .is_ok_and(|h| h.as_str().ends_with(".fixture.invalid"))
+                    && HostKey::from_url(url).is_ok_and(|h| endpoint.admits_host(&h))
             }
         }
     }
@@ -385,7 +421,7 @@ impl CrawlScope {
         match &self.kind {
             ScopeKind::Loopback(endpoint) => {
                 // IP literals are never fixture aliases; only the owned descriptor supplies the peer.
-                if !host.as_str().ends_with(".fixture.invalid") {
+                if !endpoint.admits_host(&host) {
                     return Err(Error::RefusedPrivateAddress);
                 }
                 resolve_public(host.as_str(), endpoint.address.port(), resolver).await?;
@@ -408,28 +444,80 @@ pub(super) struct Transport {
     pub(super) client: HttpClient,
     pub(super) resolver: Arc<VettedResolver>,
     pub(super) scope: CrawlScope,
+    pub(super) exclusions: Arc<Exclusions>,
+    pub(super) clock: Arc<dyn Clock>,
+}
+pub(super) struct PreparedTarget {
+    url: Url,
+    addresses: Vec<SocketAddr>,
+    country: HostingCountry,
 }
 impl Transport {
-    pub(super) async fn prepare(&self, url: &Url) -> Result<()> {
-        let host = HostKey::from_url(&url)?;
+    pub(super) async fn prepare(
+        &self,
+        url: &Url,
+        trace: Option<&AttemptTrace>,
+    ) -> Result<PreparedTarget> {
+        self.exclusions.frontier(url, None)?;
         let addresses = self.scope.resolve(url, self.resolver.as_ref()).await?;
-        self.resolver
-            .pin_vetted_addresses(host.as_str(), addresses)?;
-        Ok(())
+        let country = self.exclusions.country(&addresses);
+        if let Some(trace) = trace {
+            trace.country(country.clone())?;
+        }
+        self.exclusions.admit_country(&country)?;
+        Ok(PreparedTarget {
+            url: url.clone(),
+            addresses,
+            country,
+        })
     }
     pub(super) async fn send(
         &self,
-        url: Url,
+        target: PreparedTarget,
         validators: &[(String, String)],
         mut permit: HostPermit,
         limit: usize,
+        kind: FetchKind,
+        trace: Option<&AttemptTrace>,
     ) -> Result<BoundedResponse> {
-        let response = self.client.send(url.clone(), validators).await?;
-        permit.observe(
+        let url = target.url;
+        // The shared host start mutex remains held until headers: another same-host request cannot
+        // replace this request's DNS pin between admission and connection resolution.
+        self.resolver
+            .pin_vetted_addresses(HostKey::from_url(&url)?.as_str(), target.addresses)?;
+        let mut wire = trace
+            .map(|trace| {
+                trace.start(
+                    &url,
+                    kind,
+                    self.clock.clone(),
+                    permit.started_at_utc,
+                    permit.queue_time_ms,
+                )
+            })
+            .transpose()?;
+        let response = match self.client.send(url.clone(), validators).await {
+            Ok(response) => response,
+            Err(error) => {
+                if let Some(wire) = &mut wire {
+                    wire.finish(Some(wire_error(&error)))?;
+                }
+                return Err(error);
+            }
+        };
+        if let Some(wire) = &wire {
+            wire.update(|attempt| attempt.status = Observation::Present(response.status()))?;
+        }
+        if let Err(error) = permit.observe(
             response.status(),
             response.headers(),
             super::host_state::detect_challenge(response.headers(), &[]),
-        )?;
+        ) {
+            if let Some(wire) = &mut wire {
+                wire.finish(Some(wire_error(&error)))?;
+            }
+            return Err(error);
+        }
         permit.headers_received();
         Ok(BoundedResponse {
             response,
@@ -437,6 +525,8 @@ impl Transport {
             limit,
             url,
             robots: None,
+            wire,
+            hosting_country: target.country,
         })
     }
 }
@@ -450,8 +540,22 @@ pub struct BoundedResponse {
     url: Url,
     /// Immutable robots decision actually used after the host queue; None only for bootstrap.
     pub robots: Option<super::robots_txt::RobotsSnapshot>,
+    /// Country observation from the actual vetted connection addresses, never inferred from a suffix.
+    pub hosting_country: HostingCountry,
+    wire: Option<WireGuard>,
 }
 impl BoundedResponse {
+    /// Attaches the immutable content decision to both response and nested attempt evidence.
+    pub(super) fn attach_robots(
+        &mut self,
+        snapshot: super::robots_txt::RobotsSnapshot,
+    ) -> Result<()> {
+        if let Some(wire) = &self.wire {
+            wire.update(|attempt| attempt.robots = Observation::Present(snapshot.clone()))?;
+        }
+        self.robots = Some(snapshot);
+        Ok(())
+    }
     /// Returns the actual response status, before MIME or directive processing.
     pub fn status(&self) -> u16 {
         self.response.status()
@@ -466,6 +570,20 @@ impl BoundedResponse {
     }
     /// Reads bounded entity bytes, checking each chunk before extending the accumulated buffer.
     pub async fn bytes(mut self) -> Result<Vec<u8>> {
+        let mut result = self.read_bytes().await;
+        if let Some(wire) = &mut self.wire {
+            match self.host_permit.state() {
+                Ok(state) => wire.update(|attempt| {
+                    attempt.retry_at_utc = state.retry_at_utc;
+                    attempt.blocked_until_utc = state.blocked_until_utc;
+                })?,
+                Err(error) => result = Err(error),
+            }
+            wire.finish(result.as_ref().err().map(wire_error))?;
+        }
+        result
+    }
+    async fn read_bytes(&mut self) -> Result<Vec<u8>> {
         if self
             .headers()
             .get("content-length")
@@ -476,6 +594,11 @@ impl BoundedResponse {
         }
         let mut bytes = Vec::new();
         while let Some(chunk) = self.response.chunk().await? {
+            if let Some(wire) = &self.wire {
+                wire.update(|attempt| {
+                    attempt.body_bytes = attempt.body_bytes.saturating_add(chunk.len() as u64)
+                })?;
+            }
             if chunk.len() > self.limit.saturating_sub(bytes.len()) {
                 return Err(Error::ContentTooLarge);
             }
@@ -485,7 +608,6 @@ impl BoundedResponse {
             self.host_permit
                 .observe_body_challenge(self.headers(), challenge)?;
         }
-        drop(self.host_permit);
         Ok(bytes)
     }
     /// Decodes a bounded body once, preserving the upstream UTF-8 fallback for unknown encodings.
@@ -505,6 +627,19 @@ impl BoundedResponse {
             return Err(Error::Challenge);
         }
         Ok(encoding.decode(&bytes).0.into_owned())
+    }
+}
+
+fn wire_error(error: &Error) -> WireError {
+    match error {
+        Error::Timeout => WireError::Timeout,
+        Error::ConnectError => WireError::Connect,
+        Error::TlsError => WireError::Tls,
+        Error::ResponseBodyReadFailed => WireError::BodyRead,
+        Error::ContentTooLarge => WireError::TooLarge,
+        Error::Cancelled => WireError::Cancelled,
+        Error::HostStateWrite => WireError::HostState,
+        _ => WireError::Internal,
     }
 }
 

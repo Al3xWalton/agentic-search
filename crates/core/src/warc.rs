@@ -369,32 +369,80 @@ impl Arbitrary for Response {
     }
 }
 
+/// Maximum metadata content size in bytes, checked before line reading or content allocation.
+pub const MAX_METADATA_RECORD_BYTES: usize = 1_048_576;
+/// Maximum single-line ingestion JSON value in bytes, checked before JSON deserialization.
+pub const MAX_AVA_DOCUMENT_BYTES: usize = 262_144;
+
+/// Legacy fetch timing and optional validated ingestion metadata.
+/// Any trimmed line starting with avaDocumentV1 is a marker and must contain the exact token
+/// followed immediately by a colon, optional spaces and one nonempty single-line JSON value.
+/// Malformed or repeated markers fail; legacy fallback requires no marker at all.
+/// Byte bounds limit allocation before DocumentRecord validation bounds strings and collections.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, PartialEq))]
 pub struct Metadata {
     // fetchTimeMs
     pub fetch_time_ms: u64,
+    /// Version-one ingestion evidence; None only for legacy captures without the extension.
+    pub document: Option<crate::crawler::record::DocumentRecord>,
 }
 
 impl Metadata {
     fn from_raw(record: RawWarcRecord) -> Result<Self> {
+        if record.content.len() > MAX_METADATA_RECORD_BYTES {
+            return Err(
+                Error::WarcParse("Metadata exceeds MAX_METADATA_RECORD_BYTES".into()).into(),
+            );
+        }
         let r = BufReader::new(&record.content[..]);
-
+        let mut fetch_time_ms = None;
+        let mut document = None;
         for line in r.lines() {
             let mut line = line?;
+            if line.trim_start().starts_with("avaDocumentV1") {
+                let value = line
+                    .trim_start()
+                    .strip_prefix("avaDocumentV1:")
+                    .filter(|_| document.is_none())
+                    .ok_or_else(|| Error::WarcParse("Malformed ingestion extension".into()))?
+                    .trim_start_matches(' ');
+                document = Some(parse_ava_document(value)?);
+                continue;
+            }
             if let Some(semi) = line.find(':') {
                 let value = line.split_off(semi + 1).trim().to_string();
                 line.pop(); // remove colon
                 let key = line;
                 if key == "fetchTimeMs" {
-                    let fetch_time_ms = value.parse::<u64>()?;
-                    return Ok(Self { fetch_time_ms });
+                    if fetch_time_ms.is_some() {
+                        return Err(Error::WarcParse("Duplicate fetch time".into()).into());
+                    }
+                    fetch_time_ms = Some(value.parse::<u64>()?);
                 }
             }
         }
 
-        Err(Error::WarcParse("Failed to parse metadata".to_string()).into())
+        Ok(Self {
+            fetch_time_ms: fetch_time_ms
+                .ok_or_else(|| Error::WarcParse("Failed to parse metadata".into()))?,
+            document,
+        })
     }
+}
+
+fn parse_ava_document(value: &str) -> Result<crate::crawler::record::DocumentRecord> {
+    if value.len() > MAX_AVA_DOCUMENT_BYTES {
+        return Err(
+            Error::WarcParse("Ingestion extension exceeds MAX_AVA_DOCUMENT_BYTES".into()).into(),
+        );
+    }
+    let document: crate::crawler::record::DocumentRecord = serde_json::from_str(value)
+        .map_err(|_| Error::WarcParse("Malformed ingestion extension".into()))?;
+    document
+        .validate()
+        .map_err(|_| Error::WarcParse("Invalid ingestion extension".into()))?;
+    Ok(document)
 }
 
 #[cfg(test)]
@@ -404,7 +452,10 @@ impl Arbitrary for Metadata {
 
     fn arbitrary_with(_args: ()) -> Self::Strategy {
         (0..10000u64)
-            .prop_map(|fetch_time_ms| Self { fetch_time_ms })
+            .prop_map(|fetch_time_ms| Self {
+                fetch_time_ms,
+                document: None,
+            })
             .boxed()
     }
 }
@@ -488,6 +539,27 @@ impl<R: Read> RecordIterator<R> {
         }
 
         let content_len = content_len.unwrap();
+        if header
+            .get("WARC-TYPE")
+            .is_some_and(|kind| kind == "metadata")
+            && content_len > MAX_METADATA_RECORD_BYTES
+        {
+            let drained = std::io::copy(
+                &mut self.reader.by_ref().take(content_len as u64),
+                &mut std::io::sink(),
+            );
+            if drained
+                .as_ref()
+                .is_ok_and(|read| *read == content_len as u64)
+            {
+                let mut ending = [0; 4];
+                let _ = self.reader.read_exact(&mut ending);
+            }
+            return Some(Err(Error::WarcParse(
+                "Metadata exceeds MAX_METADATA_RECORD_BYTES".into(),
+            )
+            .into()));
+        }
         let mut content = vec![0; content_len];
         if let Err(io) = self.reader.read_exact(&mut content) {
             return Some(Err(io.into()));
@@ -721,7 +793,12 @@ impl WarcWriter {
         self.writer
             .write_all("WARC-Type: metadata\r\n".as_bytes())?;
 
-        let body = format!("fetchTimeMs: {}", record.metadata.fetch_time_ms);
+        let mut body = format!("fetchTimeMs: {}", record.metadata.fetch_time_ms);
+        if let Some(document) = &record.metadata.document {
+            document.validate()?;
+            body.push_str("\navaDocumentV1: ");
+            body.push_str(&serde_json::to_string(document)?);
+        }
         let content_len = body.len();
 
         self.writer
@@ -730,7 +807,7 @@ impl WarcWriter {
         self.writer.write_all(body.as_bytes())?;
         self.writer.write_all("\r\n\r\n".as_bytes())?;
 
-        self.writer.flush().unwrap();
+        self.writer.flush()?;
 
         self.num_writes += 1;
 
@@ -759,7 +836,159 @@ impl Default for WarcWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn extension_fixture() -> crate::crawler::record::DocumentRecord {
+        let policy = crate::config::ingestion::IngestionPolicy::default()
+            .validate()
+            .unwrap();
+        let mut document = crate::crawler::record::DocumentRecord::pending(
+            &policy,
+            &uuid::Uuid::new_v4().to_string(),
+            &uuid::Uuid::new_v4().to_string(),
+            Some(&url::Url::parse("https://fixture.invalid/Path?q=keep#drop").unwrap()),
+        );
+        document.title =
+            crate::crawler::record::Observation::Present("Café \"declared title\"".into());
+        document
+    }
+    fn metadata_bytes(body: String) -> RawWarcRecord {
+        RawWarcRecord {
+            header: BTreeMap::new(),
+            content: body.into_bytes(),
+        }
+    }
+    #[test]
+    fn warc_metadata_roundtrip() {
+        let document = extension_fixture();
+        let json = serde_json::to_string(&document).unwrap();
+        assert!(!json.contains('\n'));
+        for body in [
+            format!("fetchTimeMs: 17\navaDocumentV1: {json}\nunknown: ignored"),
+            format!("unknown: ignored\navaDocumentV1: {json}\nfetchTimeMs: 17"),
+        ] {
+            let metadata = Metadata::from_raw(metadata_bytes(body)).unwrap();
+            assert_eq!(metadata.fetch_time_ms, 17);
+            assert_eq!(metadata.document, Some(document.clone()));
+        }
+        let record = WarcRecord {
+            request: Request {
+                url: "https://fixture.invalid/Path?q=keep".into(),
+                date: None,
+            },
+            response: Response {
+                body: "<title>Café</title>".into(),
+                payload_type: Some(PayloadType::Html),
+            },
+            metadata: Metadata {
+                fetch_time_ms: 17,
+                document: Some(document.clone()),
+            },
+        };
+        let mut writer = WarcWriter::new();
+        writer.write(&record).unwrap();
+        let file = WarcFile::new(writer.finish().unwrap());
+        let rows: Vec<_> = file.records().collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].as_ref().unwrap().metadata.document, Some(document));
+    }
+    #[test]
+    fn warc_legacy() {
+        for body in [
+            "fetchTimeMs: 9",
+            "unknown: ignored\nfetchTimeMs: 9\nother: ignored",
+        ] {
+            let metadata = Metadata::from_raw(metadata_bytes(body.into())).unwrap();
+            assert_eq!(metadata.fetch_time_ms, 9);
+            assert!(metadata.document.is_none());
+        }
+    }
+    #[test]
+    fn warc_bad_extension() {
+        for marker in [
+            "avaDocumentV1",
+            "avaDocumentV1 : {}",
+            "avaDocumentV1={}",
+            "avaDocumentV1:",
+            "  avaDocumentV1garbage",
+        ] {
+            let error = Metadata::from_raw(metadata_bytes(format!("fetchTimeMs: 9\n{marker}")))
+                .unwrap_err();
+            assert!(
+                error.to_string().contains("Malformed ingestion extension"),
+                "{marker}: {error}"
+            );
+        }
+        for bad in ["{", "{}", "null", "[]"] {
+            assert!(Metadata::from_raw(metadata_bytes(format!(
+                "fetchTimeMs: 9\navaDocumentV1: {bad}"
+            )))
+            .is_err());
+        }
+        let mut invalid = extension_fixture();
+        invalid.schema_version = 2;
+        assert!(Metadata::from_raw(metadata_bytes(format!(
+            "fetchTimeMs: 9\navaDocumentV1: {}",
+            serde_json::to_string(&invalid).unwrap()
+        )))
+        .is_err());
+        let json = serde_json::to_string(&extension_fixture()).unwrap();
+        assert!(Metadata::from_raw(metadata_bytes(format!(
+            "fetchTimeMs: 9\navaDocumentV1: {json}\navaDocumentV1: {json}"
+        )))
+        .is_err());
+    }
     use core::panic;
+
+    #[test]
+    fn warc_extension_bounds() {
+        let json = serde_json::to_string(&extension_fixture()).unwrap();
+        for extra in [0, 1] {
+            let value = format!("{json}{}", " ".repeat(262_144 + extra - json.len()));
+            let result = Metadata::from_raw(metadata_bytes(format!(
+                "fetchTimeMs: 9\navaDocumentV1: {value}"
+            )));
+            if extra == 0 {
+                assert!(result.unwrap().document.is_some());
+            } else {
+                assert!(result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("MAX_AVA_DOCUMENT_BYTES"));
+            }
+            let prefix = "fetchTimeMs: 9\nignored: ";
+            let body = format!("{prefix}{}", "x".repeat(1_048_576 + extra - prefix.len()));
+            let result = Metadata::from_raw(metadata_bytes(body.clone()));
+            if extra == 0 {
+                assert!(result.unwrap().document.is_none());
+            } else {
+                assert!(result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("MAX_METADATA_RECORD_BYTES"));
+            }
+            let raw = format!(
+                "WARC/1.0\r\nWARC-Type: metadata\r\nContent-Length: {}\r\n\r\n{body}\r\n\r\n",
+                body.len()
+            );
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(raw.as_bytes()).unwrap();
+            let compressed = encoder.finish().unwrap();
+            let mut reader = RecordIterator {
+                reader: BufReader::new(MultiGzDecoder::new(compressed.as_slice())),
+                num_reads: 1,
+            };
+            let result = reader.next_raw().unwrap();
+            if extra == 0 {
+                assert_eq!(result.unwrap().content.len(), MAX_METADATA_RECORD_BYTES);
+            } else {
+                assert!(result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("MAX_METADATA_RECORD_BYTES"));
+            }
+            assert!(reader.next_raw().is_none());
+        }
+    }
 
     #[test]
     fn it_works() {
@@ -841,6 +1070,7 @@ mod tests {
             },
             metadata: Metadata {
                 fetch_time_ms: 1337,
+                document: None,
             },
         };
         writer.write(&record1).unwrap();
@@ -856,6 +1086,7 @@ mod tests {
             },
             metadata: Metadata {
                 fetch_time_ms: 4242,
+                document: None,
             },
         };
         writer.write(&record2).unwrap();
@@ -893,7 +1124,10 @@ mod tests {
                 body: utf8.to_string(),
                 payload_type: Some(PayloadType::Html),
             },
-            metadata: Metadata { fetch_time_ms: 0 },
+            metadata: Metadata {
+                fetch_time_ms: 0,
+                document: None,
+            },
         };
         writer.write(&record).unwrap();
 
@@ -926,7 +1160,10 @@ mod tests {
                 body: body.to_string(),
                 payload_type: Some(PayloadType::Html),
             },
-            metadata: Metadata { fetch_time_ms: 0 },
+            metadata: Metadata {
+                fetch_time_ms: 0,
+                document: None,
+            },
         };
         writer.write(&record).unwrap();
 

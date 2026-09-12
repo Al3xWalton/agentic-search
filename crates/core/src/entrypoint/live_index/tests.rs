@@ -228,6 +228,7 @@ async fn test_shard_without_replica() -> Result<()> {
     shard1
         .index_pages(
             vec![IndexableWebpage {
+                record: None,
                 url: "https://a.com/".to_string(),
                 body: "
                 <title>test page</title>
@@ -242,6 +243,7 @@ async fn test_shard_without_replica() -> Result<()> {
     shard2
         .index_pages(
             vec![IndexableWebpage {
+                record: None,
                 url: "https://b.com/".to_string(),
                 body: "
                 <title>test page</title>
@@ -281,6 +283,7 @@ async fn test_replica_no_fails() -> Result<()> {
 
     rep1.index_pages(
         vec![IndexableWebpage {
+            record: None,
             url: "https://a.com/".to_string(),
             body: "
                 <title>test page</title>
@@ -294,6 +297,7 @@ async fn test_replica_no_fails() -> Result<()> {
     .await?;
     rep2.index_pages(
         vec![IndexableWebpage {
+            record: None,
             url: "https://b.com/".to_string(),
             body: "
                 <title>test page</title>
@@ -329,6 +333,7 @@ async fn test_replica_setup_after_inserts() -> Result<()> {
 
     rep1.index_pages(
         vec![IndexableWebpage {
+            record: None,
             url: "https://a.com/".to_string(),
             body: "
                 <title>test page</title>
@@ -342,6 +347,7 @@ async fn test_replica_setup_after_inserts() -> Result<()> {
     .await?;
     rep1.index_pages(
         vec![IndexableWebpage {
+            record: None,
             url: "https://b.com/".to_string(),
             body: "
                 <title>test page</title>
@@ -383,6 +389,7 @@ async fn test_replica_recovery() -> Result<()> {
 
     rep1.index_pages(
         vec![IndexableWebpage {
+            record: None,
             url: "https://a.com/".to_string(),
             body: "
                 <title>test page</title>
@@ -401,6 +408,7 @@ async fn test_replica_recovery() -> Result<()> {
         if let Ok(_) = rep1
             .index_pages(
                 vec![IndexableWebpage {
+                    record: None,
                     url: "https://b.com/".to_string(),
                     body: "
                     <title>test page</title>
@@ -453,6 +461,7 @@ async fn test_meta_segments() -> Result<()> {
 
     index
         .insert(&[IndexableWebpage {
+            record: None,
             url: "https://a.com/".to_string(),
             body: "
             <title>test page</title>
@@ -493,6 +502,7 @@ async fn test_segment_compaction() -> Result<()> {
 
     index
         .insert(&[IndexableWebpage {
+            record: None,
             url: "https://a.com/".to_string(),
             body: "
             <title>test page</title>
@@ -507,6 +517,7 @@ async fn test_segment_compaction() -> Result<()> {
 
     index
         .insert(&[IndexableWebpage {
+            record: None,
             url: "https://b.com/".to_string(),
             body: "
             <title>test page</title>

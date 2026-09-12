@@ -33,7 +33,7 @@ impl FromStr for RobotsMeta {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        match s {
+        match s.to_ascii_lowercase().as_str() {
             "noindex" => Ok(RobotsMeta::NoIndex),
             "nofollow" => Ok(RobotsMeta::NoFollow),
             _ => Err(Error::UnknownRobotsMetaTag.into()),
@@ -54,21 +54,12 @@ impl Html {
     pub fn parse_robots_meta(&self) -> Option<EnumSet<RobotsMeta>> {
         let mut robots = EnumSet::new();
 
-        for node in self.root.select("meta").unwrap() {
-            if let Some(element) = node.as_node().as_element() {
-                if let Some(name) = element.attributes.borrow().get("name") {
-                    if name == "robots" {
-                        if let Some(content) = element.attributes.borrow().get("content") {
-                            for part in content.split(',') {
-                                let part = part.trim();
-                                if let Ok(meta) = part.parse::<RobotsMeta>() {
-                                    robots.insert(meta);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        let directives = crate::crawler::directives::parse_meta(&self.root).effective;
+        if directives.noindex || directives.invalid_unavailable_after || directives.limit_exceeded {
+            robots.insert(RobotsMeta::NoIndex);
+        }
+        if directives.nofollow {
+            robots.insert(RobotsMeta::NoFollow);
         }
 
         if robots.is_empty() {

@@ -42,6 +42,8 @@ pub struct Reply {
     pub declared_length: Option<usize>,
     /// Delay after headers while the connection/body remains live.
     pub body_delay: Duration,
+    /// Uses chunked framing with no Content-Length, including large streamed bodies.
+    pub chunked: bool,
 }
 impl Reply {
     /// Constructs a simple text response without inventing a Content-Type.
@@ -53,6 +55,7 @@ impl Reply {
             body: body.as_ref().to_vec(),
             declared_length: None,
             body_delay: Duration::ZERO,
+            chunked: false,
         }
     }
     /// Constructs a nonempty titled HTML fixture with the matching MIME header.
@@ -128,9 +131,28 @@ impl Fixture {
         timeout_seconds: u64,
         resolver: Option<Arc<dyn stract::crawler::network::AddressResolver>>,
     ) -> Self {
+        Self::with_settings(policy, clock, timeout_seconds, resolver, None, &[])
+    }
+    /// Adds explicit owned-endpoint aliases and offline country answers for geography witnesses.
+    pub fn with_settings(
+        policy: IngestionPolicy,
+        clock: Arc<dyn Clock>,
+        timeout_seconds: u64,
+        resolver: Option<Arc<dyn stract::crawler::network::AddressResolver>>,
+        country: Option<Arc<dyn stract::crawler::exclusions::HostingCountryProvider>>,
+        aliases: &[&str],
+    ) -> Self {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
-        let endpoint = LoopbackEndpoint::new(listener).unwrap();
+        let endpoint = LoopbackEndpoint::new(listener)
+            .unwrap()
+            .with_aliases(aliases)
+            .unwrap();
+        let endpoint = if let Some(country) = country {
+            endpoint.with_country_provider(country)
+        } else {
+            endpoint
+        };
         let endpoint = if let Some(resolver) = resolver {
             endpoint.with_resolver(resolver)
         } else {
@@ -174,14 +196,24 @@ impl Fixture {
                                 requests.lock().unwrap().push(Request {target:target.clone(),host:host.clone(),user_agent:headers.get("user-agent").cloned().unwrap_or_default(),arrived:Instant::now(),headers});
                                 let reply={let mut replies=replies.lock().unwrap();replies.get_mut(&format!("{host}{target}")).and_then(VecDeque::pop_front).or_else(||replies.get_mut(&target).and_then(VecDeque::pop_front))};
                                 let reply=reply.unwrap_or_else(||if target=="/robots.txt"{Reply::new(200,"User-agent: *\nAllow: /\n")}else{Reply::html("<html><title>Fixture</title><body>Owned fixture text.</body></html>")});
-                                let mut header=format!("HTTP/1.1 {} Fixture\r\nConnection: close\r\nContent-Length: {}\r\n",reply.status,reply.declared_length.unwrap_or(reply.body.len()));
+                                let mut header=format!("HTTP/1.1 {} Fixture\r\nConnection: close\r\n",reply.status);
+                                if reply.chunked { header.push_str("Transfer-Encoding: chunked\r\n"); }
+                                else { header.push_str(&format!("Content-Length: {}\r\n",reply.declared_length.unwrap_or(reply.body.len()))); }
                                 for (name,value) in reply.headers {header.push_str(&format!("{name}: {value}\r\n"));}
                                 let mut header=header.into_bytes();
                                 for (name,value) in reply.raw_headers {header.extend_from_slice(format!("{name}: ").as_bytes());header.extend_from_slice(&value);header.extend_from_slice(b"\r\n");}
                                 header.extend_from_slice(b"\r\n");
                                 if stream.write_all(&header).await.is_err(){return;}
                                 tokio::time::sleep(reply.body_delay).await;
-                                let _=stream.write_all(&reply.body).await;let _=stream.shutdown().await;
+                                if reply.chunked {
+                                    for chunk in reply.body.chunks(65536) {
+                                        if stream.write_all(format!("{:x}\r\n",chunk.len()).as_bytes()).await.is_err() { return; }
+                                        if stream.write_all(chunk).await.is_err() { return; }
+                                        if stream.write_all(b"\r\n").await.is_err() { return; }
+                                    }
+                                    let _=stream.write_all(b"0\r\n\r\n").await;
+                                } else { let _=stream.write_all(&reply.body).await; }
+                                let _=stream.shutdown().await;
                             });
                         }
                         Some(_)=connections.join_next()=>{}
@@ -224,6 +256,71 @@ impl Fixture {
             .await?
             .text()
             .await
+    }
+    /// Executes a real selected target through parsing, durable storage and the terminal ledger funnel.
+    pub async fn crawl(
+        &self,
+        path: &str,
+    ) -> Result<stract::crawler::ledger::LedgerRow, stract::crawler::Error> {
+        self.crawl_raw(self.url("a.fixture.invalid", path).as_str())
+            .await
+            .map(|(row, _)| row)
+    }
+    /// Preserves malformed raw input in memory while exercising its real typed input rejection.
+    pub async fn crawl_raw(
+        &self,
+        raw: &str,
+    ) -> Result<(stract::crawler::ledger::LedgerRow, Vec<Url>), stract::crawler::Error> {
+        use stract::crawler::{network::parse_fetch_url, Domain};
+        let parsed = parse_fetch_url(raw).ok();
+        let domain = parsed
+            .as_ref()
+            .map(Domain::from)
+            .unwrap_or_else(|| Domain::from(String::new()));
+        Ok(self
+            .crawl_inputs(&[raw.to_owned()], domain)
+            .await?
+            .pop()
+            .unwrap())
+    }
+    /// Journals all selected inputs before fetching so redirect edges reference pre-existing targets.
+    pub async fn crawl_inputs(
+        &self,
+        inputs: &[String],
+        domain: stract::crawler::Domain,
+    ) -> Result<Vec<(stract::crawler::ledger::LedgerRow, Vec<Url>)>, stract::crawler::Error> {
+        use stract::crawler::{ledger::TargetKind, JobExecutor, WorkerJob};
+        let config: stract::config::CrawlerConfig =
+            toml::from_str(include_str!("../../../../configs/crawler/crawler.toml")).unwrap();
+        let job = WorkerJob {
+            domain,
+            urls: std::collections::VecDeque::new(),
+            wandering_urls: 0,
+        };
+        let mut executor = JobExecutor::new(
+            job,
+            Arc::new(config),
+            self.client.local_sink(),
+            self.client.clone(),
+        );
+        let result = executor
+            .process_raw_inputs(inputs, TargetKind::Seed)
+            .await?;
+        self.client.ledger().finish()?;
+        Ok(result)
+    }
+    /// Reopens the same host/body/ledger store with a new run ID while preserving the owned HTTP server.
+    pub async fn restart(&mut self) {
+        let policy = self.client.policy().get().clone();
+        let clock = self.client.clock();
+        let placeholder = Fixture::new();
+        drop(std::mem::replace(
+            &mut self.client,
+            placeholder.client.clone(),
+        ));
+        self.client =
+            RobotClient::loopback(&self.root, &policy, self.endpoint.clone(), clock, 2).unwrap();
+        placeholder.finish().await;
     }
     /// Cancels and joins this fixture's server tasks before ordinary field cleanup.
     pub async fn finish(mut self) {

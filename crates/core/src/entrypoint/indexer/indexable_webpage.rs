@@ -19,6 +19,9 @@ use crate::warc::WarcRecord;
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct IndexableWebpage {
+    /// Ingestion restrictions; None preserves compatibility with legacy captures.
+    #[bincode(with_serde)]
+    pub record: Option<crate::crawler::record::DocumentRecord>,
     pub url: String,
     pub body: String,
     pub fetch_time_ms: u64,
@@ -27,6 +30,7 @@ pub struct IndexableWebpage {
 impl From<CrawlDatum> for IndexableWebpage {
     fn from(datum: CrawlDatum) -> Self {
         Self {
+            record: Some(datum.record),
             url: datum.url.to_string(),
             body: datum.body,
             fetch_time_ms: datum.fetch_time_ms,
@@ -37,6 +41,7 @@ impl From<CrawlDatum> for IndexableWebpage {
 impl From<WarcRecord> for IndexableWebpage {
     fn from(record: WarcRecord) -> Self {
         Self {
+            record: record.metadata.document,
             url: record.request.url,
             body: record.response.body,
             fetch_time_ms: record.metadata.fetch_time_ms,

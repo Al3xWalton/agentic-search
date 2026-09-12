@@ -274,6 +274,12 @@ impl IndexingWorker {
     }
 
     fn prepare(&self, page: &IndexableWebpage) -> Result<Webpage> {
+        if let Some(record) = &page.record {
+            record.validate()?;
+            if !record.index_eligible {
+                return Err(anyhow::anyhow!("ingestion-metadata-ineligible"));
+            }
+        }
         let html = match Html::parse_without_text(&page.body, &page.url) {
             Ok(html) => html,
             Err(err) => {
@@ -521,6 +527,73 @@ mod tests {
 
     use super::*;
 
+    fn ingestion_worker(with_page_store: bool) -> (IndexingWorker, std::path::PathBuf) {
+        let root = std::path::PathBuf::from(
+            std::env::var_os("STORY584_SCRATCH").expect("external scratch"),
+        )
+        .join(format!("indexer-fixture-{}", uuid::Uuid::new_v4()));
+        let config = Config {
+            host_centrality_store_path: root.join("host").to_str().unwrap().into(),
+            page_centrality_store_path: with_page_store
+                .then(|| root.join("page").to_str().unwrap().into()),
+            page_webgraph: None,
+            safety_classifier_path: None,
+            dual_encoder: None,
+        };
+        (crate::block_on(IndexingWorker::new(config)), root)
+    }
+    fn ingestion_page() -> IndexableWebpage {
+        IndexableWebpage {record: None, url:"https://fixture.invalid/page".into(), body:"<title>Indexable fixture</title><p>A complete nonempty document with enough text to remain indexable.</p>".into(), fetch_time_ms:1}
+    }
+    #[test]
+    fn empty_centrality_defaults() {
+        for with_page_store in [false, true] {
+            let (worker, root) = ingestion_worker(with_page_store);
+            let pages = crate::block_on(worker.prepare_webpages(&[ingestion_page()]));
+            assert_eq!(pages.len(), 1);
+            let page = &pages[0];
+            assert_eq!(page.host_centrality, 0.0);
+            assert_eq!(page.page_centrality, 0.0);
+            assert_eq!(page.host_centrality_rank, u64::MAX);
+            assert_eq!(page.page_centrality_rank, u64::MAX);
+            assert!(page.pre_computed_score.is_finite());
+            drop(worker);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+    #[test]
+    fn metadata_noindex() {
+        use crate::crawler::record::DocumentRecord;
+        let (worker, root) = ingestion_worker(false);
+        let mut page = ingestion_page();
+        assert!(worker.prepare(&page).is_ok());
+        let policy = crate::config::ingestion::IngestionPolicy::default()
+            .validate()
+            .unwrap();
+        let mut record = DocumentRecord::pending(
+            &policy,
+            &uuid::Uuid::new_v4().to_string(),
+            &uuid::Uuid::new_v4().to_string(),
+            Some(&url::Url::parse(&page.url).unwrap()),
+        );
+        record.index_eligible = false;
+        page.record = Some(record);
+        assert!(worker
+            .prepare(&page)
+            .unwrap_err()
+            .to_string()
+            .contains("ingestion-metadata-ineligible"));
+        page.record = None;
+        page.body = "<p>Empty title</p>".into();
+        assert!(worker
+            .prepare(&page)
+            .unwrap_err()
+            .to_string()
+            .contains("empty title"));
+        drop(worker);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn setup_worker(data_path: &Path, threshold: Option<u64>) -> (IndexingWorker, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let worker = crate::block_on(IndexingWorker::new(
@@ -573,12 +646,14 @@ mod tests {
 
         let webpages = vec![
             IndexableWebpage {
+                record: None,
                 url: "https://a.com".to_string(),
                 body: "<html><head><title>Homemade Heart Brownie Recipe</title></head><body>Example</body></html>"
                     .to_string(),
                 fetch_time_ms: 0,
             },
             IndexableWebpage {
+                record: None,
                 url: "https://b.com".to_string(),
                 body: "<html><head><title>How To Use an iMac as a Monitor for a PC</title></head><body>Example</body></html>"
                     .to_string(),
