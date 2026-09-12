@@ -103,28 +103,13 @@ impl Crawler {
         60 * 60
     }
 
-    pub fn min_politeness_factor() -> u32 {
-        0
-    }
-
-    pub fn start_politeness_factor() -> u32 {
-        2
-    }
-
-    pub fn max_politeness_factor() -> u32 {
-        11
-    }
-
     pub fn min_crawl_delay_ms() -> u64 {
         10_000
     }
 
-    pub fn max_crawl_delay_ms() -> u64 {
-        180_000
-    }
-
-    pub fn max_url_slowdown_retry() -> u8 {
-        3
+    /// Default simultaneously live connections/bodies per crawler host.
+    pub fn max_concurrent_per_host() -> usize {
+        1
     }
 
     pub fn timeout_seconds() -> u64 {

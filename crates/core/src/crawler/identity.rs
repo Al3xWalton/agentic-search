@@ -1,0 +1,189 @@
+//! Defines the crawler's fixed identity and the sole HTTP client construction boundary.
+//! Callers supply validated contact locations, never a token or version override.
+//! Publication and controller approval belong to deployment, not this module.
+
+#![deny(missing_docs)]
+
+use crate::config::ingestion::IdentityConfig;
+use anyhow::{ensure, Result};
+use std::time::Duration;
+use url::Url;
+
+/// Fixed case-sensitive product token used for robots group selection.
+pub const ROBOTS_TOKEN: &str = "AVASearchBot";
+
+/// Validates a policy/contact HTTPS location without logging its contents.
+/// Rejects userinfo, fragments, control characters, whitespace and UA delimiters.
+pub fn validate_policy_url(value: &str) -> Result<()> {
+    ensure!(
+        !value.is_empty()
+            && !value
+                .chars()
+                .any(|c| c.is_whitespace() || c.is_control() || "();".contains(c)),
+        "identity location contains invalid characters"
+    );
+    let url = Url::parse(value)
+        .map_err(|_| anyhow::anyhow!("identity location is not an absolute URL"))?;
+    ensure!(
+        url.scheme() == "https"
+            && url.domain().is_some_and(|host| !host.is_empty())
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.fragment().is_none()
+            && !value.split('/').nth(2).unwrap_or_default().contains('@'),
+        "identity location must be HTTPS without userinfo or fragment"
+    );
+    Ok(())
+}
+
+fn validate_contact(value: &str) -> Result<()> {
+    if value.starts_with("https://") {
+        return validate_policy_url(value);
+    }
+    ensure!(
+        value.is_ascii()
+            && !value.bytes().any(|b| b.is_ascii_whitespace()
+                || b.is_ascii_control()
+                || b"();:/\\".contains(&b)),
+        "identity contact contains invalid characters"
+    );
+    let (local, domain) = value
+        .split_once('@')
+        .ok_or_else(|| anyhow::anyhow!("identity contact must be email or HTTPS"))?;
+    ensure!(
+        !local.is_empty()
+            && !domain.contains('@')
+            && domain.contains('.')
+            && domain.split('.').all(|label| !label.is_empty()
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')),
+        "identity contact has invalid mailbox shape"
+    );
+    Ok(())
+}
+
+/// Builds exactly the fixed product token, this package's version and validated identity inputs.
+/// Errors contain field descriptions only; no caller can override the full user-agent.
+pub fn build_user_agent(identity: &IdentityConfig) -> Result<String> {
+    let policy_url = &identity.policy_url;
+    let contact = &identity.contact;
+    validate_policy_url(policy_url)?;
+    validate_contact(contact)?;
+    Ok(format!(
+        "{}{}{}",
+        "AVASearchBot/",
+        env!("CARGO_PKG_VERSION"),
+        format_args!(" (+{}; {})", policy_url, contact)
+    ))
+}
+
+/// Constructs the crawler HTTP client with a fixed identity and no browser/proxy bypass features.
+/// The timeout covers request and connect in seconds; address admission is the transport's responsibility.
+pub(super) fn build_http_client(
+    identity: &IdentityConfig,
+    timeout: Duration,
+) -> Result<reqwest::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::ACCEPT,
+        reqwest::header::HeaderValue::from_static("text/html"),
+    );
+    headers.insert(
+        reqwest::header::ACCEPT_LANGUAGE,
+        reqwest::header::HeaderValue::from_static("en-US,en;q=0.9,*;q=0.8"),
+    );
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .connect_timeout(timeout)
+        .default_headers(headers)
+        .no_proxy()
+        .referer(false)
+        .http1_only()
+        .pool_max_idle_per_host(0)
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(build_user_agent(identity)?)
+        .build()
+        .map_err(|_| anyhow::anyhow!("crawler HTTP client initialization failed"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ua_format() {
+        let identity = IdentityConfig::default();
+        assert_eq!(
+            build_user_agent(&identity).unwrap(),
+            format!(
+                "AVASearchBot/{} (+{}; {})",
+                env!("CARGO_PKG_VERSION"),
+                identity.policy_url,
+                identity.contact
+            )
+        );
+    }
+
+    #[test]
+    fn ua_version() {
+        let ua = build_user_agent(&IdentityConfig::default()).unwrap();
+        assert!(ua.starts_with(&format!("AVASearchBot/{} ", env!("CARGO_PKG_VERSION"))));
+        let grammar = regex::Regex::new(r"^AVASearchBot/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)? \(\+https://[^ ;()]+; https://[^ ;()]+\)$").unwrap();
+        assert!(grammar.is_match(&ua));
+    }
+
+    #[test]
+    fn ua_policy_validation() {
+        for value in [
+            "",
+            "http://example.org/",
+            "https:///",
+            "https://user@example.org/",
+            "https://example.org/#x",
+            "https://example.org/(x)",
+            "https://example.org/;x",
+            "https://example.org/\r\nX: x",
+            " https://example.org/",
+        ] {
+            let identity = IdentityConfig {
+                policy_url: value.into(),
+                ..IdentityConfig::default()
+            };
+            assert!(
+                build_user_agent(&identity).is_err(),
+                "accepted invalid policy location"
+            );
+        }
+        assert!(build_user_agent(&IdentityConfig::default()).is_ok());
+    }
+
+    #[test]
+    fn ua_contact_validation() {
+        for value in [
+            "",
+            "mailto:bot@example.org",
+            "a@@example.org",
+            "a@localhost",
+            "@example.org",
+            "bot@",
+            "bot@example.org;x",
+            "bot@example.org\n",
+            "http://example.org/",
+        ] {
+            let identity = IdentityConfig {
+                contact: value.into(),
+                ..IdentityConfig::default()
+            };
+            assert!(
+                build_user_agent(&identity).is_err(),
+                "accepted invalid contact"
+            );
+        }
+        let identity = IdentityConfig {
+            contact: "bot@example.org".into(),
+            ..IdentityConfig::default()
+        };
+        assert!(build_user_agent(&identity).is_ok());
+    }
+}

@@ -38,6 +38,8 @@ use self::{warc_writer::WarcWriter, worker::WorkerThread};
 pub use worker::JobExecutor;
 
 pub mod coordinator;
+pub mod identity;
+pub mod politeness;
 pub mod robots_txt;
 pub mod router;
 pub use router::Router;
@@ -277,6 +279,10 @@ pub struct Crawler {
 
 impl Crawler {
     pub async fn new(config: CrawlerConfig) -> Result<Self> {
+        config.ingestion.require_production_approval(
+            chrono::Utc::now(),
+            std::env::var("DPIA_ID").ok().as_deref(),
+        )?;
         let writer = Arc::new(WarcWriter::new(config.s3.clone()));
         let mut handles = Vec::new();
         let mut router_hosts = Vec::new();
