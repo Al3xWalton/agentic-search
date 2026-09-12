@@ -1,25 +1,23 @@
-# Agentic Search
+# agentic-search
 
-Agentic Search is AVA's open-source web retrieval service for AI agents, built on the archived Stract engine and consumed over HTTP.
+A search engine for AI agents. `agentic-search` crawls the web as a named,
+polite bot under a published crawler policy, keeps only what a page allows it to
+keep, indexes it, and answers HTTP queries with ranked results an agent can act
+on. It is a Rust fork of the archived [Stract](https://github.com/StractOrg/stract)
+engine, offered under AGPL-3.0-only.
 
-[![CI](https://github.com/Al3xWalton/agentic-search/actions/workflows/ci.yaml/badge.svg)](https://github.com/Al3xWalton/agentic-search/actions/workflows/ci.yaml)
+## Requirements
 
-## Inherited capabilities
+- [Rust](https://www.rust-lang.org/tools/install) 1.98.0, pinned by
+  `rust-toolchain.toml` together with rustfmt, clippy and the
+  `wasm32-unknown-unknown` target
+- Linux: `build-essential clang pkg-config libssl-dev liburing-dev`
+- macOS: the Xcode command-line tools
+- Optional, for the web frontend only: Node 20.10.0 and wasm-pack 0.15.0
 
-- Keyword search that respects your search query.
-- Fully independent search index with its own crawler.
-- Advanced query syntax (`site:`, `intitle:` etc.).
-- DDG-style [!bang syntax](https://duckduckgo.com/bang)
-- Wikipedia and stackoverflow sidebar
-- De-rank websites with third-party trackers
-- Use [optics](https://github.com/StractOrg/sample-optics/blob/main/quickstart.optic) to almost endlessly customize your search results.
-  - Limit your searches to blogs, indieweb, educational content etc.
-  - Customize how signals are combined during search for the final search result
-- Prioritize links (centrality) from the sites you trust.
-- Explore the web and find sites similar to the ones you like.
-- And much more!
+No model, API key or dataset is required to build.
 
-## Build
+## To build
 
 ```sh
 git clone --recurse-submodules https://github.com/Al3xWalton/agentic-search.git
@@ -27,57 +25,137 @@ cd agentic-search
 cargo build --locked --release
 ```
 
-Rust is pinned to 1.98.0 with rustfmt, clippy and the wasm32-unknown-unknown target.
-Linux requires `build-essential clang pkg-config libssl-dev liburing-dev` (install with apt).
-macOS requires the Xcode command-line toolchain and SDK. No model or data is required to
-compile. `just configure` and `just setup` download/build optional development fixtures;
-they are not CI prerequisites. Starting the full API requires configured search nodes.
-Optional frontend tooling uses Node 20.10.0 and wasm-pack 0.15.0: build
-`crates/client-wasm` with `wasm-pack build --target web --locked` before running
-`npm ci`, `npm run check` and `npm run lint` in `frontend`.
+The binary is `target/release/stract`.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) is historical upstream guidance. Its Stract CLA and
-commit instructions are not newly adopted Agentic Search policy.
+## To run
+
+Fetch the development fixtures and build a small index from them. This
+downloads two sample WARC files into `data/`.
+
+```sh
+target/release/stract configure
+```
+
+Start one search node and the API, each in its own terminal.
+
+```sh
+target/release/stract search-server configs/search_server.toml
+target/release/stract api configs/api.toml
+```
+
+Query it.
+
+```sh
+curl -X POST http://localhost:3000/beta/api/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "what is sequence parallelism",
+    "numResults": 10
+  }'
+```
+
+This returns a JSON object with the ranked results. The interactive API
+reference is served at `/beta/api/docs/swagger` and the OpenAPI document at
+`/beta/api/docs/openapi.json`.
+
+## Options
+
+Fields of the JSON body:
+
+- `query`: the search query. Stract's syntax is supported: `site:`, `intitle:`,
+  `inbody:`, `inurl:`, `exacturl:` and `linkto:` prefixes, quoted phrases, `-`
+  to exclude a term, and DuckDuckGo-style `!bangs`.
+- `numResults`: results per page; default 20, at most 100.
+- `page`: page number, starting at 0.
+- `optic`: an [optic](https://github.com/StractOrg/sample-optics/blob/main/quickstart.optic)
+  that restricts or re-ranks results, for example to blogs or educational sites.
+- `hostRankings`: `liked`, `disliked` and `blocked` host lists.
+- `selectedRegion`: prefer results for a region.
+- `safeSearch`: filter pages classified as not safe for work.
+- `signalCoefficients`: custom weights for the ranking signals;
+  `returnRankingSignals: true` returns each result's signal scores.
+- `returnStructuredData`: include a page's schema.org data.
+- `returnBody`: whether page content is returned with each result.
+- `flattenResponse` and `countResultsExact`: the response shape and whether the
+  total is exact rather than estimated.
+
+## Crawling
+
+The crawler identifies itself as `AVASearchBot` on every request. It reads
+`robots.txt` before any URL on an origin and caches the answer for at most 24
+hours, keeps at least 500 ms between requests to one host and at most two
+connections to it (compiled in; configuration can only be more polite), honours
+`noindex`, `nofollow`, `noarchive`, `nosnippet`, `max-snippet` and
+`noimageindex` from headers and meta tags, records the rights signals a page
+carries, and stops crawling a host for 24 hours after a 401, 403, 429 or a bot
+challenge. Every outcome, including every non-save, is written to a ledger with
+its reason. The published policy is [`CRAWLER_POLICY.md`](CRAWLER_POLICY.md),
+served by the API at `/.well-known/ava-search-crawler`.
+
+Production crawling is disabled until an approved data-protection record is
+configured; the crawler refuses to start without one. A bounded research sample
+runs against a frozen 200-seed list into a store outside the repository:
+
+```sh
+target/release/stract crawler sample --seeds <seeds.json> --out <external-directory>
+```
+
+Other crawler commands:
+
+- `stract crawler reconcile`: explain every seed's outcome from the ledger, offline.
+- `stract crawler inspect-warc`: count and parse the records of a local WARC file.
+- `stract crawler retention`: delete raw page bodies past their retention limit (at most 30 days) from a managed store.
+- `stract crawler policy-render`: render the crawler policy from validated configuration.
+
+## How it works
+
+- The crawler writes WARC files and, for each document, a typed record of the
+  directives, rights signals and HTTP semantics it saw. A page that reserves its
+  rights is kept as metadata only.
+- The indexer builds a [Tantivy](https://github.com/quickwit-oss/tantivy)
+  inverted index per shard, with host and page centrality computed from the web
+  graph.
+- Search nodes serve the shards. The API discovers them over gossip, fans a query
+  out, merges the results and ranks them with text, centrality, freshness and
+  tracker signals, and with the optic and host rankings the request supplies.
+- Everything runs from the one `stract` binary.
+
+## Development
+
+`cargo xtask ci-all` runs the same gates as CI: workflow lint, the toolchain pin,
+developer-path and notice checks, the crawler identity, dependency and policy
+guards, the source offer, fmt, check, clippy, the wasm and frontend builds, a
+release build, the workspace tests, licences, SBOM and secrets. The frontend
+steps need Node 20.10.0 and wasm-pack 0.15.0.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) is historical upstream guidance. Its Stract
+CLA and commit instructions are not Agentic Search policy.
 
 ## Upstream
 
-Derived from [StractOrg/stract](https://github.com/StractOrg/stract), archived base 8ac40b02
-(full commit 8ac40b023e0a49f55cdd5b599841ea46d0503ec9). The full upstream history and notices
-are retained. See [NOTICE](NOTICE) and the retained
-[sample-optics submodule](https://github.com/StractOrg/sample-optics).
-Frozen `.spike` evidence retains labels and measurements. Its `<WORKSPACE>` placeholders
-require explicit adaptation in a scratch copy before a future rerun.
+Derived from [StractOrg/stract](https://github.com/StractOrg/stract) at its
+archived base 8ac40b02 (`8ac40b023e0a49f55cdd5b599841ea46d0503ec9`). The full
+upstream history, [NOTICE](NOTICE) and the
+[sample-optics](https://github.com/StractOrg/sample-optics) submodule are
+retained. Stract was built on Tantivy, bootstrapped on
+[Common Crawl](https://commoncrawl.org) data, and funded through
+[NGI0 Entrust](https://nlnet.nl/entrust), a fund established by
+[NLnet](https://nlnet.nl) with financial support from the European Commission's
+[Next Generation Internet](https://ngi.eu) programme.
+
+The `.spike` directory holds frozen research evidence (labels and
+measurements). Its `<WORKSPACE>` placeholders must be adapted in a scratch copy
+before a rerun.
 
 ## License
 
-Agentic Search offers its source under AGPL-3.0-only. See [LICENSE.md](LICENSE.md),
-[NOTICE](NOTICE), the [source offer template](SOURCE_OFFER.md) and the running
-[source endpoint](./.well-known/ava-search-source). Subdirectory licence exceptions and
-upstream notices are retained; this offer does not rewrite upstream “or later” wording.
+AGPL-3.0-only. See [LICENSE.md](LICENSE.md), [NOTICE](NOTICE), the
+[source offer](SOURCE_OFFER.md) and the running
+[source endpoint](./.well-known/ava-search-source). Subdirectory licence
+exceptions and upstream notices are retained; this offer does not rewrite
+upstream "or later" wording. If you fork Agentic Search, set the package
+`repository` and `SOURCE_OFFER.md` to your own corresponding source.
 
-If you fork Agentic Search, set the package `repository` and `SOURCE_OFFER.md` to your own corresponding source.
-
-The bounded sample runner is `stract crawler sample --seeds <seeds.json> --out <external-directory>`; it accepts only the frozen 200-seed scope.
-Read the [crawler policy](CRAWLER_POLICY.md); hosted policy publication and founder-owned content are pending while production crawling is disabled.
-Production crawling requires an approved DPIA with linked LIA and Article 14 measures; see the crawler configuration template.
 ## Contact
 
 Use this repository's [GitHub issues](https://github.com/Al3xWalton/agentic-search/issues).
-
-# 🏆 Thank you!
-
-We truly stand on the shoulders of giants and this project would not have been even remotely feasible without them. An especially huge thank you to
-
-- The authors and contributors of Tantivy for providing the inverted index library on which Stract is built.
-- The commoncrawl organization for crawling the web and making the dataset readily available. Even though we have our own crawler now, commoncrawl has been a huge help in the early stages of development.
-
-## Upstream historical funding
-
-Upstream Stract was previously funded through [NGI0 Entrust](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu) program. Learn more at the [NLnet project page](https://nlnet.nl/project/Stract).
-
-<div>
-  <a href="https://nlnet.nl"><img align=center src="assets/nlnet/banner.png" alt="NLnet foundation logo" width="20%" /></a>
-  &nbsp;
-  &nbsp;
-  <a href="https://nlnet.nl/entrust"><img align=center src="assets/nlnet/NGI0_tag.svg" alt="NGI Zero Logo" width="20%"/></a>
-</div>
