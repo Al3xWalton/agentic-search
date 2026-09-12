@@ -51,6 +51,7 @@ pub mod record;
 pub mod retention;
 pub mod robots_txt;
 pub mod router;
+pub mod sample;
 pub use router::Router;
 mod file_queue;
 pub mod planner;

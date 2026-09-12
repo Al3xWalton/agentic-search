@@ -1,0 +1,3 @@
+User-agent: AVASearchBot
+Allow: /
+Disallow: /denied

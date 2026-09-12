@@ -179,7 +179,7 @@ enum LiveIndex {
 
 #[derive(Subcommand)]
 enum Crawler {
-    /// Deploy the crawl worker. The worker is responsible for downloading webpages, saving them to S3,
+    /// Deploy the crawl worker. The worker is responsible for downloading webpages to managed local storage,
     /// and sending newly discovered urls back to the crawl coordinator.
     Worker { config_path: String },
 
@@ -193,6 +193,42 @@ enum Crawler {
 
     /// Create a crawl plan.
     Plan { config_path: String },
+    /// Run the frozen 200-seed research sample in an external managed store.
+    Sample {
+        #[arg(long)]
+        seeds: std::path::PathBuf,
+        #[arg(long)]
+        out: std::path::PathBuf,
+        #[arg(long)]
+        config: Option<std::path::PathBuf>,
+    },
+    /// Reconcile historical seed events and an optional single-run ledger, without network access.
+    Reconcile {
+        #[arg(long)]
+        seeds: std::path::PathBuf,
+        #[arg(long)]
+        spike_log: std::path::PathBuf,
+        #[arg(long)]
+        ledger: Option<std::path::PathBuf>,
+        #[arg(long)]
+        out: std::path::PathBuf,
+    },
+    /// Inspect a local WARC and write record/parse/skip counts.
+    InspectWarc {
+        #[arg(long)]
+        warc: std::path::PathBuf,
+        #[arg(long)]
+        out: std::path::PathBuf,
+    },
+    /// Delete expired raw objects from an initialized managed local store.
+    Retention {
+        #[arg(long)]
+        store: std::path::PathBuf,
+        #[arg(long)]
+        config: std::path::PathBuf,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Commands to train or run inference on the classifier that predicts if a webpage is NSFW or SFW.
@@ -387,6 +423,24 @@ fn main() -> Result<()> {
             configure::run(skip_download)?;
         }
         Commands::Crawler { options } => match options {
+            Crawler::Sample { seeds, out, config } => {
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()?
+                    .block_on(entrypoint::crawler::sample(&seeds, &out, config.as_deref()))?;
+            }
+            Crawler::Reconcile {
+                seeds,
+                spike_log,
+                ledger,
+                out,
+            } => entrypoint::crawler::reconcile(&seeds, &spike_log, ledger.as_deref(), &out)?,
+            Crawler::InspectWarc { warc, out } => entrypoint::crawler::inspect_warc(&warc, &out)?,
+            Crawler::Retention {
+                store,
+                config,
+                dry_run,
+            } => entrypoint::crawler::retention(&store, &config, dry_run)?,
             Crawler::Worker { config_path } => {
                 let config: config::CrawlerConfig = load_toml_config(config_path);
 

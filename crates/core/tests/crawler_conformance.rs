@@ -2048,6 +2048,274 @@ fn outcome_register() {
         );
     }
 }
+
+#[test]
+fn sample_frozen_seeds() {
+    use stract::crawler::sample::{Seed, SeedScope};
+    let seeds: Vec<Seed> =
+        serde_json::from_str(include_str!("../../../.spike/data/seeds.json")).unwrap();
+    assert!(SeedScope::frozen(&seeds).is_ok());
+    let mut changed = seeds.clone();
+    changed[0].url = "https://unselected.invalid/page".into();
+    assert!(SeedScope::frozen(&changed).is_err());
+    assert!(SeedScope::frozen(&seeds[..199]).is_err());
+    let mut duplicate = seeds;
+    duplicate[1] = duplicate[0].clone();
+    assert!(SeedScope::frozen(&duplicate).is_err());
+}
+#[tokio::test]
+async fn sample_exact_scope() {
+    use stract::crawler::{
+        politeness::SystemClock,
+        sample::{self, Seed},
+    };
+    let fixture = Fixture::new();
+    let frozen: Vec<Seed> =
+        serde_json::from_str(include_str!("../../../.spike/data/seeds.json")).unwrap();
+    let scope = sample::SeedScope::frozen(&frozen).unwrap();
+    let mut neighbor = url::Url::parse(&frozen[0].url).unwrap();
+    neighbor.set_path("/unselected");
+    assert!(!scope.allows(&neighbor));
+    fixture.reply(
+        "/first",
+        Reply::new(302, "").header("Location", "/unselected"),
+    );
+    let seeds = vec![
+        Seed {
+            url: fixture.url("a.fixture.invalid", "/first").into(),
+            category: Some("fixture".into()),
+        },
+        Seed {
+            url: fixture.url("a.fixture.invalid", "/second").into(),
+            category: Some("fixture".into()),
+        },
+    ];
+    let summary = sample::run_loopback(
+        &seeds,
+        &fixture.root.join("sample-store"),
+        &manual_policy(),
+        fixture.endpoint.clone(),
+        std::sync::Arc::new(SystemClock::default()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(summary.targets, 2);
+    assert_eq!(summary.histogram.get("redirected-off-seed"), Some(&1));
+    assert_eq!(summary.histogram.get("saved"), Some(&1));
+    assert_eq!(fixture.requests.lock().unwrap().len(), 3);
+    assert!(!fixture
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|r| r.target == "/unselected"));
+    let mut endpoint = fixture.endpoint.clone();
+    endpoint = endpoint
+        .restrict_targets(&[fixture.url("a.fixture.invalid", "/first")])
+        .unwrap();
+    let client = stract::crawler::robot_client::RobotClient::loopback(
+        &fixture.root.join("exact-store"),
+        &manual_policy(),
+        endpoint,
+        std::sync::Arc::new(SystemClock::default()),
+        2,
+    )
+    .unwrap();
+    assert!(!client
+        .scope()
+        .contains_exact(&fixture.url("a.fixture.invalid", "/unselected")));
+    assert!(matches!(
+        client
+            .get(fixture.url("a.fixture.invalid", "/unselected"))
+            .await,
+        Err(Error::OffScope)
+    ));
+    drop(client);
+    fixture.finish().await;
+}
+
+#[tokio::test]
+async fn known_language_frontier() {
+    let mut policy = manual_policy();
+    policy.exclusions.language_deny = vec!["fr".into()];
+    let mut fixture = Fixture::with_policy(
+        policy,
+        std::sync::Arc::new(stract::crawler::politeness::SystemClock::default()),
+        2,
+    );
+    fixture.reply(
+        "/page",
+        Reply::html("<html lang='fr'><title>Denied language</title></html>"),
+    );
+    let first = fixture.crawl("/page").await.unwrap();
+    assert_eq!(first.outcome.kind(), "excluded-by-policy");
+    assert_eq!(fixture.requests.lock().unwrap().len(), 2);
+    fixture.restart().await;
+    let second = fixture.crawl("/page").await.unwrap();
+    assert_eq!(second.outcome.kind(), "excluded-by-policy");
+    assert!(second.fetch_attempts.is_empty());
+    assert_eq!(fixture.requests.lock().unwrap().len(), 2);
+    fixture.finish().await;
+}
+
+#[tokio::test]
+async fn sample_fixture_reconcile_and_commands() {
+    use stract::crawler::sample::{self, Seed};
+    let fixture = Fixture::new();
+    fixture.reply(
+        "/robots.txt",
+        Reply::new(200, include_str!("fixtures/ingestion/robots.txt")),
+    );
+    fixture.reply(
+        "/page",
+        Reply::html(include_str!("fixtures/ingestion/page.html")),
+    );
+    fixture.reply(
+        "/reserved",
+        Reply::html(include_str!("fixtures/ingestion/rights.html")),
+    );
+    let seeds: Vec<_> = ["/page", "/reserved"]
+        .into_iter()
+        .map(|path| Seed {
+            url: fixture.url("a.fixture.invalid", path).into(),
+            category: Some("fixture".into()),
+        })
+        .collect();
+    let store = fixture.root.join("sample-run");
+    let summary = sample::run_loopback(
+        &seeds,
+        &store,
+        &manual_policy(),
+        fixture.endpoint.clone(),
+        std::sync::Arc::new(stract::crawler::politeness::SystemClock::default()),
+    )
+    .await
+    .unwrap();
+    assert!(summary.complete);
+    assert_eq!(summary.targets, 2);
+    assert_eq!(summary.histogram.get("saved"), Some(&1));
+    assert_eq!(summary.histogram.get("parsed-not-retained"), Some(&1));
+    assert_eq!(summary.policy_publication_status, "pending");
+    assert_eq!(summary.http_attempts, 3);
+    let seeds_path = fixture.root.join("fixture-seeds.json");
+    std::fs::write(&seeds_path, serde_json::to_vec(&seeds).unwrap()).unwrap();
+    let log = fixture.root.join("fixture-spike.log");
+    let lines = seeds
+        .iter()
+        .map(|seed| serde_json::json!({"event":"saved","url":seed.url}).to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&log, lines).unwrap();
+    let ledger = store.join(&summary.ledger_file);
+    let reconciliation = sample::reconcile(
+        &seeds_path,
+        &log,
+        Some(&ledger),
+        &fixture.root.join("reconciliation.json"),
+    )
+    .unwrap();
+    assert_eq!(reconciliation.baseline_saved, 2);
+    assert_eq!(reconciliation.current_rows, 2);
+    let rows = stract::crawler::ledger::Ledger::read_rows(&ledger).unwrap();
+    let body = store.join(rows.iter().find_map(|row| row.body_object.clone()).unwrap());
+    let out = fixture.root.join("inspect.json");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_stract"))
+        .args(["crawler", "inspect-warc", "--warc"])
+        .arg(&body)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    println!(
+        "fixture inspect-warc: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let inspection: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out).unwrap()).unwrap();
+    assert_eq!(inspection["documents"], 1);
+    assert_eq!(inspection["extended_documents"], 1);
+    assert_eq!(inspection["parse_errors"], 0);
+    let mut shortened = manual_policy();
+    shortened.retention.raw_body_max_age_days = 0;
+    let config = fixture.root.join("retention.toml");
+    std::fs::write(&config, toml::to_string(&shortened).unwrap()).unwrap();
+    for dry_run in [true, false] {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_stract"));
+        command
+            .args(["crawler", "retention", "--store"])
+            .arg(&store)
+            .arg("--config")
+            .arg(&config);
+        if dry_run {
+            command.arg("--dry-run");
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        println!(
+            "fixture retention dry_run={dry_run}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["expired"], 1);
+        assert_eq!(report["deleted"], if dry_run { 0 } else { 1 });
+        assert_eq!(body.exists(), dry_run);
+    }
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_stract"))
+        .args(["crawler", "sample", "--seeds"])
+        .arg(&seeds_path)
+        .arg("--out")
+        .arg(fixture.root.join("refused-live"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!fixture.root.join("refused-live").exists());
+    assert_eq!(fixture.requests.lock().unwrap().len(), 3);
+    fixture.finish().await;
+}
+
+#[tokio::test]
+async fn sample_invalid_inputs() {
+    use stract::crawler::sample::{self, Seed};
+    let fixture = Fixture::new();
+    let seeds = vec![
+        Seed {
+            url: "invalid raw input".into(),
+            category: None,
+        },
+        Seed {
+            url: "ftp://fixture.invalid/page".into(),
+            category: None,
+        },
+        Seed {
+            url: "http://a.fixture.invalid:1/page".into(),
+            category: None,
+        },
+    ];
+    let summary = sample::run_loopback(
+        &seeds,
+        &fixture.root.join("invalid-run"),
+        &manual_policy(),
+        fixture.endpoint.clone(),
+        std::sync::Arc::new(stract::crawler::politeness::SystemClock::default()),
+    )
+    .await
+    .unwrap();
+    assert!(summary.complete);
+    assert_eq!(summary.targets, 3);
+    assert_eq!(summary.http_attempts, 0);
+    assert_eq!(summary.histogram.values().sum::<u64>(), 3);
+    assert!(fixture.requests.lock().unwrap().is_empty());
+    fixture.finish().await;
+}
 #[tokio::test]
 async fn robots_singleflight() {
     let fixture = Fixture::new();

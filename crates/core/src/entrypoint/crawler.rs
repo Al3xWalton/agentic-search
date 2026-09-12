@@ -23,6 +23,45 @@ use crate::{
     Result,
 };
 
+/// Runs only the frozen research sample through its sealed scope and managed local store.
+pub async fn sample(
+    seeds: &std::path::Path,
+    out: &std::path::Path,
+    config: Option<&std::path::Path>,
+) -> Result<()> {
+    let summary = crawler::sample::run(seeds, out, config).await?;
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+/// Reconciles retained historical evidence and optional current rows without making a request.
+pub fn reconcile(
+    seeds: &std::path::Path,
+    spike_log: &std::path::Path,
+    ledger: Option<&std::path::Path>,
+    out: &std::path::Path,
+) -> Result<()> {
+    let result = crawler::sample::reconcile(seeds, spike_log, ledger, out)?;
+    println!(
+        "seeds={} baseline_saved={} baseline_not_saved={} current_rows={}",
+        result.seeds, result.baseline_saved, result.baseline_not_saved, result.current_rows
+    );
+    Ok(())
+}
+/// Inspects one explicit local WARC; count errors propagate after the JSON evidence is written.
+pub fn inspect_warc(warc: &std::path::Path, out: &std::path::Path) -> Result<()> {
+    let result = crawler::sample::inspect_warc(warc, out)?;
+    println!(
+        "documents={} parse_errors={} index_candidates={}",
+        result.documents, result.parse_errors, result.index_candidates
+    );
+    Ok(())
+}
+/// Executes only the raw retention job under the existing managed store's exclusive lock.
+pub fn retention(store: &std::path::Path, config: &std::path::Path, dry_run: bool) -> Result<()> {
+    crawler::sample::retention(store, config, dry_run)?;
+    Ok(())
+}
+
 pub async fn worker(config: config::CrawlerConfig) -> Result<()> {
     let crawler = Crawler::new(config).await?;
 

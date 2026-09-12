@@ -274,29 +274,38 @@ impl IndexingWorker {
     }
 
     fn prepare(&self, page: &IndexableWebpage) -> Result<Webpage> {
+        Self::audit_page(page)
+            .map(Webpage::from)
+            .map_err(|code| anyhow::anyhow!(code))
+    }
+    /// Applies the same metadata, noindex and title admission used by indexing, without stores/models.
+    /// Returns a fixed skip code; HTML text extraction and actual index insertion remain separate.
+    pub fn audit_page(page: &IndexableWebpage) -> std::result::Result<Html, &'static str> {
         if let Some(record) = &page.record {
-            record.validate()?;
+            record
+                .validate()
+                .map_err(|_| "invalid-ingestion-metadata")?;
             if !record.index_eligible {
-                return Err(anyhow::anyhow!("ingestion-metadata-ineligible"));
+                return Err("ingestion-metadata-ineligible");
             }
         }
         let html = match Html::parse_without_text(&page.body, &page.url) {
             Ok(html) => html,
-            Err(err) => {
-                return Err(anyhow::anyhow!("error parsing html: {:?}", err));
+            Err(_) => {
+                return Err("invalid-url");
             }
         };
 
         if html.is_no_index() {
-            return Err(anyhow::anyhow!("noindex"));
+            return Err("noindex");
         }
 
         let title = html.title().unwrap_or_default();
         if title.is_empty() || title.chars().all(|c| c.is_whitespace()) {
-            return Err(anyhow::anyhow!("empty title"));
+            return Err("empty title");
         }
 
-        Ok(Webpage::from(html))
+        Ok(html)
     }
 
     fn set_host_centrality(&self, page: &mut Webpage) -> Result<()> {

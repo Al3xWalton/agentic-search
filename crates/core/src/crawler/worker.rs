@@ -346,6 +346,12 @@ impl<S: DatumSink> JobExecutor<S> {
         }
         Ok(rows)
     }
+    pub(crate) async fn process_targets(&mut self, inputs: Vec<(Target, String)>) -> Result<()> {
+        for (target, raw) in inputs {
+            self.process_admitted(target, &raw).await?;
+        }
+        Ok(())
+    }
     fn finish_observations(
         &self,
         raw: &str,
