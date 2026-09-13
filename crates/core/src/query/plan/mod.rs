@@ -15,8 +15,9 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/
 
 use itertools::Itertools;
-use tantivy::tokenizer::Tokenizer as _;
+mod minimum_match;
 mod node;
+pub mod render;
 
 pub use node::Node;
 
@@ -71,7 +72,16 @@ impl From<Occur> for tantivy::query::Occur {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Query {
     Term(Term),
-    Boolean { clauses: Vec<(Occur, Query)> },
+    Boolean {
+        clauses: Vec<(Occur, Query)>,
+    },
+    /// Threshold over complete atom queries, bounded by the compiler to 32 children.
+    AtLeast {
+        /// Required complete-atom votes, validated by the bounded adapter.
+        minimum: usize,
+        /// Complete atom queries; optimizers must not flatten these into field votes.
+        children: Vec<Query>,
+    },
 }
 
 impl Query {
@@ -79,12 +89,14 @@ impl Query {
     pub fn len(&self) -> usize {
         match self {
             Query::Term(_) => 1,
+            Query::AtLeast { children, .. } => children.iter().map(Query::len).sum(),
             Query::Boolean { clauses } => clauses.iter().map(|(_, q)| q.len()).sum(),
         }
     }
 
     fn compact(self) -> Query {
         match self {
+            query @ Query::AtLeast { .. } => query,
             Query::Boolean { clauses } => {
                 let mut new_clauses = vec![];
                 for (occur, query) in clauses {
@@ -123,6 +135,7 @@ impl Query {
 
     fn deduplicate(self) -> Query {
         match self {
+            query @ Query::AtLeast { .. } => query,
             Query::Boolean { clauses } => Query::Boolean {
                 clauses: clauses
                     .into_iter()
@@ -138,86 +151,10 @@ impl Query {
         &self,
         lang: Option<&whatlang::Lang>,
         schema: &tantivy::schema::Schema,
-    ) -> Option<Box<dyn tantivy::query::Query>> {
-        match self {
-            Query::Term(Term { text, field }) => match text {
-                SimpleOrPhrase::Simple(s) => {
-                    let mut terms = process_tantivy_term(s.as_str(), *field, lang, schema);
-
-                    let option = field.record_option();
-                    if terms.len() == 1 {
-                        let term = terms.remove(0);
-                        Some(Box::new(tantivy::query::TermQuery::new(term, option)))
-                    } else if !terms.is_empty() && option.has_positions() {
-                        Some(Box::new(tantivy::query::PhraseQuery::new(terms)))
-                    } else {
-                        Some(Box::new(tantivy::query::BooleanQuery::new(
-                            terms
-                                .into_iter()
-                                .map(|term| {
-                                    (
-                                        tantivy::query::Occur::Must,
-                                        Box::new(tantivy::query::TermQuery::new(term, option))
-                                            as Box<dyn tantivy::query::Query + 'static>,
-                                    )
-                                })
-                                .collect(),
-                        )))
-                    }
-                }
-                SimpleOrPhrase::Phrase(p) => {
-                    let phrase = p.join(" ");
-                    let mut processed_terms = process_tantivy_term(&phrase, *field, lang, schema);
-
-                    if processed_terms.is_empty() {
-                        return None;
-                    }
-
-                    if processed_terms.len() == 1 {
-                        let options = field.record_option();
-
-                        Some(Box::new(tantivy::query::TermQuery::new(
-                            processed_terms.pop().unwrap(),
-                            options,
-                        )) as Box<dyn tantivy::query::Query>)
-                    } else {
-                        Some(Box::new(tantivy::query::PhraseQuery::new(processed_terms))
-                            as Box<dyn tantivy::query::Query>)
-                    }
-                }
-            },
-            Query::Boolean { clauses } => {
-                let mut t_clauses = Vec::new();
-                for (occur, query) in clauses {
-                    if let Some(query) = query.as_tantivy(lang, schema) {
-                        t_clauses.push(((*occur).into(), query));
-                    }
-                }
-
-                Some(Box::new(tantivy::query::BooleanQuery::new(t_clauses)))
-            }
-        }
+    ) -> Result<Box<dyn tantivy::query::Query>, super::planner::bounds::InputError> {
+        render::compile(self, lang, schema, &mut render::Budget::default())
+            .map(|compiled| compiled.query)
     }
-}
-
-fn process_tantivy_term<T: TextField>(
-    term: &str,
-    field: T,
-    lang: Option<&whatlang::Lang>,
-    schema: &tantivy::schema::Schema,
-) -> Vec<tantivy::Term> {
-    let mut terms: Vec<tantivy::Term> = Vec::new();
-    let mut tokenizer = field.query_tokenizer(lang);
-    let mut token_stream = tokenizer.token_stream(term);
-
-    if let Some(tantivy_field) = field.tantivy_field(schema) {
-        token_stream.process(&mut |token| {
-            let term = tantivy::Term::from_field_text(tantivy_field, &token.text);
-            terms.push(term);
-        });
-    }
-
-    terms
 }
 
 fn sliding_window(window_size: usize, i: usize) -> impl Iterator<Item = (usize, usize)> {

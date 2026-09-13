@@ -30,6 +30,13 @@ pub enum Node {
     And(Box<Node>, Box<Node>),
     Or(Box<Node>, Box<Node>),
     Not(Box<Node>),
+    /// At least `minimum` complete atom children; opaque to distributive optimizations.
+    AtLeast {
+        /// Required distinct child votes, validated to 1..=children.len() at compilation.
+        minimum: usize,
+        /// Complete atom nodes; field alternatives do not add votes.
+        children: Vec<Node>,
+    },
 }
 
 impl PartialEq for Node {
@@ -39,6 +46,16 @@ impl PartialEq for Node {
             (Node::And(a, b), Node::And(c, d)) => (a == c && b == d) || (a == d && b == c),
             (Node::Or(a, b), Node::Or(c, d)) => (a == c && b == d) || (a == d && b == c),
             (Node::Not(a), Node::Not(b)) => a == b,
+            (
+                Node::AtLeast {
+                    minimum: a,
+                    children: b,
+                },
+                Node::AtLeast {
+                    minimum: c,
+                    children: d,
+                },
+            ) => a == c && b == d,
             _ => false,
         }
     }
@@ -59,6 +76,10 @@ impl std::hash::Hash for Node {
                 right.hash(state);
             }
             Node::Not(inner) => inner.hash(state),
+            Node::AtLeast { minimum, children } => {
+                minimum.hash(state);
+                children.hash(state);
+            }
         }
     }
 }
@@ -91,6 +112,10 @@ impl Node {
             },
             Node::Not(inner) => super::Query::Boolean {
                 clauses: vec![(Occur::MustNot, inner.into_non_compacted_query())],
+            },
+            Node::AtLeast { minimum, children } => super::Query::AtLeast {
+                minimum,
+                children: children.into_iter().map(Node::into_query).collect(),
             },
         }
     }
@@ -219,6 +244,7 @@ struct DistributiveLaw;
 impl Optimisation for DistributiveLaw {
     fn optimise(&self, node: Node) -> Node {
         match node {
+            node @ Node::AtLeast { .. } => node,
             Node::Term(term) => Node::Term(term),
             Node::Not(inner) => Node::Not(Box::new(self.optimise(*inner))),
             Node::Or(left, right) => Node::Or(
@@ -236,10 +262,13 @@ impl Optimisation for DistributiveLaw {
                         let right_children =
                             Node::Or(right_left.clone(), right_right.clone()).or_children();
 
-                        let common: Vec<_> = left_children
+                        let mut common: Vec<_> = left_children
                             .intersection(&right_children)
                             .cloned()
                             .collect();
+
+                        // Hash-set iteration must not choose compiler/provenance branch order.
+                        common.sort_by_key(|node| format!("{node:?}"));
 
                         if common.is_empty() {
                             Node::And(
@@ -278,6 +307,7 @@ struct Deduplicate;
 impl Optimisation for Deduplicate {
     fn optimise(&self, node: Node) -> Node {
         match node {
+            node @ Node::AtLeast { .. } => node,
             Node::Term(term) => Node::Term(term),
             Node::Not(inner) => Node::Not(Box::new(self.optimise(*inner))),
             Node::Or(left, right) => {

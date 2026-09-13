@@ -35,6 +35,7 @@ pub mod optic;
 pub mod parser;
 mod pattern_query;
 mod plan;
+pub mod planner;
 pub mod union;
 
 use self::{optic::AsMultipleTantivyQuery, parser::SimpleOrPhrase};
