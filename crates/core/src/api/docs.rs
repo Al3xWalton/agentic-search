@@ -53,6 +53,20 @@ use utoipa_swagger_ui::SwaggerUi;
                 search::ReturnBody,
                 autosuggest::AutosuggestQuery,
                 crate::searcher::WebsitesResult,
+                crate::searcher::provenance::QueryPlanProvenance,
+                crate::searcher::provenance::StageProvenance,
+                crate::searcher::provenance::PlanTerm,
+                crate::searcher::provenance::PlanMode,
+                crate::searcher::provenance::NumHitsScope,
+                crate::searcher::provenance::TermKind,
+                crate::searcher::provenance::TermOccur,
+                crate::query::planner::StageId,
+                crate::query::planner::bounds::InputError,
+                crate::searcher::wire::QueryServiceError,
+                crate::searcher::provenance::SearchErrorResponse,
+                crate::searcher::provenance::SearchErrorDetail,
+                crate::searcher::provenance::SearchErrorCode,
+                crate::searcher::provenance::BangErrorCode,
                 crate::search_prettifier::HighlightedSpellCorrection,
                 crate::search_prettifier::DisplayedWebpage,
                 crate::search_prettifier::DisplayedEntity,
@@ -191,6 +205,64 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn openapi_planner_contract() {
+        let value = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let schemas = &value["components"]["schemas"];
+        assert!(schemas["InputError"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "preferences_too_large"));
+        for name in [
+            "QueryPlanProvenance",
+            "StageProvenance",
+            "PlanTerm",
+            "PlanMode",
+            "NumHitsScope",
+            "TermKind",
+            "TermOccur",
+            "StageId",
+            "InputError",
+            "QueryServiceError",
+            "SearchErrorResponse",
+            "SourceOffer",
+        ] {
+            assert!(schemas.get(name).is_some(), "missing {name}");
+        }
+        assert!(schemas["WebsitesResult"]["properties"]
+            .get("queryPlan")
+            .is_some());
+        assert!(schemas["DisplayedWebpage"]["properties"]
+            .get("planStage")
+            .is_some());
+        for (schema, optional) in [
+            ("WebsitesResult", "queryPlan"),
+            ("DisplayedWebpage", "planStage"),
+        ] {
+            assert!(!schemas[schema]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v == optional));
+        }
+        assert_eq!(
+            schemas["PlanMode"]["enum"],
+            serde_json::json!(["staged", "strict_only", "pagination_strict"])
+        );
+        let response = &value["paths"]["/beta/api/search"]["post"]["responses"];
+        for status in ["200", "400", "404", "413", "503"] {
+            assert!(response.get(status).is_some());
+        }
+        assert!(response["200"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("largest-stage estimate"));
+        assert!(value["paths"]
+            .get("/.well-known/ava-search-source")
+            .is_some());
+    }
 
     #[test]
     fn source_offer_docs_are_discoverable() {

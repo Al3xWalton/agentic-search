@@ -186,6 +186,9 @@ fn generate_rich_snippet(webpage: &RetrievedWebpage) -> Option<RichSnippet> {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayedWebpage {
+    /// First executed stage that supplied this result; absent on internal legacy responses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_stage: Option<crate::searcher::provenance::PlanStageId>,
     pub title: String,
     pub url: String,
     pub site: String,
@@ -241,6 +244,7 @@ impl DisplayedWebpage {
         });
 
         Self {
+            plan_stage: None,
             title: webpage.title,
             site: url.normalized_host().unwrap_or_default().to_string(),
             url: webpage.url,

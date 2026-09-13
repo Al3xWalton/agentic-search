@@ -22,7 +22,7 @@ use crate::{
     search_ctx::Ctx,
     searcher::SearchQuery,
     webpage::{region::Region, safety_classifier},
-    Error, Result,
+    Result,
 };
 
 use optics::{HostRankings, Optic};
@@ -35,6 +35,7 @@ pub mod optic;
 pub mod parser;
 mod pattern_query;
 mod plan;
+pub mod planner;
 pub mod union;
 
 use self::{optic::AsMultipleTantivyQuery, parser::SimpleOrPhrase};
@@ -54,6 +55,113 @@ pub struct Query {
     count_results_exact: bool,
     signal_coefficients: SignalCoefficients,
     lang: Option<whatlang::Lang>,
+    rendered_query: String,
+    preference_queries: Vec<std::sync::Arc<dyn tantivy::query::Query>>,
+}
+
+struct CompiledStage {
+    query: Box<dyn tantivy::query::Query>,
+    rendered: String,
+    preferences: Vec<std::sync::Arc<dyn tantivy::query::Query>>,
+    lang: Option<whatlang::Lang>,
+    simple_terms: Vec<String>,
+}
+
+impl Query {
+    fn compile_stage(
+        query: &SearchQuery,
+        schema: &tantivy::schema::Schema,
+    ) -> Result<CompiledStage, planner::bounds::InputError> {
+        use planner::{bounds::InputError, AgentPlan};
+        planner::bounds::validate_numbers(query.page, query.num_results, false)?;
+        planner::bounds::validate_preferences(query.optic.as_ref(), query.host_rankings.as_ref())?;
+        let strict;
+        let stage = match &query.stage_plan {
+            Some(stage) if stage.original == query.query => stage,
+            Some(_) => return Err(InputError::InvalidQuerySyntax),
+            None => {
+                strict = AgentPlan::new(&query.query)?.stages.remove(0);
+                &strict
+            }
+        };
+        let lang = stage.lang()?;
+        let mut budget = plan::render::Budget::default();
+        // Validate whole atoms before compound alternatives can conceal a tokenless mandatory atom.
+        for atom in &stage.atoms {
+            plan::render::compile(
+                &plan::Node::from_term(atom.source.term.clone()).into_query(),
+                lang.as_ref(),
+                schema,
+                &mut budget,
+            )?;
+        }
+        let mut node = stage.node()?;
+        if query.safe_search {
+            node = node.and(plan::Node::Not(Box::new(plan::Node::Term(
+                plan::Term::new(
+                    parser::SimpleTerm::from(safety_classifier::Label::NSFW.to_string()).into(),
+                    text_field::SafetyClassification.into(),
+                ),
+            ))));
+        }
+        let compiled =
+            plan::render::compile(&node.into_query(), lang.as_ref(), schema, &mut budget)?;
+        let mut rendered = compiled.rendered;
+        let mut preferences = Vec::new();
+        for preference in &stage.preferences {
+            let preferred = plan::render::compile(
+                &plan::Node::from_term(preference.term.clone()).into_query(),
+                lang.as_ref(),
+                schema,
+                &mut budget,
+            )?;
+            budget.push(&mut rendered, ";PREFERENCE(weight=2,")?;
+            rendered.push_str(&preferred.rendered);
+            budget.push(&mut rendered, ")")?;
+            preferences.push(std::sync::Arc::from(preferred.query));
+        }
+        for (name, value) in [
+            ("optic", query.optic.as_ref().map(serde_json::to_vec)),
+            (
+                "host_rankings",
+                query.host_rankings.as_ref().map(serde_json::to_vec),
+            ),
+        ] {
+            if let Some(value) = value {
+                budget.nodes(1)?;
+                let bytes = value.map_err(|_| InputError::InvalidRequest)?;
+                let digest: String = ring::digest::digest(&ring::digest::SHA256, &bytes)
+                    .as_ref()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+                budget.push(&mut rendered, &format!(";FILTER({name},sha256={digest})"))?;
+            }
+        }
+        Ok(CompiledStage {
+            query: compiled.query,
+            rendered,
+            preferences,
+            lang,
+            simple_terms: stage.simple_terms(),
+        })
+    }
+
+    /// Compile the coordinator schema's complete safe query description, with typed input limits.
+    pub fn render_query(query: &SearchQuery) -> Result<String, planner::bounds::InputError> {
+        Self::compile_stage(query, &crate::schema::create_schema())
+            .map(|compiled| compiled.rendered)
+    }
+
+    /// Actual bounded rendering produced while constructing this executable query.
+    pub fn rendered_query(&self) -> &str {
+        &self.rendered_query
+    }
+
+    /// Optional compiled predicates; each contributes at most one ranking preference vote.
+    pub fn preference_queries(&self) -> &[std::sync::Arc<dyn tantivy::query::Query>] {
+        &self.preference_queries
+    }
 }
 
 impl Clone for Query {
@@ -69,58 +177,22 @@ impl Clone for Query {
             count_results_exact: self.count_results_exact,
             signal_coefficients: self.signal_coefficients.clone(),
             lang: self.lang,
+            rendered_query: self.rendered_query.clone(),
+            preference_queries: self.preference_queries.clone(),
         }
     }
 }
 
 impl Query {
     pub fn parse(ctx: &Ctx, query: &SearchQuery, index: &InvertedIndex) -> Result<Query> {
-        let lang = whatlang::detect_lang(&query.query);
-
-        let parsed_terms = parser::truncate(parser::parse(&query.query)?);
-
-        if parsed_terms.is_empty() {
-            tracing::error!("No terms found in query");
-            return Err(Error::EmptyQuery.into());
+        if query.stage_plan.is_none() && query.query.is_empty() {
+            return Err(crate::Error::EmptyQuery.into());
         }
-
-        if parsed_terms
-            .iter()
-            .all(|t| matches!(t, Term::PossibleBang { .. }))
-        {
-            tracing::error!("No non-bang terms found in query");
-            return Err(Error::EmptyQuery.into());
-        }
-
-        let simple_terms_text: Vec<String> = parsed_terms
-            .iter()
-            .filter_map(|term| term.as_simple_text().map(|s| s.to_string()))
-            .flat_map(|term| {
-                // term might be a phrase, so we split it into words
-                term.split_ascii_whitespace()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-
-        let mut plan = plan::initial(parsed_terms).expect("terms are not empty and not all bangs");
-
+        let compiled = Self::compile_stage(query, &index.schema())?;
+        let lang = compiled.lang;
+        let simple_terms_text = compiled.simple_terms;
+        let mut tantivy_query = compiled.query;
         let schema = index.schema();
-
-        if query.safe_search {
-            plan = plan.and(plan::Node::Not(Box::new(plan::Node::Term(
-                plan::Term::new(
-                    parser::SimpleTerm::from(safety_classifier::Label::NSFW.to_string()).into(),
-                    text_field::SafetyClassification.into(),
-                ),
-            ))));
-        }
-
-        let mut tantivy_query = plan
-            .into_query()
-            .as_tantivy(lang.as_ref(), &schema)
-            .expect("there should at least be one field in the index");
-
         let mut optics = Vec::new();
         if let Some(site_rankigns_optic) = query.host_rankings.clone().map(|sr| sr.into_optic()) {
             optics.push(site_rankigns_optic);
@@ -144,12 +216,18 @@ impl Query {
             simple_terms_text,
             tantivy_query,
             optics,
-            offset: query.num_results * query.page,
+            offset: planner::bounds::validate_numbers(query.page, query.num_results, false)?,
             region: query.selected_region,
             top_n: query.num_results,
-            count_results_exact: query.count_results_exact,
+            count_results_exact: query.count_results_exact
+                || query
+                    .stage_plan
+                    .as_ref()
+                    .is_some_and(|p| p.id != planner::StageId::Strict),
             signal_coefficients: query.signal_coefficients(),
             lang,
+            rendered_query: compiled.rendered,
+            preference_queries: compiled.preferences,
         })
     }
 
@@ -205,6 +283,7 @@ impl tantivy::query::Query for Query {
 
 #[cfg(test)]
 mod tests {
+    use crate::Error;
     use std::sync::Arc;
 
     use crate::{index::Index, rand_words, searcher::LocalSearcher, webpage::Webpage};

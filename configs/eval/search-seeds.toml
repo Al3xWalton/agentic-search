@@ -1,0 +1,8 @@
+# Substitute index_path with the independently copied corpus path before launching.
+host = "127.0.0.1:57303"
+gossip_addr = "127.0.0.1:57307"
+gossip_seed_nodes = ["127.0.0.1:57305", "127.0.0.1:57306"]
+index_path = "sample/index-seeds"
+shard = 1
+[collector]
+max_docs_considered = 1000

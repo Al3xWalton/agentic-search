@@ -31,7 +31,7 @@ use axum_macros::debug_handler;
 
 use crate::{
     bangs::BangHit,
-    searcher::{self, SearchQuery, SearchResult, WebsitesResult},
+    searcher::{SearchQuery, SearchResult, WebsitesResult},
     webpage::region::Region,
 };
 
@@ -58,7 +58,7 @@ pub enum ReturnBody {
 #[derive(
     Debug, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode, ToSchema,
 )]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schema(title = "SearchQuery", example = json!({"query": "hello world"}))]
 pub struct ApiSearchQuery {
     /// The search query string
@@ -110,8 +110,16 @@ impl TryFrom<ApiSearchQuery> for SearchQuery {
     type Error = anyhow::Error;
 
     fn try_from(api: ApiSearchQuery) -> Result<Self, Self::Error> {
+        use crate::query::planner::bounds::{self, InputError};
+        let defaults = SearchQuery::default();
+        bounds::validate_numbers(
+            api.page.unwrap_or(defaults.page),
+            api.num_results.unwrap_or(defaults.num_results),
+            true,
+        )?;
+        bounds::scan_query(&api.query)?;
         let optic = if let Some(optic) = &api.optic {
-            Some(Optic::parse(optic)?)
+            Some(Optic::parse(optic).map_err(|_| InputError::InvalidRequest)?)
         } else {
             None
         };
@@ -127,8 +135,11 @@ impl TryFrom<ApiSearchQuery> for SearchQuery {
 
         let default = SearchQuery::default();
 
+        bounds::validate_preferences(optic.as_ref(), api.host_rankings.as_ref())?;
+
         Ok(SearchQuery {
             query: api.query,
+            stage_plan: None,
             page: api.page.unwrap_or(default.page),
             num_results: api.num_results.unwrap_or(default.num_results),
             selected_region: api.selected_region,
@@ -183,45 +194,129 @@ impl From<SearchResult> for ApiSearchResult {
     path = "/beta/api/search",
     request_body(content = ApiSearchQuery),
     responses(
-        (status = 200, description = "Search results", body = ApiSearchResult),
+        (status = 200, description = "Search results with first-producing stages. Multistage numHits is an approximate largest-stage estimate, not an exact union; later pages remain strict.", body = ApiSearchResult),
+        (status = 400, description = "Invalid search input", body = crate::searcher::provenance::SearchErrorResponse),
+        (status = 404, description = "No bare-bang target", body = crate::searcher::provenance::SearchErrorResponse),
+        (status = 413, description = "Search body exceeds 64 KiB", body = crate::searcher::provenance::SearchErrorResponse),
+        (status = 503, description = "Search service or protocol unavailable", body = crate::searcher::provenance::SearchErrorResponse),
     )
 )]
 pub async fn search(
     extract::State(state): extract::State<Arc<State>>,
-    extract::Json(query): extract::Json<ApiSearchQuery>,
-) -> Result<impl IntoResponse, StatusCode> {
-    tracing::debug!(?query);
-    let flatten_result = query.flatten_response;
-    let query = SearchQuery::try_from(query);
+    ValidatedSearchRequest {
+        query,
+        flatten_result,
+    }: ValidatedSearchRequest,
+) -> Result<axum::response::Response, SearchHttpError> {
+    let result = state
+        .searcher
+        .search(&query)
+        .await
+        .map_err(SearchHttpError::from_error)?;
+    Ok(if flatten_result {
+        Json(ApiSearchResult::from(result)).into_response()
+    } else {
+        Json(result).into_response()
+    })
+}
 
-    if let Err(err) = query {
-        tracing::error!("{:?}", err);
-        return Err(StatusCode::BAD_REQUEST);
+/// Search-only extractor: streamed 64 KiB cap precedes JSON parsing and numeric/query validation.
+/// Failures use the fixed 400/413 error envelope before any searcher call.
+pub struct ValidatedSearchRequest {
+    /// Validated original public request, before internal candidate substitutions.
+    pub query: SearchQuery,
+    /// Existing response-format preference.
+    pub flatten_result: bool,
+}
+
+#[axum::async_trait]
+impl<S: Send + Sync> extract::FromRequest<S> for ValidatedSearchRequest {
+    type Rejection = SearchHttpError;
+
+    async fn from_request(request: extract::Request, state: &S) -> Result<Self, Self::Rejection> {
+        use crate::query::planner::bounds::{InputError, MAX_BODY_BYTES};
+        let (parts, body) = request.into_parts();
+        let bytes = axum::body::to_bytes(body, MAX_BODY_BYTES)
+            .await
+            .map_err(|_| SearchHttpError::input(InputError::RequestTooLarge))?;
+        let request = extract::Request::from_parts(parts, axum::body::Body::from(bytes));
+        let extract::Json(query) = extract::Json::<ApiSearchQuery>::from_request(request, state)
+            .await
+            .map_err(|_| SearchHttpError::input(InputError::InvalidRequest))?;
+        let flatten_result = query.flatten_response;
+        let query = SearchQuery::try_from(query).map_err(SearchHttpError::from_error)?;
+        Ok(Self {
+            query,
+            flatten_result,
+        })
     }
-    let mut query = query.unwrap();
+}
 
-    query.num_results = query.num_results.min(100);
+/// Search-route status and fixed JSON error; internal errors are sanitized before serialization.
+pub struct SearchHttpError {
+    status: StatusCode,
+    body: crate::searcher::provenance::SearchErrorResponse,
+}
 
-    match state.searcher.search(&query).await {
-        Ok(result) => {
-            if flatten_result {
-                Ok(Json(ApiSearchResult::from(result)).into_response())
-            } else {
-                Ok(Json(result).into_response())
-            }
+impl SearchHttpError {
+    fn input(error: crate::query::planner::bounds::InputError) -> Self {
+        use crate::query::planner::bounds::InputError;
+        let status = if error == InputError::RequestTooLarge {
+            StatusCode::PAYLOAD_TOO_LARGE
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        Self::new(
+            status,
+            crate::searcher::provenance::SearchErrorCode::Input(error),
+            error.to_string(),
+        )
+    }
+    fn new(
+        status: StatusCode,
+        code: crate::searcher::provenance::SearchErrorCode,
+        message: String,
+    ) -> Self {
+        use crate::searcher::provenance::{SearchErrorDetail, SearchErrorResponse};
+        Self {
+            status,
+            body: SearchErrorResponse {
+                error: SearchErrorDetail { code, message },
+            },
         }
-
-        Err(err) => match err.downcast_ref() {
-            Some(searcher::distributed::Error::EmptyQuery) => {
-                Ok(searcher::distributed::Error::EmptyQuery
-                    .to_string()
-                    .into_response())
-            }
-            _ => {
-                tracing::error!("{:?}", err);
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-        },
+    }
+    fn from_error(error: anyhow::Error) -> Self {
+        use crate::searcher::{
+            provenance::{BangErrorCode, SearchErrorCode},
+            wire::QueryServiceError,
+        };
+        if let Some(input) = error.downcast_ref::<crate::query::planner::bounds::InputError>() {
+            return Self::input(*input);
+        }
+        if error
+            .downcast_ref::<crate::searcher::api::staged::NoBangTarget>()
+            .is_some()
+        {
+            return Self::new(
+                StatusCode::NOT_FOUND,
+                SearchErrorCode::Bang(BangErrorCode::NoBangTarget),
+                "No bang target was found".into(),
+            );
+        }
+        let code = error
+            .downcast_ref::<QueryServiceError>()
+            .copied()
+            .unwrap_or(QueryServiceError::ShardFailed);
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            SearchErrorCode::Service(code),
+            code.to_string(),
+        )
+    }
+}
+impl IntoResponse for SearchHttpError {
+    fn into_response(self) -> axum::response::Response {
+        (self.status, Json(self.body)).into_response()
     }
 }
 
@@ -370,6 +465,30 @@ pub async fn entity_image(
         Err(err) => {
             tracing::error!("{:?}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[cfg(test)]
+mod planner_error_contract {
+    use super::*;
+    #[tokio::test]
+    async fn service_errors_are_safe_503s() {
+        use crate::searcher::wire::QueryServiceError;
+        for error in [
+            QueryServiceError::WorkerFailed,
+            QueryServiceError::ProtocolUnavailable,
+            QueryServiceError::SchemaMismatch,
+            QueryServiceError::RetrievalFailed,
+        ] {
+            let response = SearchHttpError::from_error(error.into()).into_response();
+            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+            let body = axum::body::to_bytes(response.into_body(), 4096)
+                .await
+                .unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(json["error"]["code"], serde_json::to_value(error).unwrap());
+            assert_eq!(json["error"].as_object().unwrap().len(), 2);
         }
     }
 }

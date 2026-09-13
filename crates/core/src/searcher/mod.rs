@@ -18,11 +18,13 @@
 //! There are two types of searchers:
 //! - [`local::LocalSearcher`] which runs the search on the local machine.
 //! - [`distributed::DistributedSearcher`] which runs the search on a remote cluster. Each node
-//!     will run a local searcher and then the results are merged on the coordinator node.
+//!   will run a local searcher and then the results are merged on the coordinator node.
 
 pub mod api;
 pub mod distributed;
 pub mod local;
+pub mod provenance;
+pub mod wire;
 
 pub use distributed::*;
 pub use local::*;
@@ -65,14 +67,20 @@ impl SearchResult {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct WebsitesResult {
+    /// Completed stages and first-producing attribution; omitted for internal legacy callers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_plan: Option<provenance::QueryPlanProvenance>,
     pub webpages: Vec<DisplayedWebpage>,
     pub num_hits: Count,
     pub search_duration_ms: u128,
     pub has_more_results: bool,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode, Clone)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct SearchQuery {
+    /// Internal selected stage, never accepted from a public JSON request.
+    #[serde(skip)]
+    pub stage_plan: Option<crate::query::planner::StagePlan>,
     pub query: String,
     pub page: usize,
     pub num_results: usize,
@@ -111,6 +119,7 @@ impl Default for SearchQuery {
         // to ensure the developer considers what the default should be.
         Self {
             query: Default::default(),
+            stage_plan: None,
             page: Default::default(),
             num_results: NUM_RESULTS_PER_PAGE,
             selected_region: Default::default(),

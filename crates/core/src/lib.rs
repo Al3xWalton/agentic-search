@@ -38,6 +38,7 @@ use std::{cmp::Reverse, sync::Arc};
 use thiserror::Error;
 
 pub mod entrypoint;
+pub mod eval;
 pub mod inverted_index;
 
 pub mod ampc;

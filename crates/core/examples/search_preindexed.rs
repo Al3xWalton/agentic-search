@@ -24,6 +24,7 @@ pub async fn main() {
     };
 
     let config = ApiConfig {
+        agent_query_planning: true,
         crawler_policy_config_path: None,
         host: "0.0.0.0:8000".parse().unwrap(),
         prometheus_host: "0.0.0.0:8001".parse().unwrap(),
