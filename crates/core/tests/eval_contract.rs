@@ -13,6 +13,35 @@ use stract::eval::{
     EvalError, Planner, Suite,
 };
 
+#[test]
+fn trusted_temporary_root_predicate() {
+    use eval::input::trusted_temporary_root;
+    use std::path::Path;
+
+    for (path, uid, mode, expected) in [
+        ("/dev/shm", 0, 0o41777, true),
+        ("/tmp", 0, 0o41777, true),
+        ("/private/tmp", 0, 0o41777, true),
+        ("/var/tmp", 0, 0o41777, true),
+        ("/private/var/tmp", 0, 0o41777, true),
+        ("/dev/shm", 1000, 0o41777, false),
+        ("/tmp", 0, 0o40777, false),
+        ("/home/runner", 0, 0o41777, false),
+        ("/tmp/x", 0, 0o41777, false),
+    ] {
+        assert_eq!(
+            trusted_temporary_root(Path::new(path), uid, mode),
+            expected,
+            "{path}"
+        );
+    }
+    if let Ok(path) = std::env::temp_dir().canonicalize() {
+        assert!(trusted_temporary_root(&path, 0, 0o41777));
+        assert!(!trusted_temporary_root(&path, 1000, 0o41777));
+        assert!(!trusted_temporary_root(&path, 0, 0o40777));
+    }
+}
+
 macro_rules! normalization {
     ($name:ident, $raw:expr, $expected:expr) => {
         #[test]

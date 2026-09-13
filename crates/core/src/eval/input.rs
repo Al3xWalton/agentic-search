@@ -2,6 +2,9 @@
 //! Bound and validate every evaluator file read before allocation or network activity.
 //! Files are regular, opened read-only without following links, and hashed as read.
 //! Root-owned system ancestors are trusted; writable descendants and foreign owners are not.
+//! Shared temporary boundaries are exactly /tmp, /private/tmp, /var/tmp, /private/var/tmp,
+//! /dev/shm and the once-canonicalized process temporary directory, all root-owned and sticky.
+//! Other ancestors remain subject to the owner and group/world-writability checks.
 
 use super::{Argument, ArgumentReason, EvalError};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -9,6 +12,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 /// Maximum label, run, configuration or manifest input bytes (64 MiB).
@@ -70,6 +74,28 @@ pub fn argument_path(
     inspect_path_named(path, allow_missing, Some(argument))
 }
 
+/// Match exact shared temporary roots with UID 0 and the POSIX sticky bit (0o1000).
+/// The caller supplies metadata; this predicate does not inspect the candidate path.
+/// The canonical process temporary directory is cached once; failure adds no extra root.
+pub fn trusted_temporary_root(path: &Path, uid: u32, mode: u32) -> bool {
+    static PROCESS_TEMP: OnceLock<Option<PathBuf>> = OnceLock::new();
+    uid == 0
+        && mode & 0o1000 != 0
+        && ([
+            "/tmp",
+            "/private/tmp",
+            "/var/tmp",
+            "/private/var/tmp",
+            "/dev/shm",
+        ]
+        .into_iter()
+        .any(|root| path == Path::new(root))
+            || PROCESS_TEMP
+                .get_or_init(|| std::env::temp_dir().canonicalize().ok())
+                .as_deref()
+                == Some(path))
+}
+
 fn inspect_path_named(
     path: &Path,
     allow_missing: bool,
@@ -97,10 +123,7 @@ fn inspect_path_named(
                     return Err(invalid(ArgumentReason::RegularFile));
                 }
                 if meta.is_dir() {
-                    let trusted_tmp = (prefix == Path::new("/tmp")
-                        || prefix == Path::new("/private/tmp"))
-                        && meta.uid() == 0
-                        && meta.mode() & 0o1000 != 0;
+                    let trusted_tmp = trusted_temporary_root(&prefix, meta.uid(), meta.mode());
                     if meta.mode() & 0o022 != 0 && !trusted_tmp {
                         return Err(invalid(ArgumentReason::WritableAncestor));
                     }
