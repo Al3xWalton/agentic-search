@@ -33,7 +33,7 @@ use crate::{
     inverted_index::{self, ShardId},
     models::dual_encoder::DualEncoder,
     ranking::models::linear::LinearRegression,
-    searcher::{InitialWebsiteResult, LocalSearcher, SearchQuery},
+    searcher::{InitialWebsiteResult, LocalSearcher},
     Result,
 };
 
@@ -122,6 +122,8 @@ macro_rules! impl_search {
                     $q,
                     [<$q Retrieve>],
                 )*
+                SearchV2,
+                RetrieveWebsitesV2,
             ]);
         }
 
@@ -211,14 +213,14 @@ impl sonic::service::Message<SearchService> for RetrieveWebsites {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct Search {
-    pub query: SearchQuery,
+    pub query: crate::searcher::wire::LegacySearchQuery,
 }
 impl sonic::service::Message<SearchService> for Search {
     type Response = Option<InitialWebsiteResult>;
     async fn handle(self, server: &SearchService) -> Self::Response {
         server
             .local_searcher
-            .search_initial(&self.query, true)
+            .search_initial(&self.query.into(), true)
             .await
             .ok()
     }
@@ -239,5 +241,55 @@ pub async fn run(config: config::SearchServerConfig) -> Result<()> {
         if let Err(e) = server.accept().await {
             tracing::error!("{:?}", e);
         }
+    }
+}
+
+/// Versioned initial query selected by the coordinator and recomputed by the shard.
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub struct SearchV2 {
+    /// Bounded original request and stage selector; no executable tree crosses the wire.
+    pub selector: crate::searcher::wire::StageSelector,
+}
+
+impl sonic::service::Message<SearchService> for SearchV2 {
+    type Response =
+        Result<crate::searcher::wire::SearchV2Result, crate::searcher::wire::QueryServiceError>;
+    async fn handle(self, server: &SearchService) -> Self::Response {
+        let query = self.selector.resolve()?;
+        server.local_searcher.search_initial_v2(&query).await
+    }
+}
+
+/// Versioned retrieval using the same selected query for snippet analysis.
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub struct RetrieveWebsitesV2 {
+    /// Exactly the selected stage used for initial matching.
+    pub selector: crate::searcher::wire::StageSelector,
+    /// At most 300 pointers, in the coordinator's requested order.
+    pub websites: crate::searcher::wire::BoundedPointers,
+}
+
+impl sonic::service::Message<SearchService> for RetrieveWebsitesV2 {
+    type Response =
+        Result<crate::searcher::wire::RetrieveV2Result, crate::searcher::wire::QueryServiceError>;
+    async fn handle(self, server: &SearchService) -> Self::Response {
+        use crate::searcher::wire::{QueryServiceError, RetrieveV2Result};
+        let query = self.selector.resolve()?;
+        if self.websites.0.len() > crate::query::planner::bounds::MAX_CANDIDATES {
+            return Err(QueryServiceError::InvalidPlan);
+        }
+        let webpages = server
+            .local_searcher
+            .retrieve_websites_selected(&self.websites.0, &query)
+            .await
+            .map_err(|e| {
+                e.downcast_ref::<QueryServiceError>()
+                    .copied()
+                    .unwrap_or(QueryServiceError::RetrievalFailed)
+            })?;
+        if webpages.len() != self.websites.0.len() {
+            return Err(QueryServiceError::RetrievalFailed);
+        }
+        Ok(RetrieveV2Result { webpages })
     }
 }

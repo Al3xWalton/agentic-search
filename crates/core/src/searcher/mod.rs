@@ -23,6 +23,7 @@
 pub mod api;
 pub mod distributed;
 pub mod local;
+pub mod wire;
 
 pub use distributed::*;
 pub use local::*;
@@ -71,8 +72,11 @@ pub struct WebsitesResult {
     pub has_more_results: bool,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode, Clone)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct SearchQuery {
+    /// Internal selected stage, never accepted from a public JSON request.
+    #[serde(skip)]
+    pub stage_plan: Option<crate::query::planner::StagePlan>,
     pub query: String,
     pub page: usize,
     pub num_results: usize,
@@ -111,6 +115,7 @@ impl Default for SearchQuery {
         // to ensure the developer considers what the default should be.
         Self {
             query: Default::default(),
+            stage_plan: None,
             page: Default::default(),
             num_results: NUM_RESULTS_PER_PAGE,
             selected_region: Default::default(),

@@ -287,7 +287,11 @@ where
         self
     }
 
-    async fn check_bangs(&self, query: &SearchQuery) -> Result<Option<BangHit>> {
+    async fn check_bangs(
+        &self,
+        query: &SearchQuery,
+        session: &mut distributed::SearchSession,
+    ) -> Result<Option<BangHit>> {
         let parsed_terms = query::parser::parse(&query.query)?;
 
         if parsed_terms.iter().any(|term| match term {
@@ -306,7 +310,7 @@ where
             let mut query = query.clone();
             query.query = urlencoding::encode(&q).into_owned();
 
-            let res = self.search_websites(&query).await?;
+            let res = self.search_websites(&query, session).await?;
 
             return Ok(res.webpages.first().map(|webpage| BangHit {
                 bang: Bang {
@@ -393,12 +397,14 @@ where
 
     async fn retrieve_webpages(
         &self,
-        query: &str,
+        query: &SearchQuery,
         top_websites: &[ScoredWebpagePointer],
-    ) -> Vec<PrecisionRankingWebpage> {
-        self.distributed_searcher
-            .retrieve_webpages(top_websites, query)
-            .await
+        session: &mut distributed::SearchSession,
+    ) -> Result<Vec<PrecisionRankingWebpage>> {
+        Ok(self
+            .distributed_searcher
+            .retrieve_webpages(top_websites, query, session)
+            .await?)
     }
 
     async fn inbound_vecs(&self, ids: &[webgraph::NodeID]) -> Vec<bitvec_similarity::BitVec> {
@@ -500,7 +506,11 @@ where
         }
     }
 
-    async fn search_websites_approx_offsets(&self, query: &SearchQuery) -> Result<WebsitesResult> {
+    async fn search_websites_approx_offsets(
+        &self,
+        query: &SearchQuery,
+        session: &mut distributed::SearchSession,
+    ) -> Result<WebsitesResult> {
         let start = Instant::now();
 
         let search_query = SearchQuery {
@@ -510,8 +520,8 @@ where
 
         let results = self
             .distributed_searcher
-            .search_initial(&search_query)
-            .await;
+            .search_initial(&search_query, session)
+            .await?;
 
         let has_more_results = results
             .iter()
@@ -526,8 +536,8 @@ where
         let combined: Vec<_> = combined.into_iter().take(query.num_results).collect();
 
         let mut retrieved_webpages: Vec<_> = self
-            .retrieve_webpages(&query.query, &combined)
-            .await
+            .retrieve_webpages(query, &combined, session)
+            .await?
             .into_iter()
             .map(|webpage| webpage.into_retrieved_webpage())
             .map(|webpage| DisplayedWebpage::new(webpage, query))
@@ -551,7 +561,11 @@ where
         })
     }
 
-    async fn search_websites(&self, query: &SearchQuery) -> Result<WebsitesResult> {
+    async fn search_websites(
+        &self,
+        query: &SearchQuery,
+        session: &mut distributed::SearchSession,
+    ) -> Result<WebsitesResult> {
         let start = Instant::now();
 
         if query.is_empty() {
@@ -561,7 +575,7 @@ where
         if query.offset() + query.num_results() > NUM_PIPELINE_RANKING_RESULTS {
             // this is most likely a bot
             // let's not spend too much time correctly offsetting+ranking results
-            return self.search_websites_approx_offsets(query).await;
+            return self.search_websites_approx_offsets(query, session).await;
         }
 
         let search_query = SearchQuery {
@@ -572,8 +586,8 @@ where
 
         let initial_results = self
             .distributed_searcher
-            .search_initial(&search_query)
-            .await;
+            .search_initial(&search_query, session)
+            .await?;
 
         let num_docs = initial_results
             .iter()
@@ -594,7 +608,9 @@ where
 
         let top_websites = pipeline.apply(top_websites, query);
 
-        let mut retrieved_webpages = self.retrieve_webpages(&query.query, &top_websites).await;
+        let mut retrieved_webpages = self
+            .retrieve_webpages(query, &top_websites, session)
+            .await?;
 
         if let Some(cross_encoder) = self.cross_encoder.clone() {
             if query.page < 2 {
@@ -643,11 +659,14 @@ where
     }
 
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
-        if let Some(bang) = self.check_bangs(query).await? {
+        let mut session = self.distributed_searcher.begin_session().await?;
+        if let Some(bang) = self.check_bangs(query, &mut session).await? {
             return Ok(SearchResult::Bang(Box::new(bang)));
         }
 
-        Ok(SearchResult::Websites(self.search_websites(query).await?))
+        Ok(SearchResult::Websites(
+            self.search_websites(query, &mut session).await?,
+        ))
     }
 
     pub async fn get_entity_image(
@@ -668,7 +687,7 @@ where
 
     pub async fn warmup(&self, queries: impl Iterator<Item = String>) {
         for query in queries {
-            self.search_websites(&SearchQuery {
+            self.search(&SearchQuery {
                 query,
                 ..Default::default()
             })
