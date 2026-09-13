@@ -1,0 +1,11 @@
+host = "127.0.0.1:57300"
+prometheus_host = "127.0.0.1:57301"
+management_host = "127.0.0.1:57311"
+gossip_addr = "127.0.0.1:57305"
+gossip_seed_nodes = ["127.0.0.1:57306", "127.0.0.1:57307"]
+top_phrases_for_autosuggest = 0
+max_concurrent_searches = 4
+agent_query_planning = false
+[widgets]
+thesaurus_paths = []
+calculator_fetch_currencies_exchange = false

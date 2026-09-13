@@ -48,6 +48,11 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Evaluate an existing loopback search service using bounded local inputs.
+    Eval {
+        #[clap(subcommand)]
+        command: stract::eval::Command,
+    },
     /// Build an index.
     Indexer {
         #[clap(subcommand)]
@@ -333,6 +338,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
+        Commands::Eval { command } => {
+            tokio::runtime::Runtime::new()?.block_on(command.run())?;
+        }
         Commands::Indexer { options } => match options {
             IndexingOptions::Search { config_path } => {
                 let config = load_toml_config(config_path);
