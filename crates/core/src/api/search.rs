@@ -129,6 +129,7 @@ impl TryFrom<ApiSearchQuery> for SearchQuery {
 
         Ok(SearchQuery {
             query: api.query,
+            stage_plan: None,
             page: api.page.unwrap_or(default.page),
             num_results: api.num_results.unwrap_or(default.num_results),
             selected_region: api.selected_region,

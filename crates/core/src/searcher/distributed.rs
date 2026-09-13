@@ -33,14 +33,13 @@ use crate::{
         search_server::{self, RetrieveReq, SearchService},
     },
     generic_query::{self, Collector},
-    inverted_index::{RetrievedWebpage, ShardId, WebpagePointer},
+    inverted_index::ShardId,
     ranking::pipeline::{PrecisionRankingWebpage, RecallRankingWebpage},
     Result,
 };
 
 use std::{collections::HashMap, sync::Arc};
 
-use fnv::FnvHashMap;
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use itertools::Itertools;
 use std::future::Future;
@@ -63,17 +62,106 @@ pub enum Error {
     WebpageNotFound,
 }
 
+/// One immutable membership and amplification budget shared by every search helper.
+pub struct SearchSession {
+    client: Option<Arc<ShardedClient<SearchService, ShardId>>>,
+    shards: usize,
+    stages: usize,
+    searches: usize,
+    retrievals: usize,
+    retrieved: bool,
+}
+
+impl SearchSession {
+    /// Create a local/fake membership of 1..=8 shards, rejecting empty/excess membership.
+    pub fn for_shards(shards: usize) -> Result<Self, super::wire::QueryServiceError> {
+        use super::wire::QueryServiceError;
+        if shards == 0 {
+            return Err(QueryServiceError::NoShards);
+        }
+        if shards > crate::query::planner::bounds::MAX_SHARDS {
+            return Err(QueryServiceError::TooManyShards);
+        }
+        Ok(Self {
+            client: None,
+            shards,
+            stages: 0,
+            searches: 0,
+            retrievals: 0,
+            retrieved: false,
+        })
+    }
+
+    /// Charge one stage and one search RPC per captured shard before initiating fan-out.
+    pub fn begin_search(&mut self) -> Result<(), super::wire::QueryServiceError> {
+        use super::wire::QueryServiceError;
+        use crate::query::planner::bounds::{MAX_RPCS, MAX_STAGES};
+        if self.stages >= MAX_STAGES
+            || self
+                .searches
+                .checked_add(self.shards)
+                .is_none_or(|n| n > MAX_RPCS)
+        {
+            return Err(QueryServiceError::BudgetExhausted);
+        }
+        self.stages += 1;
+        self.searches += self.shards;
+        self.retrieved = false;
+        Ok(())
+    }
+
+    /// Charge at most one retrieval fan-out per stage, with at most 32 retrieval RPCs total.
+    pub fn begin_retrieval(&mut self, shards: usize) -> Result<(), super::wire::QueryServiceError> {
+        use super::wire::QueryServiceError;
+        if self.stages == 0
+            || self.retrieved
+            || shards > self.shards
+            || self
+                .retrievals
+                .checked_add(shards)
+                .is_none_or(|n| n > crate::query::planner::bounds::MAX_RPCS)
+        {
+            return Err(QueryServiceError::BudgetExhausted);
+        }
+        self.retrieved = true;
+        self.retrievals += shards;
+        Ok(())
+    }
+
+    /// Return attempted stages, search RPCs and retrieval RPCs for synthetic budget witnesses.
+    pub fn usage(&self) -> (usize, usize, usize) {
+        (self.stages, self.searches, self.retrievals)
+    }
+}
+
+struct FirstReplica;
+impl sonic::replication::ReplicaSelector<SearchService> for FirstReplica {
+    fn select<'a>(
+        &self,
+        replicas: &'a [RemoteClient<SearchService>],
+    ) -> Vec<&'a RemoteClient<SearchService>> {
+        // The captured client's order is immutable, so all stages select the same replica.
+        replicas.first().into_iter().collect()
+    }
+}
+
 pub trait SearchClient {
+    fn begin_session(
+        &self,
+    ) -> impl Future<Output = Result<SearchSession, super::wire::QueryServiceError>> + Send;
+
     fn search_initial(
         &self,
         query: &SearchQuery,
-    ) -> impl Future<Output = Vec<InitialSearchResultShard>> + Send;
+        session: &mut SearchSession,
+    ) -> impl Future<Output = Result<Vec<InitialSearchResultShard>, super::wire::QueryServiceError>> + Send;
 
     fn retrieve_webpages(
         &self,
         top_websites: &[ScoredWebpagePointer],
-        query: &str,
-    ) -> impl Future<Output = Vec<PrecisionRankingWebpage>> + Send;
+        query: &SearchQuery,
+        session: &mut SearchSession,
+    ) -> impl Future<Output = Result<Vec<PrecisionRankingWebpage>, super::wire::QueryServiceError>> + Send;
 
     fn search_initial_generic<Q>(
         &self,
@@ -197,6 +285,8 @@ impl ShardIdentifier for ShardId {}
 
 #[derive(Debug)]
 pub struct InitialSearchResultShard {
+    /// Actual query compilation rendering returned by this shard.
+    pub rendered_query: String,
     pub local_result: InitialWebsiteResult,
     pub shard: ShardId,
 }
@@ -317,104 +407,150 @@ impl DistributedSearcher {
     async fn conn(&self) -> Arc<ShardedClient<SearchService, ShardId>> {
         self.client.lock().await.conn().await
     }
-
-    async fn retrieve_webpages_from_shard(
-        &self,
-        shard: ShardId,
-        client: &ShardedClient<SearchService, ShardId>,
-        query: &str,
-        pointers: Vec<(usize, WebpagePointer)>,
-    ) -> Vec<(usize, RetrievedWebpage)> {
-        let (idxs, pointers): (Vec<usize>, Vec<WebpagePointer>) = pointers.into_iter().unzip();
-
-        match client
-            .send(
-                search_server::RetrieveWebsites {
-                    websites: pointers,
-                    query: query.to_string(),
-                },
-                &SpecificShardSelector(shard),
-                &RandomReplicaSelector,
-            )
-            .await
-        {
-            Ok(v) => v
-                .into_iter()
-                .flatten()
-                .flat_map(|(_, v)| v.into_iter().map(|(_, v)| v))
-                .flatten()
-                .flatten()
-                .zip_eq(idxs)
-                .map(|(v, i)| (i, v))
-                .collect(),
-            _ => vec![],
-        }
-    }
 }
 
 impl SearchClient for DistributedSearcher {
-    async fn search_initial(&self, query: &SearchQuery) -> Vec<InitialSearchResultShard> {
+    async fn begin_session(&self) -> Result<SearchSession, super::wire::QueryServiceError> {
+        use super::wire::QueryServiceError;
         let client = self.conn().await;
-        let mut results = Vec::new();
-
-        if let Ok(res) = client
-            .send(
-                search_server::Search {
-                    query: query.clone(),
-                },
-                &AllShardsSelector,
-                &RandomReplicaSelector,
-            )
-            .await
-        {
-            for (shard_id, mut res) in res.into_iter().flatten() {
-                if let Some((_, Some(res))) = res.pop() {
-                    results.push(InitialSearchResultShard {
-                        local_result: res,
-                        shard: shard_id,
-                    });
-                }
-            }
+        let mut session = SearchSession::for_shards(client.shards().len())?;
+        if client.shards().iter().any(|s| s.replicas().is_empty()) {
+            return Err(QueryServiceError::NoShards);
         }
+        session.client = Some(client);
+        Ok(session)
+    }
 
-        results
+    async fn search_initial(
+        &self,
+        query: &SearchQuery,
+        session: &mut SearchSession,
+    ) -> Result<Vec<InitialSearchResultShard>, super::wire::QueryServiceError> {
+        use super::wire::{QueryServiceError, StageSelector};
+        let selector = StageSelector::from_query(query)?;
+        let expected =
+            crate::query::Query::render_query(query).map_err(|_| QueryServiceError::InvalidPlan)?;
+        let client = session.client.clone().ok_or(QueryServiceError::NoShards)?;
+        session.begin_search()?;
+        let responses = tokio::spawn(async move {
+            client
+                .send_with_timeout(
+                    search_server::SearchV2 { selector },
+                    &AllShardsSelector,
+                    &FirstReplica,
+                    std::time::Duration::from_secs(60),
+                )
+                .await
+        })
+        .await
+        .map_err(|_| QueryServiceError::WorkerFailed)?
+        .map_err(|_| QueryServiceError::ProtocolUnavailable)?;
+        if responses.len() != session.shards {
+            return Err(QueryServiceError::ShardFailed);
+        }
+        let mut results = Vec::new();
+        for response in responses {
+            let (shard, mut replicas) =
+                response.map_err(|_| QueryServiceError::ProtocolUnavailable)?;
+            if replicas.len() != 1 {
+                return Err(QueryServiceError::ShardFailed);
+            }
+            let (_, response) = replicas.pop().ok_or(QueryServiceError::ShardFailed)?;
+            let response = response?;
+            if response.rendered_query != expected {
+                return Err(QueryServiceError::SchemaMismatch);
+            }
+            results.push(InitialSearchResultShard {
+                local_result: response.result,
+                shard,
+                rendered_query: response.rendered_query,
+            });
+        }
+        Ok(results)
     }
 
     async fn retrieve_webpages(
         &self,
         top_websites: &[ScoredWebpagePointer],
-        query: &str,
-    ) -> Vec<PrecisionRankingWebpage> {
-        let mut rankings = FnvHashMap::default();
+        query: &SearchQuery,
+        session: &mut SearchSession,
+    ) -> Result<Vec<PrecisionRankingWebpage>, super::wire::QueryServiceError> {
+        use super::wire::{BoundedPointers, QueryServiceError, StageSelector};
+        if top_websites.len() > crate::query::planner::bounds::MAX_CANDIDATES {
+            return Err(QueryServiceError::RetrievalFailed);
+        }
+        let selector = StageSelector::from_query(query)?;
         let mut pointers: HashMap<_, Vec<_>> = HashMap::new();
-
         for (i, pointer) in top_websites.iter().enumerate() {
             pointers
                 .entry(pointer.shard)
                 .or_default()
                 .push((i, pointer.website.pointer().clone()));
-
-            rankings.insert(i, pointer.website.clone());
         }
-
-        let client = self.conn().await;
+        let client = session.client.clone().ok_or(QueryServiceError::NoShards)?;
+        if pointers
+            .keys()
+            .any(|id| !client.shards().iter().any(|s| s.id() == id))
+        {
+            return Err(QueryServiceError::RetrievalFailed);
+        }
+        session.begin_retrieval(pointers.len())?;
         let mut futures = Vec::new();
         for (shard, pointers) in pointers {
-            futures.push(self.retrieve_webpages_from_shard(shard, &client, query, pointers));
+            let client = client.clone();
+            let selector = selector.clone();
+            futures.push(async move {
+                let (indices, pointers): (Vec<_>, Vec<_>) = pointers.into_iter().unzip();
+                let result = tokio::spawn(async move {
+                    client
+                        .send_with_timeout(
+                            search_server::RetrieveWebsitesV2 {
+                                selector,
+                                websites: BoundedPointers(pointers),
+                            },
+                            &SpecificShardSelector(shard),
+                            &FirstReplica,
+                            std::time::Duration::from_secs(60),
+                        )
+                        .await
+                })
+                .await
+                .map_err(|_| QueryServiceError::WorkerFailed)?
+                .map_err(|_| QueryServiceError::RetrievalFailed)?;
+                if result.len() != 1 {
+                    return Err(QueryServiceError::RetrievalFailed);
+                }
+                let (_, mut replicas) = result
+                    .into_iter()
+                    .next()
+                    .ok_or(QueryServiceError::RetrievalFailed)?
+                    .map_err(|_| QueryServiceError::RetrievalFailed)?;
+                if replicas.len() != 1 {
+                    return Err(QueryServiceError::RetrievalFailed);
+                }
+                let pages = replicas
+                    .pop()
+                    .ok_or(QueryServiceError::RetrievalFailed)?
+                    .1?
+                    .webpages;
+                if pages.len() != indices.len() {
+                    return Err(QueryServiceError::RetrievalFailed);
+                }
+                Ok(indices.into_iter().zip(pages).collect::<Vec<_>>())
+            });
         }
-
-        let mut retrieved_webpages = Vec::new();
-        for pages in join_all(futures).await {
-            for (i, page) in pages {
-                retrieved_webpages
-                    .push((i, PrecisionRankingWebpage::new(page, rankings[&i].clone())));
-            }
+        let mut pages = Vec::new();
+        for result in join_all(futures).await {
+            pages.extend(result?);
         }
-
-        debug_assert_eq!(retrieved_webpages.len(), top_websites.len());
-
-        retrieved_webpages.sort_by(|(a, _), (b, _)| a.cmp(b));
-        retrieved_webpages.into_iter().map(|(_, v)| v).collect()
+        pages.sort_by_key(|(i, _)| *i);
+        if pages.len() != top_websites.len() {
+            return Err(QueryServiceError::RetrievalFailed);
+        }
+        Ok(pages
+            .into_iter()
+            .map(|(i, page)| PrecisionRankingWebpage::new(page, top_websites[i].website.clone()))
+            .collect())
     }
 
     async fn search_initial_generic<Q>(
@@ -608,36 +744,53 @@ impl From<LocalSearcher> for LocalSearchClient {
 }
 
 impl SearchClient for LocalSearchClient {
-    async fn search_initial(&self, query: &SearchQuery) -> Vec<InitialSearchResultShard> {
-        let res = self.0.search_initial(query, true).await.unwrap();
+    async fn begin_session(&self) -> Result<SearchSession, super::wire::QueryServiceError> {
+        SearchSession::for_shards(1)
+    }
 
-        vec![InitialSearchResultShard {
-            local_result: res,
+    async fn search_initial(
+        &self,
+        query: &SearchQuery,
+        session: &mut SearchSession,
+    ) -> Result<Vec<InitialSearchResultShard>, super::wire::QueryServiceError> {
+        session.begin_search()?;
+        let response = self.0.search_initial_v2(query).await?;
+        Ok(vec![InitialSearchResultShard {
+            local_result: response.result,
             shard: ShardId::Backbone(0),
-        }]
+            rendered_query: response.rendered_query,
+        }])
     }
 
     async fn retrieve_webpages(
         &self,
         top_websites: &[ScoredWebpagePointer],
-        query: &str,
-    ) -> Vec<PrecisionRankingWebpage> {
+        query: &SearchQuery,
+        session: &mut SearchSession,
+    ) -> Result<Vec<PrecisionRankingWebpage>, super::wire::QueryServiceError> {
+        use super::wire::QueryServiceError;
+        session.begin_retrieval(usize::from(!top_websites.is_empty()))?;
         let pointers = top_websites
             .iter()
             .map(|p| p.website.pointer().clone())
             .collect::<Vec<_>>();
-
-        let res = self
+        let pages = self
             .0
-            .retrieve_websites(&pointers, query)
+            .retrieve_websites_selected(&pointers, query)
             .await
-            .unwrap()
+            .map_err(|e| {
+                e.downcast_ref::<QueryServiceError>()
+                    .copied()
+                    .unwrap_or(QueryServiceError::RetrievalFailed)
+            })?;
+        if pages.len() != top_websites.len() {
+            return Err(QueryServiceError::RetrievalFailed);
+        }
+        Ok(pages
             .into_iter()
-            .zip(top_websites.iter().map(|p| p.website.clone()))
-            .map(|(ret, ran)| PrecisionRankingWebpage::new(ret, ran))
-            .collect::<Vec<_>>();
-
-        res
+            .zip(top_websites)
+            .map(|(page, ranking)| PrecisionRankingWebpage::new(page, ranking.website.clone()))
+            .collect())
     }
 
     async fn search_initial_generic<Q>(

@@ -146,15 +146,6 @@ impl Query {
             Query::Term(term) => Query::Term(term),
         }
     }
-
-    pub fn as_tantivy(
-        &self,
-        lang: Option<&whatlang::Lang>,
-        schema: &tantivy::schema::Schema,
-    ) -> Result<Box<dyn tantivy::query::Query>, super::planner::bounds::InputError> {
-        render::compile(self, lang, schema, &mut render::Budget::default())
-            .map(|compiled| compiled.query)
-    }
 }
 
 fn sliding_window(window_size: usize, i: usize) -> impl Iterator<Item = (usize, usize)> {

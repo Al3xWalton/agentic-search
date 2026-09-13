@@ -206,3 +206,32 @@ impl InnerLocalSearcher {
         ]))
     }
 }
+
+impl InnerLocalSearcher {
+    /// Retrieve snippets with the complete selected query and its original request envelope.
+    pub fn retrieve_websites_selected(
+        &self,
+        websites: &[inverted_index::WebpagePointer],
+        query: &SearchQuery,
+        guard: &OwnedRwLockReadGuard<Index>,
+    ) -> Result<Vec<inverted_index::RetrievedWebpage>> {
+        let ctx = guard.inverted_index().local_search_ctx();
+        let query = Query::parse(&ctx, query, guard.inverted_index())?;
+        guard.inverted_index().retrieve_websites(websites, &query)
+    }
+
+    /// Execute a V2 query and report the same schema's compilation rendering.
+    pub fn search_initial_v2(
+        &self,
+        query: &SearchQuery,
+        guard: &OwnedRwLockReadGuard<Index>,
+    ) -> Result<crate::searcher::wire::SearchV2Result> {
+        let ctx = guard.inverted_index().local_search_ctx();
+        let parsed = Query::parse(&ctx, query, guard.inverted_index())?;
+        let result = self.search_initial(query, guard, true)?;
+        Ok(crate::searcher::wire::SearchV2Result {
+            result,
+            rendered_query: parsed.rendered_query().to_owned(),
+        })
+    }
+}

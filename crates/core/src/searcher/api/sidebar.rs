@@ -114,10 +114,11 @@ impl SidebarManager {
             ..Default::default()
         };
 
+        let mut session = self.distributed_searcher.begin_session().await?;
         let mut results: Vec<_> = self
             .distributed_searcher
-            .search_initial(&query)
-            .await
+            .search_initial(&query, &mut session)
+            .await?
             .into_iter()
             .filter_map(|result| {
                 result
@@ -140,8 +141,8 @@ impl SidebarManager {
                 let scored_websites = vec![distributed::ScoredWebpagePointer { website, shard }];
                 let mut retrieved = self
                     .distributed_searcher
-                    .retrieve_webpages(&scored_websites, &query.query)
-                    .await;
+                    .retrieve_webpages(&scored_websites, &query, &mut session)
+                    .await?;
 
                 if let Some(res) = retrieved.pop() {
                     let res = res.into_retrieved_webpage();

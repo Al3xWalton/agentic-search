@@ -95,7 +95,7 @@ impl LocalSearcher {
 
         tokio::task::spawn_blocking(move || inner.search_initial(&query, &guard, de_rank_similar))
             .await
-            .unwrap()
+            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
     }
 
     pub async fn retrieve_websites(
@@ -110,7 +110,7 @@ impl LocalSearcher {
 
         tokio::task::spawn_blocking(move || inner.retrieve_websites(&websites, &query, &guard))
             .await
-            .unwrap()
+            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
     }
 
     pub async fn search(&self, query: &SearchQuery) -> Result<WebsitesResult> {
@@ -206,7 +206,7 @@ impl LocalSearcher {
         let guard = inner.guard().await;
         tokio::task::spawn_blocking(move || inner.search_initial_generic(&query, &guard))
             .await
-            .unwrap()
+            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
     }
 
     pub async fn retrieve_generic<Q: GenericQuery + 'static>(
@@ -218,7 +218,7 @@ impl LocalSearcher {
         let guard = inner.guard().await;
         tokio::task::spawn_blocking(move || inner.retrieve_generic(&query, fruit, &guard))
             .await
-            .unwrap()
+            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
     }
 
     pub async fn search_generic<Q: GenericQuery + 'static>(&self, query: Q) -> Result<Q::Output> {
@@ -226,7 +226,7 @@ impl LocalSearcher {
         let guard = inner.guard().await;
         tokio::task::spawn_blocking(move || inner.search_generic(query, &guard))
             .await
-            .unwrap()
+            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
     }
 }
 
@@ -301,5 +301,51 @@ mod tests {
                 )
             }
         }
+    }
+}
+
+impl LocalSearcher {
+    /// Run selected initial matching; worker failures and invalid plans remain typed failures.
+    pub async fn search_initial_v2(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<super::wire::SearchV2Result, super::wire::QueryServiceError> {
+        use super::wire::QueryServiceError;
+        let inner = self.inner.clone();
+        let guard = inner.guard().await;
+        let query = query.clone();
+        tokio::task::spawn_blocking(move || inner.search_initial_v2(&query, &guard))
+            .await
+            .map_err(|_| QueryServiceError::WorkerFailed)?
+            .map_err(|e| {
+                if e.downcast_ref::<crate::query::planner::bounds::InputError>()
+                    .is_some()
+                {
+                    QueryServiceError::InvalidPlan
+                } else {
+                    QueryServiceError::ShardFailed
+                }
+            })
+    }
+
+    /// Retrieve at most 300 selected pointers without reconstructing a default string query.
+    pub async fn retrieve_websites_selected(
+        &self,
+        websites: &[inverted_index::WebpagePointer],
+        query: &SearchQuery,
+    ) -> Result<Vec<inverted_index::RetrievedWebpage>> {
+        use super::wire::QueryServiceError;
+        if websites.len() > crate::query::planner::bounds::MAX_CANDIDATES {
+            return Err(QueryServiceError::InvalidPlan.into());
+        }
+        let inner = self.inner.clone();
+        let guard = inner.guard().await;
+        let query = query.clone();
+        let websites = websites.to_vec();
+        tokio::task::spawn_blocking(move || {
+            inner.retrieve_websites_selected(&websites, &query, &guard)
+        })
+        .await
+        .map_err(|_| QueryServiceError::WorkerFailed)?
     }
 }
