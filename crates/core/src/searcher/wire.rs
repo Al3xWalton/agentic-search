@@ -180,6 +180,8 @@ impl StageSelector {
         };
         bounds::validate_numbers(self.query.page, self.query.num_results, false)
             .map_err(|_| QueryServiceError::InvalidPlan)?;
+        bounds::validate_preferences(self.query.optic.as_ref(), self.query.host_rankings.as_ref())
+            .map_err(|_| QueryServiceError::InvalidPlan)?;
         let plan = AgentPlan::new(&self.query.query).map_err(|_| QueryServiceError::InvalidPlan)?;
         let selected = plan
             .stages
@@ -271,4 +273,21 @@ impl From<String> for LegacySearchQuery {
             ..Default::default()
         })
     }
+}
+
+/// Require each shard's actual lexical compilation to agree with the coordinator schema.
+/// Mismatch is a typed service error; no arbitrary shard rendering is published.
+pub fn validate_rendered(expected: &str, actual: &str) -> Result<(), QueryServiceError> {
+    if expected != actual {
+        return Err(QueryServiceError::SchemaMismatch);
+    }
+    Ok(())
+}
+
+/// Require one retrieved page for each selected pointer, before ordering or attribution.
+pub fn validate_retrieved(expected: usize, actual: usize) -> Result<(), QueryServiceError> {
+    if expected != actual {
+        return Err(QueryServiceError::RetrievalFailed);
+    }
+    Ok(())
 }

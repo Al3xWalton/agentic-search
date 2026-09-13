@@ -301,6 +301,67 @@ fn preferred(atoms: &mut [Atom]) -> Vec<Preference> {
     distinct
 }
 
+fn content_atoms(original: Vec<Atom>) -> (Vec<Atom>, Vec<Rewrite>) {
+    let mut prefix = 0;
+    for scaffold in stopwords::SCAFFOLDS {
+        let words: Vec<_> = scaffold.split(' ').collect();
+        if words.len() > prefix
+            && words.len() <= original.len()
+            && words.iter().zip(&original).all(|(word, atom)| {
+                literal(&atom.source.term)
+                    .is_some_and(|s| s.is_ascii() && s.eq_ignore_ascii_case(word))
+            })
+        {
+            prefix = words.len();
+        }
+    }
+    let mut rewrites = Vec::new();
+    let mut retained: Vec<Atom> = Vec::new();
+    for mut atom in original {
+        if atom.position < prefix {
+            rewrites.push(Rewrite {
+                source: atom.source.source.clone(),
+                reason: RewriteReason::Scaffold,
+            });
+            continue;
+        }
+        if let Some(text) = literal(&atom.source.term) {
+            let text = punctuation(text);
+            if text != literal(&atom.source.term).unwrap_or_default() {
+                rewrites.push(Rewrite {
+                    source: atom.source.source.clone(),
+                    reason: RewriteReason::Punctuation,
+                });
+            }
+            if text.is_empty() {
+                continue;
+            }
+            if stopwords::is_stopword(&text) {
+                rewrites.push(Rewrite {
+                    source: atom.source.source.clone(),
+                    reason: RewriteReason::Stopword,
+                });
+                continue;
+            }
+            atom.source.term = Term::SimpleOrPhrase(SimpleOrPhrase::Simple(text.clone().into()));
+            let key = bounds::comparison_key(&text);
+            if let Some(first) = retained.iter_mut().find(|a| {
+                !a.constraint
+                    && literal(&a.source.term).is_some_and(|s| bounds::comparison_key(s) == key)
+            }) {
+                first.occurrences += 1;
+                rewrites.push(Rewrite {
+                    source: atom.source.source.clone(),
+                    reason: RewriteReason::Duplicate,
+                });
+                continue;
+            }
+        }
+        retained.push(atom);
+    }
+    (retained, rewrites)
+}
+
 impl AgentPlan {
     /// Plan admissible query bytes without index, labels, remote statistics or time access.
     /// Returns the bounds scanner's typed errors and never expands beyond four stages.
@@ -327,64 +388,7 @@ impl AgentPlan {
             minimum: None,
             rewrites: vec![],
         };
-        let mut prefix = 0;
-        for scaffold in stopwords::SCAFFOLDS {
-            let words: Vec<_> = scaffold.split(' ').collect();
-            if words.len() > prefix
-                && words.len() <= original.len()
-                && words.iter().zip(&original).all(|(word, atom)| {
-                    literal(&atom.source.term)
-                        .is_some_and(|s| s.is_ascii() && s.eq_ignore_ascii_case(word))
-                })
-            {
-                prefix = words.len();
-            }
-        }
-        let mut rewrites = Vec::new();
-        let mut retained: Vec<Atom> = Vec::new();
-        for mut atom in original {
-            if atom.position < prefix {
-                rewrites.push(Rewrite {
-                    source: atom.source.source.clone(),
-                    reason: RewriteReason::Scaffold,
-                });
-                continue;
-            }
-            if let Some(text) = literal(&atom.source.term) {
-                let text = punctuation(text);
-                if text != literal(&atom.source.term).unwrap_or_default() {
-                    rewrites.push(Rewrite {
-                        source: atom.source.source.clone(),
-                        reason: RewriteReason::Punctuation,
-                    });
-                }
-                if text.is_empty() {
-                    continue;
-                }
-                if stopwords::is_stopword(&text) {
-                    rewrites.push(Rewrite {
-                        source: atom.source.source.clone(),
-                        reason: RewriteReason::Stopword,
-                    });
-                    continue;
-                }
-                atom.source.term =
-                    Term::SimpleOrPhrase(SimpleOrPhrase::Simple(text.clone().into()));
-                let key = bounds::comparison_key(&text);
-                if let Some(first) = retained.iter_mut().find(|a| {
-                    !a.constraint
-                        && literal(&a.source.term).is_some_and(|s| bounds::comparison_key(s) == key)
-                }) {
-                    first.occurrences += 1;
-                    rewrites.push(Rewrite {
-                        source: atom.source.source.clone(),
-                        reason: RewriteReason::Duplicate,
-                    });
-                    continue;
-                }
-            }
-            retained.push(atom);
-        }
+        let (mut retained, rewrites) = content_atoms(original);
         let mut plan = Self {
             stages: vec![strict],
         };

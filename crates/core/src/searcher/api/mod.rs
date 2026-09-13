@@ -15,6 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 mod sidebar;
+pub mod staged;
 mod widget;
 
 use std::future::Future;
@@ -123,8 +124,9 @@ pub fn add_ranking_signals(
     }
 }
 
-#[derive(Default)]
 pub struct Config {
+    /// Enable page-zero staged query planning; the server defaults to true.
+    pub agent_query_planning: bool,
     pub thresholds: ApiThresholds,
     pub widgets: WidgetsConfig,
     pub collector: CollectorConfig,
@@ -134,6 +136,7 @@ pub struct Config {
 impl From<ApiConfig> for Config {
     fn from(conf: ApiConfig) -> Self {
         Self {
+            agent_query_planning: conf.agent_query_planning,
             thresholds: conf.thresholds,
             widgets: conf.widgets,
             collector: conf.collector,
@@ -223,6 +226,7 @@ pub struct ApiSearcher<S, G> {
     dual_encoder: Option<Arc<DualEncoder>>,
     bangs: Bangs,
     collector_config: CollectorConfig,
+    agent_query_planning: bool,
     widget_manager: WidgetManager,
     spell_checker: Option<SpellChecker>,
     webgraph: Option<G>,
@@ -259,6 +263,7 @@ where
             dual_encoder: None,
             bangs,
             collector_config: config.collector,
+            agent_query_planning: config.agent_query_planning,
             widget_manager,
             spell_checker: config
                 .spell_check
@@ -307,12 +312,21 @@ where
             )
             .collect();
 
+            if q.is_empty() {
+                return Err(staged::NoBangTarget.into());
+            }
             let mut query = query.clone();
             query.query = urlencoding::encode(&q).into_owned();
+            query.stage_plan = Some(
+                query::planner::AgentPlan::new(&query.query)?
+                    .stages
+                    .remove(0),
+            );
 
             let res = self.search_websites(&query, session).await?;
 
-            return Ok(res.webpages.first().map(|webpage| BangHit {
+            let webpage = res.webpages.first().ok_or(staged::NoBangTarget)?;
+            return Ok(Some(BangHit {
                 bang: Bang {
                     category: None,
                     sub_category: None,
@@ -322,7 +336,9 @@ where
                     tag: String::new(),
                     url: webpage.url.clone(),
                 },
-                redirect_to: Url::parse(&webpage.url).unwrap().into(),
+                redirect_to: Url::parse(&webpage.url)
+                    .map_err(|_| super::wire::QueryServiceError::RetrievalFailed)?
+                    .into(),
             }));
         }
 
@@ -401,10 +417,12 @@ where
         top_websites: &[ScoredWebpagePointer],
         session: &mut distributed::SearchSession,
     ) -> Result<Vec<PrecisionRankingWebpage>> {
-        Ok(self
+        let pages = self
             .distributed_searcher
             .retrieve_webpages(top_websites, query, session)
-            .await?)
+            .await?;
+        super::wire::validate_retrieved(top_websites.len(), pages.len())?;
+        Ok(pages)
     }
 
     async fn inbound_vecs(&self, ids: &[webgraph::NodeID]) -> Vec<bitvec_similarity::BitVec> {
@@ -554,6 +572,7 @@ where
         let search_duration_ms = start.elapsed().as_millis();
 
         Ok(WebsitesResult {
+            query_plan: None,
             num_hits: num_docs,
             webpages: retrieved_webpages,
             search_duration_ms,
@@ -651,6 +670,7 @@ where
         let search_duration_ms = start.elapsed().as_millis();
 
         Ok(WebsitesResult {
+            query_plan: None,
             num_hits: num_docs,
             webpages: retrieved_webpages,
             search_duration_ms,
@@ -659,13 +679,58 @@ where
     }
 
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
-        let mut session = self.distributed_searcher.begin_session().await?;
-        if let Some(bang) = self.check_bangs(query, &mut session).await? {
+        use super::provenance::PlanMode;
+        use query::planner::{bounds, AgentPlan};
+        let start = Instant::now();
+        bounds::validate_numbers(query.page, query.num_results, true)?;
+        let atoms = bounds::scan_query(&query.query)?;
+        let terms: Vec<_> = atoms.into_iter().map(|atom| atom.term).collect();
+        let bare = terms.iter().any(|term| matches!(term, query::parser::Term::PossibleBang { bang, .. } if bang.is_empty()));
+        if !bare {
+            if let Some(bang) = self.bangs.get(&terms) {
+                return Ok(SearchResult::Bang(Box::new(bang)));
+            }
+        } else {
+            let mut session = self.distributed_searcher.begin_session().await?;
+            let bang = self
+                .check_bangs(query, &mut session)
+                .await?
+                .ok_or(staged::NoBangTarget)?;
             return Ok(SearchResult::Bang(Box::new(bang)));
         }
-
+        let mut plan = AgentPlan::new(&query.query)?;
+        let mode = if query.page > 0 {
+            PlanMode::PaginationStrict
+        } else if self.agent_query_planning {
+            PlanMode::Staged
+        } else {
+            PlanMode::StrictOnly
+        };
+        if mode != PlanMode::Staged {
+            plan.stages.truncate(1);
+        }
+        // Client-originated compilation failures are rejected before acquiring or contacting peers.
+        let mut first = query.clone();
+        first.stage_plan = plan.stages.first().cloned();
+        query::Query::render_query(&first)?;
+        let mut session = self.distributed_searcher.begin_session().await?;
+        let eligible = plan.stages.len();
+        let mut completed = 0;
+        let mut accumulated = staged::StageAccumulator::new(query.num_results, mode);
+        for stage in plan.stages {
+            if !accumulated.needs_more() {
+                break;
+            }
+            let stage_start = Instant::now();
+            let mut selected = query.clone();
+            selected.stage_plan = Some(stage.clone());
+            let rendered = query::Query::render_query(&selected)?;
+            let result = self.search_websites(&selected, &mut session).await?;
+            accumulated.complete(&stage, rendered, result, stage_start.elapsed().as_millis());
+            completed += 1;
+        }
         Ok(SearchResult::Websites(
-            self.search_websites(query, &mut session).await?,
+            accumulated.finish(start.elapsed().as_millis(), completed < eligible),
         ))
     }
 
@@ -693,6 +758,18 @@ where
             })
             .await
             .ok();
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            agent_query_planning: true,
+            thresholds: Default::default(),
+            widgets: Default::default(),
+            collector: Default::default(),
+            spell_check: None,
         }
     }
 }

@@ -141,6 +141,7 @@ impl sonic::replication::ReplicaSelector<SearchService> for FirstReplica {
         replicas: &'a [RemoteClient<SearchService>],
     ) -> Vec<&'a RemoteClient<SearchService>> {
         // The captured client's order is immutable, so all stages select the same replica.
+        tracing::debug!(replica = ?replicas.first().map(RemoteClient::addr), "selected search replica");
         replicas.first().into_iter().collect()
     }
 }
@@ -417,6 +418,7 @@ impl SearchClient for DistributedSearcher {
         if client.shards().iter().any(|s| s.replicas().is_empty()) {
             return Err(QueryServiceError::NoShards);
         }
+        tracing::debug!(shards = ?client.shards().iter().map(|shard| shard.id()).collect::<Vec<_>>(), "captured search membership");
         session.client = Some(client);
         Ok(session)
     }
@@ -443,7 +445,7 @@ impl SearchClient for DistributedSearcher {
                 .await
         })
         .await
-        .map_err(|_| QueryServiceError::WorkerFailed)?
+        .map_err(|_| QueryServiceError::ProtocolUnavailable)?
         .map_err(|_| QueryServiceError::ProtocolUnavailable)?;
         if responses.len() != session.shards {
             return Err(QueryServiceError::ShardFailed);
@@ -457,9 +459,7 @@ impl SearchClient for DistributedSearcher {
             }
             let (_, response) = replicas.pop().ok_or(QueryServiceError::ShardFailed)?;
             let response = response?;
-            if response.rendered_query != expected {
-                return Err(QueryServiceError::SchemaMismatch);
-            }
+            super::wire::validate_rendered(&expected, &response.rendered_query)?;
             results.push(InitialSearchResultShard {
                 local_result: response.result,
                 shard,
@@ -533,9 +533,7 @@ impl SearchClient for DistributedSearcher {
                     .ok_or(QueryServiceError::RetrievalFailed)?
                     .1?
                     .webpages;
-                if pages.len() != indices.len() {
-                    return Err(QueryServiceError::RetrievalFailed);
-                }
+                super::wire::validate_retrieved(indices.len(), pages.len())?;
                 Ok(indices.into_iter().zip(pages).collect::<Vec<_>>())
             });
         }
@@ -544,9 +542,7 @@ impl SearchClient for DistributedSearcher {
             pages.extend(result?);
         }
         pages.sort_by_key(|(i, _)| *i);
-        if pages.len() != top_websites.len() {
-            return Err(QueryServiceError::RetrievalFailed);
-        }
+        super::wire::validate_retrieved(top_websites.len(), pages.len())?;
         Ok(pages
             .into_iter()
             .map(|(i, page)| PrecisionRankingWebpage::new(page, top_websites[i].website.clone()))
@@ -670,7 +666,7 @@ impl SearchClient for DistributedSearcher {
 
         queries
             .iter()
-            .zip_eq(fruits.into_iter())
+            .zip_eq(fruits)
             .map(|(query, shard_fruits)| query.coordinator_collector().merge_fruits(shard_fruits))
             .collect::<Result<Vec<_>, _>>()
     }
@@ -755,6 +751,9 @@ impl SearchClient for LocalSearchClient {
     ) -> Result<Vec<InitialSearchResultShard>, super::wire::QueryServiceError> {
         session.begin_search()?;
         let response = self.0.search_initial_v2(query).await?;
+        let expected = crate::query::Query::render_query(query)
+            .map_err(|_| super::wire::QueryServiceError::InvalidPlan)?;
+        super::wire::validate_rendered(&expected, &response.rendered_query)?;
         Ok(vec![InitialSearchResultShard {
             local_result: response.result,
             shard: ShardId::Backbone(0),
@@ -783,9 +782,7 @@ impl SearchClient for LocalSearchClient {
                     .copied()
                     .unwrap_or(QueryServiceError::RetrievalFailed)
             })?;
-        if pages.len() != top_websites.len() {
-            return Err(QueryServiceError::RetrievalFailed);
-        }
+        super::wire::validate_retrieved(top_websites.len(), pages.len())?;
         Ok(pages
             .into_iter()
             .zip(top_websites)
@@ -864,5 +861,159 @@ impl SearchClient for LocalSearchClient {
         }
 
         Ok(res)
+    }
+}
+
+#[cfg(test)]
+mod query_transport_contract {
+    use super::*;
+    use crate::{
+        distributed::sonic::service::Service as SonicService,
+        query::planner::AgentPlan,
+        searcher::wire::{QueryServiceError, SearchV2Result},
+        OneOrMany,
+    };
+    use std::{net::SocketAddr, time::Duration};
+    type Request = OneOrMany<<SearchService as SonicService>::Request>;
+    type Response = OneOrMany<<SearchService as SonicService>::Response>;
+
+    async fn fixture(
+        old: bool,
+        mismatch: bool,
+        failure: bool,
+    ) -> (
+        DistributedSearcher,
+        SearchSession,
+        tokio::task::JoinHandle<usize>,
+    ) {
+        let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = reserve.local_addr().unwrap();
+        drop(reserve);
+        let server = sonic::Server::<Request, Response>::bind(address)
+            .await
+            .unwrap();
+        let task = tokio::spawn(async move {
+            let mut count = 0;
+            while let Ok(Ok(mut connection)) = tokio::time::timeout(
+                if count == 0 {
+                    Duration::from_secs(10)
+                } else {
+                    Duration::from_millis(200)
+                },
+                server.accept(),
+            )
+            .await
+            {
+                while let Ok(Ok(request)) =
+                    tokio::time::timeout(Duration::from_millis(200), connection.request()).await
+                {
+                    let body = request.body().clone().one().unwrap();
+                    count += 1;
+                    let bytes = if old {
+                        vec![1, 0]
+                    } else {
+                        let encoded =
+                            bincode::encode_to_vec(body, bincode::config::standard()).unwrap();
+                        assert_eq!(encoded[0], 12);
+                        let (message, _): (crate::entrypoint::search_server::SearchV2, _) =
+                            bincode::decode_from_slice(&encoded[1..], bincode::config::standard())
+                                .unwrap();
+                        let query = message.selector.resolve().unwrap();
+                        let rendered = if mismatch {
+                            "different_schema".into()
+                        } else {
+                            crate::query::Query::render_query(&query).unwrap()
+                        };
+                        let payload: std::result::Result<SearchV2Result, QueryServiceError> =
+                            if failure {
+                                Err(QueryServiceError::ShardFailed)
+                            } else {
+                                Ok(SearchV2Result {
+                                    result: InitialWebsiteResult {
+                                        num_websites: crate::collector::approx_count::Count::Exact(
+                                            0,
+                                        ),
+                                        websites: vec![],
+                                    },
+                                    rendered_query: rendered,
+                                })
+                            };
+                        let mut bytes = vec![12];
+                        bytes.extend(
+                            bincode::encode_to_vec(payload, bincode::config::standard()).unwrap(),
+                        );
+                        bytes
+                    };
+                    let (response, _) = bincode::decode_from_slice::<
+                        <SearchService as SonicService>::Response,
+                        _,
+                    >(&bytes, bincode::config::standard())
+                    .unwrap();
+                    request.respond(OneOrMany::One(response)).await.unwrap();
+                }
+            }
+            count
+        });
+        let cluster = Arc::new(
+            Cluster::join_as_spectator("127.0.0.1:0".parse::<SocketAddr>().unwrap(), vec![])
+                .await
+                .unwrap(),
+        );
+        let searcher = DistributedSearcher::new(cluster).await;
+        let mut session = SearchSession::for_shards(1).unwrap();
+        session.client = Some(Arc::new(ShardedClient::new(vec![Shard::new(
+            ShardId::Backbone(0),
+            ReplicatedClient::new(vec![RemoteClient::new(address)]),
+        )])));
+        (searcher, session, task)
+    }
+    fn query() -> SearchQuery {
+        let text = "please find compiler allocation";
+        SearchQuery {
+            query: text.into(),
+            stage_plan: Some(AgentPlan::new(text).unwrap().stages.remove(0)),
+            ..Default::default()
+        }
+    }
+    #[tokio::test]
+    async fn request_membership_snapshot() {
+        let (searcher, mut session, task) = fixture(false, false, false).await;
+        let mut q = query();
+        for stage in AgentPlan::new(&q.query).unwrap().stages.into_iter().take(2) {
+            q.stage_plan = Some(stage);
+            let result = searcher.search_initial(&q, &mut session).await.unwrap();
+            assert_eq!(result.len(), 1);
+            assert_eq!(result[0].shard, ShardId::Backbone(0));
+        }
+        assert_eq!(task.await.unwrap(), 2);
+        assert_eq!(session.usage(), (2, 2, 0));
+    }
+    #[tokio::test]
+    async fn schema_render_mismatch_fails() {
+        let (searcher, mut session, task) = fixture(false, true, false).await;
+        assert!(matches!(
+            searcher.search_initial(&query(), &mut session).await,
+            Err(QueryServiceError::SchemaMismatch)
+        ));
+        assert_eq!(task.await.unwrap(), 1);
+    }
+    #[tokio::test]
+    async fn old_shard_is_protocol_error() {
+        let (searcher, mut session, task) = fixture(true, false, false).await;
+        assert!(matches!(
+            searcher.search_initial(&query(), &mut session).await,
+            Err(QueryServiceError::ProtocolUnavailable)
+        ));
+        assert_eq!(task.await.unwrap(), 1);
+    }
+    #[tokio::test]
+    async fn no_search_retries() {
+        let (searcher, mut session, task) = fixture(false, false, true).await;
+        assert!(matches!(
+            searcher.search_initial(&query(), &mut session).await,
+            Err(QueryServiceError::ShardFailed)
+        ));
+        assert_eq!(task.await.unwrap(), 1);
+        assert_eq!(session.usage(), (1, 1, 0));
     }
 }
