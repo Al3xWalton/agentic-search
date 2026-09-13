@@ -1,5 +1,10 @@
 //! Exercises the actual std-only build entrypoint and resolver against isolated source roots.
 //! Fixtures use local Git history and disposable commits, never recursive Cargo, data or network.
+//! Every fixture Git command disables automatic maintenance with maintenance.auto=false and
+//! automatic-GC heuristics with gc.auto=0, so waiting for it leaves no detached writer.
+//! Ordinary users report cleanup through finish: at most 20 removals and 19 waits of 25 ms
+//! (475 ms deliberate waiting, not a filesystem or scheduler deadline). Drop adds one silent,
+//! immediate best-effort removal, including during unwinding, without changing finish's result.
 
 #![deny(missing_docs)]
 
@@ -15,6 +20,9 @@ use std::{
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const ENV_SHA: &str = "ABCDEF0123456789ABCDEF0123456789ABCDEF01";
+
+const CLEANUP_ATTEMPTS: usize = 20;
+const CLEANUP_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(25);
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -48,6 +56,7 @@ impl Fixture {
         // Git 2.55 can flip shared core.sparseCheckout across worktrees; a full local
         // clone avoids that shared state and costs under a second for this 50 MB fixture.
         let out = Command::new("git")
+            .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
             .args(["clone", "--no-hardlinks", "--local"])
             .arg(source)
             .arg(&root)
@@ -62,15 +71,44 @@ impl Fixture {
         prepare_checked_inputs(&root);
         root
     }
+    fn finish(self) -> std::io::Result<()> {
+        self.finish_with(|root| fs::remove_dir_all(root))
+    }
+
+    fn finish_with(
+        self,
+        mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        let mut attempt = 1;
+        loop {
+            match remove(&self.0) {
+                Ok(()) => return Ok(()),
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound && !self.0.try_exists()? =>
+                {
+                    return Ok(());
+                }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::DirectoryNotEmpty
+                        && attempt < CLEANUP_ATTEMPTS =>
+                {
+                    std::thread::sleep(CLEANUP_RETRY_DELAY);
+                    attempt += 1;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        fs::remove_dir_all(&self.0).unwrap();
+        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
 fn git(root: &Path, args: &[&str]) -> Output {
     let output = Command::new("git")
+        .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
         .current_dir(root)
         .args(args)
         .output()
@@ -136,6 +174,7 @@ fn fixture_command(root: &Path, args: &[&str]) -> Option<Output> {
     ] {
         let committed = format!("HEAD:{path}");
         let present = Command::new("git")
+            .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
             .current_dir(root)
             .args(["cat-file", "-e", &committed])
             .output()
@@ -151,6 +190,7 @@ fn fixture_command(root: &Path, args: &[&str]) -> Option<Output> {
         }
     }
     Command::new("git")
+        .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
         .current_dir(root)
         .args(args)
         .output()
@@ -271,6 +311,7 @@ fn git_revision_wins() {
     add_worktree(&root, &worktree);
     prepare_checked_inputs(&worktree);
     assert_eq!(resolve_committed(&worktree, Some(ENV_SHA)), selected);
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -306,6 +347,7 @@ fn symlinked_checked_input_is_unknown() {
     .stdout
     .is_empty());
     let mut hash = Command::new("git")
+        .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
         .current_dir(&root)
         .args(["hash-object", "--stdin"])
         .stdin(Stdio::piped())
@@ -338,6 +380,7 @@ fn symlinked_checked_input_is_unknown() {
     });
     assert_eq!(selected.revision, "unknown");
     assert_eq!(selected.source, "unknown");
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -351,6 +394,7 @@ fn symlinked_git_is_unknown() {
     let selected = resolve_committed(&root, Some(ENV_SHA));
     assert_eq!(selected.revision, "unknown");
     assert_eq!(selected.source, "unknown");
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -399,6 +443,7 @@ fn foreign_history_is_unknown() {
     let selected = revision::resolve(&root, Some(ENV_SHA));
     assert_eq!(selected.revision, "unknown");
     assert_eq!(selected.source, "unknown");
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -410,6 +455,7 @@ fn committed_inputs_are_verified() {
     assert_eq!(selected.source, "git");
     let real = revision::resolve(&root, None);
     let missing = Command::new("git")
+        .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
         .current_dir(&root)
         .args([
             "cat-file",
@@ -456,6 +502,7 @@ fn committed_inputs_are_verified() {
         });
         assert_eq!(rejected.source, "unknown", "mismatch {path}");
     }
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -471,6 +518,7 @@ fn archive_uses_environment_revision() {
     record_offer("environment", &fixture.0.join("out"));
     let offer = fs::read_to_string(fixture.0.join("out/SOURCE_OFFER.md")).unwrap();
     assert!(offer.contains(&format!("revision={}\n", ENV_SHA.to_ascii_lowercase())));
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -507,6 +555,7 @@ fn unknown_revision_is_honest() {
     assert!(offer.contains("revision=unknown\n"));
     let missing = revision::resolve_with(&root, None, |_| panic!("archive must not invoke git"));
     assert_eq!(missing.revision, "unknown");
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -522,6 +571,7 @@ fn dirty_git_is_unknown() {
         assert_eq!(selected.revision, "unknown");
         assert_eq!(selected.source, "unknown");
     }
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -533,6 +583,7 @@ fn parent_git_is_not_archive_git() {
     let selected = revision::resolve(&root, Some(ENV_SHA));
     assert_eq!(selected.revision, ENV_SHA.to_ascii_lowercase());
     assert_eq!(selected.source, "environment");
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -565,6 +616,7 @@ fn git_top_level_must_match_root() {
         })
     });
     assert_eq!(selected.revision, "unknown");
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -586,6 +638,7 @@ fn build_script_reports_missing_template() {
     eprintln!("missing-template stderr: {stderr}");
     assert!(stderr.contains("SOURCE_OFFER.md"), "{stderr}");
     assert!(stderr.contains("NotFound"), "{stderr}");
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -620,6 +673,7 @@ fn build_script_embeds_selected_revision() {
         "cargo:rustc-env=AVA_SEARCH_REVISION={}\n",
         ENV_SHA.to_ascii_lowercase()
     )));
+    fixture.finish().unwrap();
 }
 
 #[test]
@@ -635,6 +689,7 @@ fn build_script_tracks_environment() {
         "cargo:rustc-env=AVA_SEARCH_REVISION={}\n",
         ENV_SHA.to_ascii_lowercase()
     )));
+    fixture.finish().unwrap();
 }
 
 fn assert_git_watches(root: &Path, output: &str, branch: bool) {
@@ -735,4 +790,458 @@ fn build_script_tracks_git_and_sources() {
     let second = run_build(&binary, &root, &fixture.0.join("out"), None);
     assert!(second.contains(&format!("cargo:rustc-env=AVA_SEARCH_REVISION={}\n", moved)));
     assert!(second.contains("cargo:rustc-env=AVA_SEARCH_REVISION_SOURCE=git\n"));
+    fixture.finish().unwrap();
+}
+
+mod cleanup_contract {
+    //! Checks cleanup through real filesystem failures, compiled source, and the actual commit test.
+
+    use super::*;
+    use std::{io, os::unix::fs::PermissionsExt, panic, sync::mpsc, time::Duration};
+
+    const SOURCE: &str = include_str!("build_revision_contract.rs");
+    const COORDINATION_TIMEOUT: Duration = Duration::from_secs(2);
+
+    struct RestorePermissions {
+        path: PathBuf,
+        permissions: fs::Permissions,
+    }
+
+    impl Drop for RestorePermissions {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.path, self.permissions.clone());
+        }
+    }
+
+    fn protected_subject(fixture: &Fixture) -> (Fixture, PathBuf, RestorePermissions) {
+        let root = fixture.0.join("subject");
+        let directory = root.join("protected");
+        fs::create_dir_all(&directory).unwrap();
+        let file = directory.join("file");
+        fs::write(&file, "owned").unwrap();
+        let guard = RestorePermissions {
+            permissions: fs::metadata(&directory).unwrap().permissions(),
+            path: directory.clone(),
+        };
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o500)).unwrap();
+        (Fixture(root), file, guard)
+    }
+
+    #[test]
+    fn finish_retries_after_late_writer() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("subject");
+        let child = root.join("child");
+        fs::create_dir_all(&child).unwrap();
+        fs::write(child.join("old"), "old").unwrap();
+        let subject = Fixture(root.clone());
+        let (start_tx, start_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let writer_child = child.clone();
+        let writer = std::thread::spawn(move || -> io::Result<()> {
+            start_rx
+                .recv_timeout(COORDINATION_TIMEOUT)
+                .map_err(io::Error::other)?;
+            fs::create_dir(&writer_child)?;
+            fs::write(writer_child.join("late"), "late")?;
+            done_tx.send(()).map_err(io::Error::other)
+        });
+        let mut calls = 0;
+        let mut first_error = None;
+        let result = subject.finish_with(|root| {
+            calls += 1;
+            if calls == 1 {
+                fs::remove_dir_all(&child)?;
+                start_tx.send(()).map_err(io::Error::other)?;
+                done_rx
+                    .recv_timeout(COORDINATION_TIMEOUT)
+                    .map_err(io::Error::other)?;
+                let result = fs::remove_dir(root);
+                first_error = result.as_ref().err().map(io::Error::kind);
+                result
+            } else {
+                fs::remove_dir_all(root)
+            }
+        });
+        // Joining before assertions also covers an early return from the removal adapter.
+        let joined = writer.join();
+        println!("late writer: first_error={first_error:?}, calls={calls}, result={result:?}");
+        assert!(
+            joined.is_ok_and(|result| result.is_ok()),
+            "writer must finish"
+        );
+        assert_eq!(first_error, Some(io::ErrorKind::DirectoryNotEmpty));
+        assert!(
+            result.is_ok(),
+            "finish must retry the real late-writer error"
+        );
+        assert_eq!(calls, 2);
+        assert!(!root.try_exists().unwrap());
+        fixture.finish().unwrap();
+    }
+
+    #[test]
+    fn drop_does_not_panic_on_undeletable_root() {
+        let fixture = Fixture::new();
+        let (subject, file, permissions) = protected_subject(&fixture);
+        let precondition = fs::remove_file(&file);
+        println!("drop permission precondition: {precondition:?}");
+        if precondition.as_ref().err().map(io::Error::kind) != Some(io::ErrorKind::PermissionDenied)
+        {
+            drop(permissions);
+            drop(subject);
+            panic!("permission-denied witness precondition failed: {precondition:?}");
+        }
+        let result = panic::catch_unwind(|| drop(subject));
+        drop(permissions);
+        assert!(result.is_ok(), "Drop must not panic on PermissionDenied");
+        fixture.finish().unwrap();
+    }
+
+    #[test]
+    fn finish_reports_retry_exhaustion() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("exhaustion");
+        fs::create_dir(&root).unwrap();
+        let subject = Fixture(root);
+        let mut calls = 0;
+        let started = std::time::Instant::now();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            subject.finish_with(|_| {
+                calls += 1;
+                Err(io::Error::from(io::ErrorKind::DirectoryNotEmpty))
+            })
+        }));
+        println!(
+            "exhaustion: calls={calls}, elapsed={:?}, result={result:?}",
+            started.elapsed()
+        );
+        assert!(result.is_ok(), "explicit cleanup must not panic");
+        let result = result.unwrap();
+        assert_eq!(calls, CLEANUP_ATTEMPTS);
+        assert_eq!(
+            result.as_ref().err().map(io::Error::kind),
+            Some(io::ErrorKind::DirectoryNotEmpty),
+            "finish must report exhausted DirectoryNotEmpty"
+        );
+
+        let (subject, file, permissions) = protected_subject(&fixture);
+        let precondition = fs::remove_file(&file);
+        println!("finish permission precondition: {precondition:?}");
+        if precondition.as_ref().err().map(io::Error::kind) != Some(io::ErrorKind::PermissionDenied)
+        {
+            drop(permissions);
+            drop(subject);
+            panic!("permission-denied witness precondition failed: {precondition:?}");
+        }
+        let result = panic::catch_unwind(|| subject.finish());
+        drop(permissions);
+        assert!(result.is_ok(), "finish must return its removal error");
+        assert_eq!(
+            result.unwrap().unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+
+        let absent = fixture.0.join("absent");
+        Fixture(absent).finish().unwrap();
+        let present = fixture.0.join("present");
+        fs::create_dir(&present).unwrap();
+        let result = Fixture(present).finish_with(|_| Err(io::ErrorKind::NotFound.into()));
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
+        fixture.finish().unwrap();
+    }
+
+    // Literals stay atomic so source examples and comments cannot count as executable builders.
+    // Unsupported raw literals fail closed; this fixed source shape uses ordinary Rust strings.
+    fn source_tokens(source: &str) -> Vec<(usize, &str)> {
+        let bytes = source.as_bytes();
+        let mut tokens = Vec::new();
+        let mut index = 0;
+        while index < bytes.len() {
+            let start = index;
+            if bytes[index].is_ascii_whitespace() {
+                index += 1;
+            } else if source[index..].starts_with("//") {
+                index += source[index..].find('\n').unwrap_or(bytes.len() - index);
+            } else if source[index..].starts_with("/*") {
+                index += 2;
+                let mut depth = 1;
+                while depth > 0 {
+                    assert!(index < bytes.len(), "unterminated source comment");
+                    if source[index..].starts_with("/*") {
+                        depth += 1;
+                        index += 2;
+                    } else if source[index..].starts_with("*/") {
+                        depth -= 1;
+                        index += 2;
+                    } else {
+                        index += source[index..].chars().next().unwrap().len_utf8();
+                    }
+                }
+            } else {
+                assert!(
+                    !source[index..].starts_with("r#") && !source[index..].starts_with("r\""),
+                    "unsupported raw source literal"
+                );
+                if bytes[index] == b'"' {
+                    index += 1;
+                    loop {
+                        assert!(index < bytes.len(), "unterminated source string");
+                        let byte = bytes[index];
+                        index += 1;
+                        if byte == b'\\' {
+                            index += 1;
+                        } else if byte == b'"' {
+                            break;
+                        }
+                    }
+                } else if bytes[index] == b'\'' && bytes.get(index + 2) == Some(&b'\'') {
+                    index += 3;
+                } else if bytes[index] == b'\''
+                    && bytes.get(index + 1) == Some(&b'\\')
+                    && bytes.get(index + 3) == Some(&b'\'')
+                {
+                    index += 4;
+                } else if bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_' {
+                    index += 1;
+                    while index < bytes.len()
+                        && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
+                    {
+                        index += 1;
+                    }
+                } else {
+                    index += source[index..].chars().next().unwrap().len_utf8();
+                }
+                tokens.push((start, &source[start..index]));
+            }
+        }
+        tokens
+    }
+
+    #[test]
+    fn every_fixture_git_command_disables_background_work() {
+        let tokens = source_tokens(SOURCE);
+        let builder = ["Command", ":", ":", "new", "(", "\"git\"", ")"];
+        let flags = ".args([\"-c\", \"maintenance.auto=false\", \"-c\", \"gc.auto=0\"])";
+        let mut checked = 0;
+        for window in tokens.windows(builder.len()) {
+            if window.iter().map(|(_, token)| *token).eq(builder) {
+                checked += 1;
+                let (offset, last) = window.last().unwrap();
+                let rest = SOURCE[offset + last.len()..].trim_start();
+                assert!(
+                    rest.starts_with(flags),
+                    "fixture Git builder must disable background work at byte {}",
+                    window[0].0
+                );
+            }
+        }
+        assert!(checked >= 6, "must inspect all six baseline Git builders");
+        println!("checked {checked} actual fixture Git builders");
+    }
+
+    #[test]
+    fn fixture_tests_finish_explicitly() {
+        let expected = [
+            "git_revision_wins",
+            "symlinked_checked_input_is_unknown",
+            "symlinked_git_is_unknown",
+            "foreign_history_is_unknown",
+            "committed_inputs_are_verified",
+            "archive_uses_environment_revision",
+            "unknown_revision_is_honest",
+            "dirty_git_is_unknown",
+            "parent_git_is_not_archive_git",
+            "git_top_level_must_match_root",
+            "build_script_reports_missing_template",
+            "build_script_embeds_selected_revision",
+            "build_script_tracks_environment",
+            "build_script_tracks_git_and_sources",
+        ];
+        let tokens = source_tokens(SOURCE);
+        let values: Vec<_> = tokens.iter().map(|(_, token)| *token).collect();
+        let mut depth = 0;
+        let mut checked = std::collections::BTreeSet::new();
+        let mut top_level_function = None;
+        for (index, &(offset, token)) in tokens.iter().enumerate() {
+            if depth == 0 && token == "fn" {
+                top_level_function = Some(values[index + 1]);
+            }
+            if depth == 0
+                && token == "fn"
+                && index >= 4
+                && values[index - 4..index] == ["#", "[", "test", "]"]
+            {
+                let name = values[index + 1];
+                assert!(
+                    SOURCE[..offset].ends_with('\n'),
+                    "unsupported non-column-zero test: {name}"
+                );
+                assert_eq!(
+                    &values[index + 2..index + 5],
+                    &["(", ")", "{"],
+                    "unsupported test header: {name}"
+                );
+                let opening = index + 4;
+                let mut nested = 1;
+                let mut closing = None;
+                for (end, value) in values.iter().enumerate().skip(opening + 1) {
+                    match *value {
+                        "{" => nested += 1,
+                        "}" => nested -= 1,
+                        _ => {}
+                    }
+                    if nested == 0 {
+                        closing = Some(end);
+                        break;
+                    }
+                }
+                let closing = closing.expect("test closing brace must exist");
+                let end = tokens[closing].0;
+                assert!(
+                    SOURCE[..end].ends_with('\n'),
+                    "unsupported non-column-zero closing brace: {name}"
+                );
+                let body = &values[opening + 1..closing];
+                let constructors = body
+                    .windows(6)
+                    .filter(|window| *window == ["Fixture", ":", ":", "new", "(", ")"])
+                    .count();
+                if expected.contains(&name) || constructors > 0 {
+                    assert!(checked.insert(name), "ambiguous test function: {name}");
+                    assert_eq!(
+                        constructors, 1,
+                        "exactly one fixture construction required: {name}"
+                    );
+                    let final_statement = [
+                        "fixture", ".", "finish", "(", ")", ".", "unwrap", "(", ")", ";",
+                    ];
+                    assert!(
+                        body.ends_with(&final_statement)
+                            && SOURCE[tokens[opening].0 + 1..end]
+                                .trim_end()
+                                .ends_with("fixture.finish().unwrap();"),
+                        "fixture test must finish explicitly: {name}"
+                    );
+                }
+            }
+            if let Some(name) = top_level_function
+                .filter(|_| values[index..].starts_with(&["Fixture", ":", ":", "new", "(", ")"]))
+            {
+                assert!(
+                    checked.contains(name),
+                    "unsupported fixture test shape: {name}"
+                );
+            }
+            match token {
+                "{" => depth += 1,
+                "}" => depth -= 1,
+                _ => {}
+            }
+            if token == "}" && depth == 0 {
+                top_level_function = None;
+            }
+        }
+        for name in expected {
+            assert!(checked.contains(name), "missing fixture test: {name}");
+        }
+        let delegation = "fn finish(self) -> std::io::Result<()> {\n        self.finish_with(|root| fs::remove_dir_all(root))\n    }";
+        let delegations = tokens
+            .iter()
+            .filter(|(offset, token)| *token == "fn" && SOURCE[*offset..].starts_with(delegation))
+            .count();
+        assert_eq!(
+            delegations, 1,
+            "finish must delegate to the shared removal loop"
+        );
+        println!(
+            "checked {} explicit fixture lifecycles and finish delegation",
+            checked.len()
+        );
+    }
+
+    #[test]
+    fn git_commit_starts_no_background_maintenance() {
+        let fixture = Fixture::new();
+        let trace = fixture.0.join("commit-trace.jsonl");
+        assert!(trace.is_absolute());
+        let config = fixture.0.join("gitconfig");
+        fs::write(
+            &config,
+            "[maintenance]\n\tauto = true\n\tautoDetach = true\n[gc]\n\tauto = 6700\n",
+        )
+        .unwrap();
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "build_script_tracks_git_and_sources",
+                "--nocapture",
+            ])
+            .env("GIT_TRACE2_EVENT", &trace)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", &config)
+            .env_remove("GIT_CONFIG_COUNT")
+            .env_remove("GIT_CONFIG_PARAMETERS")
+            .output()
+            .unwrap();
+        let raw = fs::read(&trace).unwrap();
+        if let Some(directory) = std::env::var_os("STORY584_ARTIFACT_DIR") {
+            let directory = PathBuf::from(directory).join("cleanup-contract");
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(directory.join("trace.jsonl"), &raw).unwrap();
+            fs::write(directory.join("child.stdout"), &output.stdout).unwrap();
+            fs::write(directory.join("child.stderr"), &output.stderr).unwrap();
+            fs::write(directory.join("child.status"), output.status.to_string()).unwrap();
+            fs::copy(config, directory.join("gitconfig")).unwrap();
+        }
+        assert!(
+            output.status.success(),
+            "commit test child must pass: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = std::str::from_utf8(&raw).unwrap();
+        let mut records = 0;
+        let mut commit = false;
+        let mut background = Vec::new();
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            let record: serde_json::Value =
+                serde_json::from_str(line).expect("valid Git trace JSONL");
+            assert!(record.is_object(), "Git trace record must be an object");
+            records += 1;
+            let event = record["event"].as_str().expect("Git trace event name");
+            if event == "start" || event == "child_start" {
+                let argv: Vec<_> = record["argv"]
+                    .as_array()
+                    .expect("Git trace argv")
+                    .iter()
+                    .map(|value| value.as_str().expect("Git trace argv string"))
+                    .collect();
+                if event == "start"
+                    && argv.ends_with(&[
+                        "commit",
+                        "--allow-empty",
+                        "-q",
+                        "-m",
+                        "fixture: move HEAD",
+                    ])
+                {
+                    commit = true;
+                }
+                if event == "child_start"
+                    && argv.iter().any(|arg| matches!(*arg, "maintenance" | "gc"))
+                {
+                    background.push(argv.into_iter().map(str::to_owned).collect::<Vec<_>>());
+                }
+            }
+        }
+        assert!(records > 0, "Git trace evidence must be nonempty");
+        assert!(commit, "trace must include the actual empty fixture commit");
+        println!("trace: records={records}, exact_commit={commit}, background={background:?}");
+        assert!(
+            background.is_empty(),
+            "fixture commit must start no background maintenance or gc: {background:?}"
+        );
+        fixture.finish().unwrap();
+    }
 }
