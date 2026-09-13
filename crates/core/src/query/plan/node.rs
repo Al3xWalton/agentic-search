@@ -411,3 +411,59 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod minimum_contract {
+    use super::*;
+    #[test]
+    fn minimum_match_optimizer_boundary() {
+        let atom = |s: &str| {
+            Node::from_term(ParserTerm::SimpleOrPhrase(
+                SimpleTerm::from(s.to_owned()).into(),
+            ))
+        };
+        let selected = Node::AtLeast {
+            minimum: 2,
+            children: vec![atom("alpha"), atom("beta"), atom("gamma")],
+        };
+        let optimized = selected.clone().and(atom("required")).into_query();
+        let query = optimized;
+        let mut minimum = None;
+        fn visit(query: &super::super::Query, found: &mut Option<(usize, usize)>) {
+            match query {
+                super::super::Query::AtLeast { minimum, children } => {
+                    *found = Some((*minimum, children.len()))
+                }
+                super::super::Query::Boolean { clauses } => {
+                    for (_, child) in clauses {
+                        visit(child, found);
+                    }
+                }
+                super::super::Query::Term(_) => {}
+            }
+        }
+        visit(&query, &mut minimum);
+        assert_eq!(minimum, Some((2, 3)));
+        assert!(matches!(
+            selected.optimise(),
+            Node::AtLeast { minimum: 2, .. }
+        ));
+    }
+    #[test]
+    fn minimum_match_atom_children() {
+        let plan = crate::query::planner::AgentPlan::new("alpha beta gamma").unwrap();
+        let stage = plan
+            .stages
+            .iter()
+            .find(|s| s.id == crate::query::planner::StageId::Relaxed)
+            .unwrap();
+        match stage.node().unwrap() {
+            Node::AtLeast { minimum, children } => {
+                assert_eq!(minimum, 2);
+                assert_eq!(children.len(), 3);
+                assert!(children.into_iter().all(|n| matches!(n, Node::Or(..))));
+            }
+            _ => panic!("threshold node expected"),
+        }
+    }
+}

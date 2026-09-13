@@ -173,6 +173,7 @@ pub struct OpticBoosts {
 pub struct SegmentReader {
     text_fields: EnumMap<TextFieldEnum, TextFieldData>,
     optic_boosts: OpticBoosts,
+    preferences: Vec<Box<dyn Scorer>>,
     numericalfield_reader: numericalfield_reader::SegmentReader,
 }
 
@@ -194,6 +195,7 @@ impl SegmentReader {
 pub struct QueryData {
     simple_terms: Vec<String>,
     optic_rules: Vec<optics::Rule>,
+    preferences: Vec<Arc<dyn tantivy::query::Query>>,
     selected_region: Option<crate::webpage::Region>,
     lang: Option<whatlang::Lang>,
 }
@@ -266,6 +268,7 @@ impl SignalComputer {
 
         let query = query.as_ref().map(|q| QueryData {
             simple_terms: q.simple_terms().to_vec(),
+            preferences: q.preference_queries().to_vec(),
             optic_rules: q
                 .optics()
                 .iter()
@@ -312,7 +315,7 @@ impl SignalComputer {
                 for signal in CoreSignalEnum::all() {
                     if let Some((text_field, tv_field)) = signal
                         .as_textfield()
-                        .and_then(|f| (f.tantivy_field(schema).map(|tv_field| (f, tv_field))))
+                        .and_then(|f| f.tantivy_field(schema).map(|tv_field| (f, tv_field)))
                     {
                         if text_field.ngram_size() > 1
                             && query.simple_terms.len() > MAX_TERMS_FOR_NGRAM_LOOKUPS
@@ -434,7 +437,20 @@ impl SignalComputer {
         let optic_rule_boosts =
             self.prepare_optic(tv_searcher, segment_reader, numericalfield_reader);
 
+        let preferences = self
+            .query_data
+            .as_ref()
+            .into_iter()
+            .flat_map(|q| &q.preferences)
+            .map(|q| {
+                q.weight(tantivy::query::EnableScoring::disabled_from_searcher(
+                    tv_searcher,
+                ))?
+                .scorer(segment_reader, 1.0)
+            })
+            .collect::<tantivy::Result<Vec<_>>>()?;
         self.segment_reader = Some(RefCell::new(SegmentReader {
+            preferences,
             text_fields,
             numericalfield_reader: numericalfield_segment_reader,
             optic_boosts: OpticBoosts {
@@ -487,12 +503,25 @@ impl SignalComputer {
                 }
             }
 
-            if downrank > boost {
+            let mut segment = segment_reader.borrow_mut();
+            let p = segment.preferences.len();
+            let m: usize = segment
+                .preferences
+                .iter_mut()
+                .map(|q| usize::from(q.doc() == doc || (q.doc() < doc && q.seek(doc) == doc)))
+                .sum();
+            let preference = if p == 0 {
+                1.0
+            } else {
+                1.0 + m as f64 / p as f64
+            };
+            let optic = if downrank > boost {
                 let diff = downrank - boost;
                 1.0 / (1.0 + diff)
             } else {
                 boost - downrank + 1.0
-            }
+            };
+            optic * preference
         })
     }
 

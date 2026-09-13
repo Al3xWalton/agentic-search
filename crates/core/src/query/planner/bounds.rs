@@ -35,6 +35,12 @@ pub const MAX_RPCS: usize = MAX_STAGES * MAX_SHARDS;
 pub const MAX_COMPILED_NODES: usize = 16_384;
 /// Maximum safe rendering size per stage, in UTF-8 bytes.
 pub const MAX_RENDER_BYTES: usize = 256 * 1024;
+/// Maximum parsed optic rules accepted before query compilation.
+pub const MAX_OPTIC_RULES: usize = 1024;
+/// Maximum combined liked, disliked and blocked hosts across request preferences.
+pub const MAX_HOST_RANKING_ENTRIES: usize = 1024;
+/// Maximum length of each host preference, in UTF-8 bytes.
+pub const MAX_HOST_BYTES: usize = 8192;
 
 /// Finite input failures with fixed messages that never include request text.
 #[derive(
@@ -104,6 +110,9 @@ pub enum InputError {
     /// Constructed nodes or rendered bytes exceed their finite budgets.
     #[error("The query plan is too complex")]
     PlanTooComplex,
+    /// Parsed optic rules or host preferences exceed their finite size limits.
+    #[error("The search preferences are too large")]
+    PreferencesTooLarge,
 }
 
 /// A parsed atom paired by the scanner with its exact original byte interval.
@@ -132,6 +141,35 @@ pub fn validate_numbers(page: usize, count: usize, public: bool) -> Result<usize
     let offset = page.checked_mul(count).ok_or(InputError::InvalidPage)?;
     offset.checked_add(count).ok_or(InputError::InvalidPage)?;
     Ok(offset)
+}
+
+/// Bound parsed preferences before planning or index traversal, without cloning their contents.
+/// At most 1024 optic rules and 1024 combined host entries of 8192 bytes are allowed.
+/// Optic-embedded host lists share the entry budget; failure is PreferencesTooLarge.
+pub fn validate_preferences(
+    optic: Option<&optics::Optic>,
+    host_rankings: Option<&optics::HostRankings>,
+) -> Result<(), InputError> {
+    if optic.is_some_and(|optic| optic.rules.len() > MAX_OPTIC_RULES) {
+        return Err(InputError::PreferencesTooLarge);
+    }
+    let mut entries = 0usize;
+    for hosts in host_rankings
+        .into_iter()
+        .chain(optic.map(|o| &o.host_rankings))
+    {
+        for list in [&hosts.liked, &hosts.disliked, &hosts.blocked] {
+            entries = entries
+                .checked_add(list.len())
+                .ok_or(InputError::PreferencesTooLarge)?;
+            if entries > MAX_HOST_RANKING_ENTRIES
+                || list.iter().any(|host| host.len() > MAX_HOST_BYTES)
+            {
+                return Err(InputError::PreferencesTooLarge);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Return the ASCII comparison identity, leaving any non-ASCII string byte-exact.
@@ -206,6 +244,37 @@ pub fn positive(term: &Term) -> bool {
     !matches!(term, Term::Not(_) | Term::PossibleBang { .. })
 }
 
+fn operand_length(operand: &str, bang: bool, field: Option<&str>) -> Result<usize, InputError> {
+    let first = operand
+        .chars()
+        .next()
+        .ok_or(InputError::InvalidQuerySyntax)?;
+    if matches!(first, '"' | '“') {
+        if bang || matches!(field, Some("site:" | "linkto:" | "linksto:" | "exacturl:")) {
+            return Err(InputError::InvalidOperator);
+        }
+        let mut end = None;
+        for (i, c) in operand.char_indices().skip(1) {
+            if quote(c) {
+                if (first == '"' && c == '"') || (first == '“' && matches!(c, '“' | '”')) {
+                    end = Some(i + c.len_utf8());
+                    break;
+                }
+                return Err(InputError::InvalidQuotes);
+            }
+        }
+        end.ok_or(InputError::InvalidQuotes)
+    } else {
+        let length = operand.find(char::is_whitespace).unwrap_or(operand.len());
+        if operand[..length].chars().any(quote) {
+            return Err(InputError::InvalidQuotes);
+        }
+        // Validate before exacturl normalization can add scheme and root slash.
+        scalar_bound(&operand[..length])?;
+        Ok(length)
+    }
+}
+
 /// Scan bounded original bytes and reuse the legacy parser for each fully consumed atom.
 /// Bang-only syntax is admitted here solely so the API can recognize configured redirects.
 /// Returns finite input errors for all bounds, quote, operator and repetition failures.
@@ -270,37 +339,9 @@ pub fn scan_query(query: &str) -> Result<Vec<SourceAtom>, InputError> {
         if operand.is_empty() || operand.starts_with(char::is_whitespace) {
             return Err(InputError::InvalidOperator);
         }
-        let first = operand
-            .chars()
-            .next()
-            .ok_or(InputError::InvalidQuerySyntax)?;
-        if matches!(first, '"' | '“') {
-            if bang || matches!(field, Some("site:" | "linkto:" | "linksto:" | "exacturl:")) {
-                return Err(InputError::InvalidOperator);
-            }
-            let mut end = None;
-            for (i, c) in operand.char_indices().skip(1) {
-                if quote(c) {
-                    if (first == '"' && c == '"') || (first == '“' && matches!(c, '“' | '”'))
-                    {
-                        end = Some(i + c.len_utf8());
-                        break;
-                    }
-                    return Err(InputError::InvalidQuotes);
-                }
-            }
-            cursor += end.ok_or(InputError::InvalidQuotes)?;
-            if cursor < input.len() && !input[cursor..].starts_with(char::is_whitespace) {
-                return Err(InputError::InvalidQuotes);
-            }
-        } else {
-            let length = operand.find(char::is_whitespace).unwrap_or(operand.len());
-            if operand[..length].chars().any(quote) {
-                return Err(InputError::InvalidQuotes);
-            }
-            // Validate before exacturl normalization can add scheme and root slash.
-            scalar_bound(&operand[..length])?;
-            cursor += length;
+        cursor += operand_length(operand, bang, field)?;
+        if cursor < input.len() && !input[cursor..].starts_with(char::is_whitespace) {
+            return Err(InputError::InvalidQuotes);
         }
         let original = &input[start..cursor];
         let mut parsed = parser::parse(original).map_err(|_| InputError::InvalidQuerySyntax)?;

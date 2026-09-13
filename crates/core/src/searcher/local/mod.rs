@@ -95,7 +95,7 @@ impl LocalSearcher {
 
         tokio::task::spawn_blocking(move || inner.search_initial(&query, &guard, de_rank_similar))
             .await
-            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
+            .map_err(worker_error)?
     }
 
     pub async fn retrieve_websites(
@@ -110,7 +110,7 @@ impl LocalSearcher {
 
         tokio::task::spawn_blocking(move || inner.retrieve_websites(&websites, &query, &guard))
             .await
-            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
+            .map_err(worker_error)?
     }
 
     pub async fn search(&self, query: &SearchQuery) -> Result<WebsitesResult> {
@@ -173,6 +173,7 @@ impl LocalSearcher {
         }
 
         Ok(WebsitesResult {
+            query_plan: None,
             num_hits: search_result.num_websites,
             webpages,
             search_duration_ms: start.elapsed().as_millis(),
@@ -206,7 +207,7 @@ impl LocalSearcher {
         let guard = inner.guard().await;
         tokio::task::spawn_blocking(move || inner.search_initial_generic(&query, &guard))
             .await
-            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
+            .map_err(worker_error)?
     }
 
     pub async fn retrieve_generic<Q: GenericQuery + 'static>(
@@ -218,7 +219,7 @@ impl LocalSearcher {
         let guard = inner.guard().await;
         tokio::task::spawn_blocking(move || inner.retrieve_generic(&query, fruit, &guard))
             .await
-            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
+            .map_err(worker_error)?
     }
 
     pub async fn search_generic<Q: GenericQuery + 'static>(&self, query: Q) -> Result<Q::Output> {
@@ -226,7 +227,7 @@ impl LocalSearcher {
         let guard = inner.guard().await;
         tokio::task::spawn_blocking(move || inner.search_generic(query, &guard))
             .await
-            .map_err(|_| super::wire::QueryServiceError::WorkerFailed)?
+            .map_err(worker_error)?
     }
 }
 
@@ -316,7 +317,7 @@ impl LocalSearcher {
         let query = query.clone();
         tokio::task::spawn_blocking(move || inner.search_initial_v2(&query, &guard))
             .await
-            .map_err(|_| QueryServiceError::WorkerFailed)?
+            .map_err(worker_error)?
             .map_err(|e| {
                 if e.downcast_ref::<crate::query::planner::bounds::InputError>()
                     .is_some()
@@ -346,6 +347,25 @@ impl LocalSearcher {
             inner.retrieve_websites_selected(&websites, &query, &guard)
         })
         .await
-        .map_err(|_| QueryServiceError::WorkerFailed)?
+        .map_err(worker_error)?
+    }
+}
+
+fn worker_error(_: tokio::task::JoinError) -> super::wire::QueryServiceError {
+    super::wire::QueryServiceError::WorkerFailed
+}
+
+#[cfg(test)]
+mod worker_contract {
+    #[tokio::test]
+    async fn join_failure_is_service_error() {
+        let joined =
+            tokio::task::spawn_blocking(|| -> () { panic!("synthetic worker failure") }).await;
+        let guarded = tokio::spawn(async move { joined.map_err(super::worker_error) }).await;
+        assert!(guarded.is_ok(), "join failure escaped into request task");
+        assert_eq!(
+            guarded.unwrap(),
+            Err(crate::searcher::wire::QueryServiceError::WorkerFailed)
+        );
     }
 }

@@ -85,6 +85,96 @@ pub fn compile(
     compile_optional(query, lang, schema, budget)?.ok_or(InputError::NoSearchableTerms)
 }
 
+fn compile_term(
+    Term { text, field }: &Term,
+    lang: Option<&whatlang::Lang>,
+    schema: &tantivy::schema::Schema,
+    budget: &mut Budget,
+) -> Result<Option<Compiled>, InputError> {
+    let mut rendered = String::new();
+    let query: Box<dyn TantivyQuery> = {
+        let Some(tv_field) = field.tantivy_field(schema) else {
+            return Ok(None);
+        };
+        let source = match text {
+            SimpleOrPhrase::Simple(s) => s.as_str().to_owned(),
+            SimpleOrPhrase::Phrase(words) => words.join(" "),
+        };
+        let mut tokenizer = field.query_tokenizer(lang);
+        let mut stream = tokenizer.token_stream(&source);
+        let mut terms = Vec::new();
+        while stream.advance() {
+            budget.nodes(1)?;
+            terms.push(tantivy::Term::from_field_text(
+                tv_field,
+                &stream.token().text,
+            ));
+        }
+        if terms.is_empty() {
+            return Ok(None);
+        }
+        let option = field.record_option();
+        if schema
+            .get_field_entry(tv_field)
+            .field_type()
+            .get_index_record_option()
+            != Some(option)
+        {
+            return Err(InputError::InvalidQuerySyntax);
+        }
+        if matches!(text, SimpleOrPhrase::Phrase(_)) && terms.len() > 1 && !option.has_positions() {
+            return Ok(None);
+        }
+        budget.push(&mut rendered, field.name())?;
+        let phrase = terms.len() > 1 && option.has_positions();
+        budget.push(
+            &mut rendered,
+            if phrase {
+                ":PHRASE("
+            } else if terms.len() == 1 {
+                ":TERM("
+            } else {
+                ":AND("
+            },
+        )?;
+        for (position, term) in terms.iter().enumerate() {
+            if position > 0 {
+                budget.push(&mut rendered, ",")?;
+            }
+            if phrase {
+                budget.push(&mut rendered, &format!("{position}:"))?;
+            }
+            let literal = serde_json::to_string(
+                term.value()
+                    .as_str()
+                    .ok_or(InputError::InvalidQuerySyntax)?,
+            )
+            .map_err(|_| InputError::InvalidQuerySyntax)?;
+            budget.push(&mut rendered, &literal)?;
+        }
+        budget.push(&mut rendered, ")")?;
+        if terms.len() == 1 {
+            Box::new(tantivy::query::TermQuery::new(terms.remove(0), option))
+        } else if phrase {
+            Box::new(tantivy::query::PhraseQuery::new(terms))
+        } else {
+            Box::new(tantivy::query::BooleanQuery::new(
+                terms
+                    .into_iter()
+                    .map(|term| {
+                        (
+                            tantivy::query::Occur::Must,
+                            Box::new(tantivy::query::TermQuery::new(term, option))
+                                as Box<dyn TantivyQuery>,
+                        )
+                    })
+                    .collect(),
+            ))
+        }
+    };
+    Ok(Some(Compiled { query, rendered }))
+}
+
 fn compile_optional(
     query: &Query,
     lang: Option<&whatlang::Lang>,
@@ -94,81 +184,7 @@ fn compile_optional(
     budget.nodes(1)?;
     let mut rendered = String::new();
     let compiled: Box<dyn TantivyQuery> = match query {
-        Query::Term(Term { text, field }) => {
-            let Some(tv_field) = field.tantivy_field(schema) else {
-                return Ok(None);
-            };
-            let source = match text {
-                SimpleOrPhrase::Simple(s) => s.as_str().to_owned(),
-                SimpleOrPhrase::Phrase(words) => words.join(" "),
-            };
-            let mut tokenizer = field.query_tokenizer(lang);
-            let mut stream = tokenizer.token_stream(&source);
-            let mut terms = Vec::new();
-            while stream.advance() {
-                budget.nodes(1)?;
-                terms.push(tantivy::Term::from_field_text(
-                    tv_field,
-                    &stream.token().text,
-                ));
-            }
-            if terms.is_empty() {
-                return Ok(None);
-            }
-            let option = field.record_option();
-            if matches!(text, SimpleOrPhrase::Phrase(_))
-                && terms.len() > 1
-                && !option.has_positions()
-            {
-                return Ok(None);
-            }
-            budget.push(&mut rendered, field.name())?;
-            let phrase = terms.len() > 1 && option.has_positions();
-            budget.push(
-                &mut rendered,
-                if phrase {
-                    ":PHRASE("
-                } else if terms.len() == 1 {
-                    ":TERM("
-                } else {
-                    ":AND("
-                },
-            )?;
-            for (position, term) in terms.iter().enumerate() {
-                if position > 0 {
-                    budget.push(&mut rendered, ",")?;
-                }
-                if phrase {
-                    budget.push(&mut rendered, &format!("{position}:"))?;
-                }
-                let literal = serde_json::to_string(
-                    term.value()
-                        .as_str()
-                        .ok_or(InputError::InvalidQuerySyntax)?,
-                )
-                .map_err(|_| InputError::InvalidQuerySyntax)?;
-                budget.push(&mut rendered, &literal)?;
-            }
-            budget.push(&mut rendered, ")")?;
-            if terms.len() == 1 {
-                Box::new(tantivy::query::TermQuery::new(terms.remove(0), option))
-            } else if phrase {
-                Box::new(tantivy::query::PhraseQuery::new(terms))
-            } else {
-                Box::new(tantivy::query::BooleanQuery::new(
-                    terms
-                        .into_iter()
-                        .map(|term| {
-                            (
-                                tantivy::query::Occur::Must,
-                                Box::new(tantivy::query::TermQuery::new(term, option))
-                                    as Box<dyn TantivyQuery>,
-                            )
-                        })
-                        .collect(),
-                ))
-            }
-        }
+        Query::Term(term) => return compile_term(term, lang, schema, budget),
         Query::Boolean { clauses } => {
             let mut children = Vec::new();
             budget.push(&mut rendered, "BOOL(")?;
@@ -232,7 +248,7 @@ mod tests {
     fn rendered_query_is_compiled_query() {
         use crate::query::{parser, plan};
         let logical =
-            plan::initial(parser::parse("title:\"C++ compiler\" -body:obsolete").unwrap())
+            plan::initial(parser::parse("intitle:\"C++ compiler\" -inbody:obsolete").unwrap())
                 .unwrap()
                 .into_query();
         let schema = crate::schema::create_schema();
@@ -282,7 +298,7 @@ mod tests {
     #[test]
     fn missing_schema_is_typed() {
         use crate::query::{parser, plan};
-        let logical = plan::initial(parser::parse("title:compiler").unwrap())
+        let logical = plan::initial(parser::parse("intitle:compiler").unwrap())
             .unwrap()
             .into_query();
         let schema = tantivy::schema::Schema::builder().build();
@@ -290,5 +306,92 @@ mod tests {
             plan::render::compile(&logical, None, &schema, &mut Default::default()),
             Err(InputError::NoSearchableTerms)
         ));
+    }
+}
+
+#[cfg(test)]
+mod budget_contract {
+    use super::*;
+    #[test]
+    fn compiled_node_budget() {
+        let mut budget = Budget::new(3, usize::MAX);
+        budget.nodes(2).unwrap();
+        budget.nodes(1).unwrap();
+        assert_eq!(budget.nodes(1), Err(InputError::PlanTooComplex));
+    }
+    #[test]
+    fn render_byte_budget() {
+        let mut budget = Budget::new(usize::MAX, 4);
+        let mut output = String::new();
+        budget.push(&mut output, "éé").unwrap();
+        assert_eq!(output, "éé");
+        assert_eq!(
+            budget.push(&mut output, "x"),
+            Err(InputError::PlanTooComplex)
+        );
+        assert_eq!(output, "éé");
+    }
+    #[test]
+    fn render_matches_compiler() {
+        let term = Query::Term(Term::new(
+            crate::query::parser::SimpleTerm::from("Compiler".to_owned()).into(),
+            crate::schema::text_field::Title.into(),
+        ));
+        let compiled = compile(
+            &term,
+            None,
+            &crate::schema::create_schema(),
+            &mut Budget::default(),
+        )
+        .unwrap();
+        assert_eq!(compiled.rendered, "title:TERM(\"compiler\")");
+        let mut terms = Vec::new();
+        compiled
+            .query
+            .query_terms(&mut |t, _| terms.push(t.value().as_str().unwrap().to_owned()));
+        assert_eq!(terms, ["compiler"]);
+    }
+}
+
+#[cfg(test)]
+mod schema_contract {
+    use super::*;
+
+    #[test]
+    fn schema_record_options_are_validated() {
+        let mut schema = tantivy::schema::Schema::builder();
+        schema.add_text_field("title", tantivy::schema::STRING);
+        let term = Query::Term(Term::new(
+            SimpleOrPhrase::Phrase(vec!["cedar".into(), "harbor".into()]),
+            crate::schema::text_field::Title.into(),
+        ));
+        assert!(matches!(
+            compile(&term, None, &schema.build(), &mut Budget::default()),
+            Err(InputError::InvalidQuerySyntax)
+        ));
+    }
+}
+
+#[cfg(test)]
+mod empty_contract {
+    use super::*;
+
+    #[test]
+    fn query_compile_never_panics() {
+        for text in [
+            SimpleOrPhrase::Phrase(vec![]),
+            SimpleOrPhrase::Simple("".to_owned().into()),
+        ] {
+            let empty = Query::Term(Term::new(text, crate::schema::text_field::Title.into()));
+            assert!(matches!(
+                compile(
+                    &empty,
+                    None,
+                    &crate::schema::create_schema(),
+                    &mut Budget::default()
+                ),
+                Err(InputError::NoSearchableTerms)
+            ));
+        }
     }
 }

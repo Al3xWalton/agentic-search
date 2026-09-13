@@ -267,6 +267,9 @@ pub struct QueryStoreConfig {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct ApiConfig {
+    /// Enable bounded page-zero query relaxation; later pages remain strict.
+    #[serde(default = "agent_query_planning_default")]
+    pub agent_query_planning: bool,
     /// Optional validated crawler policy file; None uses the embedded template.
     pub crawler_policy_config_path: Option<std::path::PathBuf>,
     pub host: SocketAddr,
@@ -709,4 +712,8 @@ pub struct HarmonicNearestSeedConfig {
     pub output_path: PathBuf,
     #[serde(default = "defaults::HarmonicNearestSeed::discount_factor")]
     pub discount_factor: f64,
+}
+
+fn agent_query_planning_default() -> bool {
+    true
 }

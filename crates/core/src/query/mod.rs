@@ -74,6 +74,7 @@ impl Query {
     ) -> Result<CompiledStage, planner::bounds::InputError> {
         use planner::{bounds::InputError, AgentPlan};
         planner::bounds::validate_numbers(query.page, query.num_results, false)?;
+        planner::bounds::validate_preferences(query.optic.as_ref(), query.host_rankings.as_ref())?;
         let strict;
         let stage = match &query.stage_plan {
             Some(stage) if stage.original == query.query => stage,

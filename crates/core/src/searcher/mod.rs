@@ -18,11 +18,12 @@
 //! There are two types of searchers:
 //! - [`local::LocalSearcher`] which runs the search on the local machine.
 //! - [`distributed::DistributedSearcher`] which runs the search on a remote cluster. Each node
-//!     will run a local searcher and then the results are merged on the coordinator node.
+//!   will run a local searcher and then the results are merged on the coordinator node.
 
 pub mod api;
 pub mod distributed;
 pub mod local;
+pub mod provenance;
 pub mod wire;
 
 pub use distributed::*;
@@ -66,6 +67,9 @@ impl SearchResult {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct WebsitesResult {
+    /// Completed stages and first-producing attribution; omitted for internal legacy callers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_plan: Option<provenance::QueryPlanProvenance>,
     pub webpages: Vec<DisplayedWebpage>,
     pub num_hits: Count,
     pub search_duration_ms: u128,
