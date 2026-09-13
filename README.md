@@ -81,3 +81,5 @@ Upstream Stract was previously funded through [NGI0 Entrust](https://nlnet.nl/en
   &nbsp;
   <a href="https://nlnet.nl/entrust"><img align=center src="assets/nlnet/NGI0_tag.svg" alt="NGI Zero Logo" width="20%"/></a>
 </div>
+
+`stract eval --help` describes local recall evaluation; `configs/eval/` contains loopback templates whose index paths must point to independent temporary copies.

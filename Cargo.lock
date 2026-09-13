@@ -5119,6 +5119,7 @@ dependencies = [
  "itertools 0.13.0",
  "kuchiki",
  "lending-iter",
+ "libc",
  "log",
  "logos",
  "lz4_flex",
