@@ -68,6 +68,7 @@ use utoipa_swagger_ui::SwaggerUi;
                 crate::searcher::provenance::SearchErrorCode,
                 crate::searcher::provenance::BangErrorCode,
                 crate::search_prettifier::HighlightedSpellCorrection,
+                crate::search_prettifier::SpellCorrectionOffer,
                 crate::search_prettifier::DisplayedWebpage,
                 crate::search_prettifier::DisplayedEntity,
                 crate::search_prettifier::DisplayedAnswer,
@@ -205,6 +206,33 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn openapi_spell_offer_contract() {
+        let value = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let schemas = &value["components"]["schemas"];
+        let result = &schemas["WebsitesResult"];
+        assert!(result["properties"].get("spellCorrection").is_some());
+        assert!(!result["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field == "spellCorrection"));
+        let offer = &schemas["SpellCorrectionOffer"];
+        assert!(!offer.is_null());
+        let serialized = offer.to_string();
+        assert!(
+            serialized.contains("applied")
+                && serialized.contains("false")
+                && serialized.contains("escaped")
+        );
+        assert!(schemas["ApiSearchQuery"]["properties"]
+            .get("spellCorrection")
+            .is_none());
+        assert!(schemas["ApiSearchQuery"]["properties"]
+            .get("spellCheck")
+            .is_none());
+    }
 
     #[test]
     fn openapi_planner_contract() {

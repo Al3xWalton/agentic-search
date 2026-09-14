@@ -67,6 +67,9 @@ impl SearchResult {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct WebsitesResult {
+    /// Optional escaped display correction, absent without an offer; never executed, applied always false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spell_correction: Option<crate::search_prettifier::SpellCorrectionOffer>,
     /// Completed stages and first-producing attribution; omitted for internal legacy callers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query_plan: Option<provenance::QueryPlanProvenance>,

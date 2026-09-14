@@ -178,6 +178,10 @@ impl From<SearchResult> for ApiSearchResult {
 
 /// Web Search
 ///
+/// A completed website response may include spellCorrection, an escaped display-only offer.
+/// It is absent without a correction, is never executed, and always has applied: false.
+/// The original query, selected stages and retrieval results are preserved.
+///
 /// The main search endpoint that powers Stract's web search functionality. It performs a full-text search
 /// across all pages in the index and returns the most relevant results.
 ///

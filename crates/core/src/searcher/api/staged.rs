@@ -96,6 +96,7 @@ impl StageAccumulator {
             self.first_count
         };
         WebsitesResult {
+            spell_correction: None,
             webpages: self.webpages,
             num_hits,
             search_duration_ms: elapsed_ms,

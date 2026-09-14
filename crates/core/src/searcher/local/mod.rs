@@ -173,6 +173,7 @@ impl LocalSearcher {
         }
 
         Ok(WebsitesResult {
+            spell_correction: None,
             query_plan: None,
             num_hits: search_result.num_websites,
             webpages,
