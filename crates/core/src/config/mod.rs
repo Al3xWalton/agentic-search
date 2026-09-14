@@ -69,6 +69,7 @@ pub struct IndexerConfig {
     pub warc_source: WarcSource,
     pub page_webgraph: Option<IndexerGraphConfig>,
     pub host_centrality_threshold: Option<f64>,
+    /// Parent directory containing both `harmonic` and `harmonic_rank` host stores.
     pub host_centrality_store_path: String,
     pub page_centrality_store_path: Option<String>,
     pub safety_classifier_path: Option<String>,
@@ -253,6 +254,7 @@ impl Default for ApiThresholds {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct ApiSpellCheck {
+    /// Checker directory containing language-code subdirectories, not the training output parent.
     pub path: String,
 
     #[serde(default)]
