@@ -34,6 +34,18 @@ pub struct Probe {
     pub missing_page: bool,
     /// Time spent within each retrieval operation, in milliseconds.
     pub retrieval_delay_ms: u64,
+    /// Exact request bytes at each matching operation, before stage compilation.
+    pub original_queries: Vec<String>,
+    /// Actual rendered selectors returned by the local production matcher.
+    pub rendered_queries: Vec<String>,
+    /// Ordered candidate pointers, compared within the same synthetic index lifetime.
+    pub candidates: Vec<Vec<String>>,
+    /// Exact request bytes at each retrieval operation.
+    pub retrieval_queries: Vec<String>,
+    /// Ordered URLs returned by actual local retrieval operations.
+    pub retrieved_urls: Vec<Vec<String>>,
+    /// Searches plus nonempty retrievals requiring RPCs in distributed serving.
+    pub rpc_count: usize,
 }
 
 /// Instrumented client using the ordinary local search and retrieval implementation.
@@ -58,11 +70,25 @@ impl SearchClient for Client {
         {
             let mut probe = self.probe.lock().unwrap();
             probe.searches.push(stage);
+            probe.original_queries.push(query.query.clone());
+            probe.rpc_count += 1;
             if let Some(error) = probe.failure {
                 return Err(error);
             }
         }
         let response = self.local.search_initial_v2(query).await?;
+        {
+            let mut probe = self.probe.lock().unwrap();
+            probe.rendered_queries.push(response.rendered_query.clone());
+            probe.candidates.push(
+                response
+                    .result
+                    .websites
+                    .iter()
+                    .map(|page| format!("{:?}", page.pointer()))
+                    .collect(),
+            );
+        }
         Ok(vec![InitialSearchResultShard {
             local_result: response.result,
             shard: ShardId::Backbone(0),
@@ -79,6 +105,8 @@ impl SearchClient for Client {
         let (missing, delay) = {
             let mut probe = self.probe.lock().unwrap();
             probe.retrievals.push(query.stage_plan.as_ref().unwrap().id);
+            probe.retrieval_queries.push(query.query.clone());
+            probe.rpc_count += usize::from(!pointers.is_empty());
             (probe.missing_page, probe.retrieval_delay_ms)
         };
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
@@ -91,6 +119,11 @@ impl SearchClient for Client {
             .retrieve_websites_selected(&positions, query)
             .await
             .map_err(|_| QueryServiceError::RetrievalFailed)?;
+        self.probe
+            .lock()
+            .unwrap()
+            .retrieved_urls
+            .push(pages.iter().map(|page| page.url.clone()).collect());
         let mut pages = pages
             .into_iter()
             .zip(pointers)
