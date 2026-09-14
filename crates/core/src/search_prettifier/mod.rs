@@ -110,6 +110,80 @@ impl From<web_spell::Correction> for HighlightedSpellCorrection {
     }
 }
 
+/// Optional website-search correction whose raw and highlighted text is escaped for display.
+/// The correction is never executed and applied is always false; the separate spelling
+/// endpoint retains its existing unescaped DTO semantics. Deserialize rejects applied true.
+/// Both serde and bincode decoders enforce this invariant. Bincode support is required
+/// by the parent WebsitesResult derive; no service message carries its spelling offer.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, ToSchema)]
+pub struct SpellCorrectionOffer {
+    #[serde(flatten)]
+    correction: HighlightedSpellCorrection,
+    /// Always false: this offered correction did not participate in retrieval.
+    #[serde(deserialize_with = "deserialize_not_applied")]
+    #[schema(default = false, example = false)]
+    applied: bool,
+}
+
+impl bincode::Decode for SpellCorrectionOffer {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let correction = bincode::Decode::decode(decoder)?;
+        let applied = bincode::Decode::decode(decoder)?;
+        if applied {
+            return Err(bincode::error::DecodeError::Other(
+                "spelling offers cannot be applied",
+            ));
+        }
+        Ok(Self {
+            correction,
+            applied,
+        })
+    }
+}
+
+impl<'de> bincode::BorrowDecode<'de> for SpellCorrectionOffer {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        bincode::Decode::decode(decoder)
+    }
+}
+
+impl SpellCorrectionOffer {
+    /// Escape every display string once while retaining fragment kinds and whitespace.
+    /// This consumes an unescaped correction; already-escaped input is ordinary text.
+    pub fn new(mut correction: HighlightedSpellCorrection) -> Self {
+        correction.raw = escape_spell_offer(&correction.raw);
+        for fragment in &mut correction.highlighted {
+            fragment.text = escape_spell_offer(&fragment.text);
+        }
+        Self {
+            correction,
+            applied: false,
+        }
+    }
+}
+
+fn deserialize_not_applied<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<bool, D::Error> {
+    let applied = <bool as serde::Deserialize>::deserialize(decoder)?;
+    if applied {
+        return Err(serde::de::Error::custom(
+            "spelling offers cannot be applied",
+        ));
+    }
+    Ok(applied)
+}
+
+fn escape_spell_offer(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
 fn prettify_url(url: &Url) -> String {
     let mut pretty_url = url.clone();
     pretty_url.set_query(None);

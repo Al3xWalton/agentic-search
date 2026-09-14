@@ -40,7 +40,9 @@ use crate::ranking::{
     bitvec_similarity, inbound_similarity, SignalCalculation, SignalCoefficients, SignalEnum,
     SignalScore,
 };
-use crate::search_prettifier::{DisplayedSidebar, DisplayedWebpage, HighlightedSpellCorrection};
+use crate::search_prettifier::{DisplayedSidebar, DisplayedWebpage};
+/// Display-only correction DTOs returned by the local spelling and completed-search seams.
+pub use crate::search_prettifier::{HighlightedSpellCorrection, SpellCorrectionOffer};
 use crate::webgraph::remote::RemoteWebgraph;
 use crate::webgraph::EdgeLimit;
 use crate::webpage::html::links::RelFlags;
@@ -218,7 +220,23 @@ where
     }
 }
 
-pub struct ApiSearcher<S, G> {
+/// Local spelling operation used once after a successful complete website request.
+/// Implementations return display candidates only; they cannot change retrieval or its stage budget.
+pub trait SpellModel {
+    /// Return an optional correction for the parsed text and selected language.
+    /// Text is a private copy; None means no offer and never triggers another search.
+    fn correct(&self, text: &str, language: &whatlang::Lang) -> Option<web_spell::Correction>;
+}
+
+impl SpellModel for SpellChecker {
+    fn correct(&self, text: &str, language: &whatlang::Lang) -> Option<web_spell::Correction> {
+        SpellChecker::correct(self, text, language)
+    }
+}
+
+/// Coordinate request-local retrieval and optional local display spelling after all stages.
+/// The default model preserves ordinary config loading; spelling never rewrites SearchQuery.
+pub struct ApiSearcher<S, G, M = SpellChecker> {
     distributed_searcher: Arc<S>,
     sidebar_manager: Option<SidebarManager>,
     cross_encoder: Option<Arc<CrossEncoderModel>>,
@@ -228,7 +246,7 @@ pub struct ApiSearcher<S, G> {
     collector_config: CollectorConfig,
     agent_query_planning: bool,
     widget_manager: WidgetManager,
-    spell_checker: Option<SpellChecker>,
+    spell_checker: Option<M>,
     webgraph: Option<G>,
 }
 
@@ -269,6 +287,31 @@ where
                 .spell_check
                 .map(|c| SpellChecker::open(c.path, c.correction_config).unwrap()),
             webgraph: None,
+        }
+    }
+}
+
+impl<S, G, M> ApiSearcher<S, G, M>
+where
+    S: distributed::SearchClient,
+    G: Graph,
+    M: SpellModel,
+{
+    /// Replace the optional local model for deterministic Rust observers or local model adapters.
+    /// Preserves the configured request planner, widgets, graph, ranking and search client.
+    pub fn with_spell_model<N: SpellModel>(self, model: Option<N>) -> ApiSearcher<S, G, N> {
+        ApiSearcher {
+            distributed_searcher: self.distributed_searcher,
+            sidebar_manager: self.sidebar_manager,
+            cross_encoder: self.cross_encoder,
+            lambda_model: self.lambda_model,
+            dual_encoder: self.dual_encoder,
+            bangs: self.bangs,
+            collector_config: self.collector_config,
+            agent_query_planning: self.agent_query_planning,
+            widget_manager: self.widget_manager,
+            spell_checker: model,
+            webgraph: self.webgraph,
         }
     }
 
@@ -323,7 +366,7 @@ where
                     .remove(0),
             );
 
-            let res = self.search_websites(&query, session).await?;
+            let res = self.search_websites_stage(&query, session).await?;
 
             let webpage = res.webpages.first().ok_or(staged::NoBangTarget)?;
             return Ok(Some(BangHit {
@@ -572,6 +615,7 @@ where
         let search_duration_ms = start.elapsed().as_millis();
 
         Ok(WebsitesResult {
+            spell_correction: None,
             query_plan: None,
             num_hits: num_docs,
             webpages: retrieved_webpages,
@@ -580,7 +624,7 @@ where
         })
     }
 
-    async fn search_websites(
+    async fn search_websites_stage(
         &self,
         query: &SearchQuery,
         session: &mut distributed::SearchSession,
@@ -670,6 +714,7 @@ where
         let search_duration_ms = start.elapsed().as_millis();
 
         Ok(WebsitesResult {
+            spell_correction: None,
             query_plan: None,
             num_hits: num_docs,
             webpages: retrieved_webpages,
@@ -679,8 +724,7 @@ where
     }
 
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
-        use super::provenance::PlanMode;
-        use query::planner::{bounds, AgentPlan};
+        use query::planner::bounds;
         let start = Instant::now();
         bounds::validate_numbers(query.page, query.num_results, true)?;
         let atoms = bounds::scan_query(&query.query)?;
@@ -698,6 +742,14 @@ where
                 .ok_or(staged::NoBangTarget)?;
             return Ok(SearchResult::Bang(Box::new(bang)));
         }
+        Ok(SearchResult::Websites(
+            self.search_websites(query, start).await?,
+        ))
+    }
+
+    async fn search_websites(&self, query: &SearchQuery, start: Instant) -> Result<WebsitesResult> {
+        use super::provenance::PlanMode;
+        use query::planner::AgentPlan;
         let mut plan = AgentPlan::new(&query.query)?;
         let mode = if query.page > 0 {
             PlanMode::PaginationStrict
@@ -725,13 +777,17 @@ where
             let mut selected = query.clone();
             selected.stage_plan = Some(stage.clone());
             let rendered = query::Query::render_query(&selected)?;
-            let result = self.search_websites(&selected, &mut session).await?;
+            let result = self.search_websites_stage(&selected, &mut session).await?;
             accumulated.complete(&stage, rendered, result, stage_start.elapsed().as_millis());
             completed += 1;
         }
-        Ok(SearchResult::Websites(
-            accumulated.finish(start.elapsed().as_millis(), completed < eligible),
-        ))
+        // The original request survives every stage; include the one local offer in total time.
+        let spell_correction: Option<SpellCorrectionOffer> = self
+            .spell_check(&query.query)
+            .map(SpellCorrectionOffer::new);
+        let mut result = accumulated.finish(start.elapsed().as_millis(), completed < eligible);
+        result.spell_correction = spell_correction;
+        Ok(result)
     }
 
     pub async fn get_entity_image(
