@@ -1,0 +1,11 @@
+graph_base_path = "sample/webgraph"
+shard = 0
+host_centrality_store_path = "sample/centrality-empty/harmonic"
+host_rank_store_path = "sample/centrality-empty/harmonic_rank"
+limit_warc_files = 2
+batch_size = 1
+merge_all_segments = true
+[warc_source]
+type = "Local"
+folder = "sample"
+names = ["cc-sample.warc.gz", "seeds.warc.gz"]

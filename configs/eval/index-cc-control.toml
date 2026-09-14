@@ -1,0 +1,9 @@
+output_path = "sample/index-cc-control"
+host_centrality_store_path = "sample/centrality-empty"
+limit_warc_files = 1
+batch_size = 512
+autocommit_after_num_inserts = 5000
+[warc_source]
+type = "Local"
+folder = "sample"
+names = ["cc-sample.warc.gz"]

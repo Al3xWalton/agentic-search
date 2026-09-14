@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Local, reproducible recall evaluation over an already running loopback search service.
 //! Inputs and outputs are bounded, identities explicit, and failures never become scored zeros.
-//! This module does not fetch pages, serve indexes, tune queries, or implement feature panels.
+//! Feature diagnostics use private snapshots and matching-mode panel identities.
+//! This module does not fetch pages, serve indexes, train models, or tune queries.
 
 use clap::{Args, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 
 pub mod diff;
 pub mod endpoint;
+pub mod features;
 pub mod index;
 pub mod input;
 pub mod labels;
@@ -75,6 +77,15 @@ pub enum EvalError {
 /// Fixed CLI argument names used in validation diagnostics; paths and labels are never interpolated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 pub enum Argument {
+    /// Local graph copy or build.
+    #[error("--graph")]
+    Graph,
+    /// Parent of the two harmonic host stores.
+    #[error("--centrality")]
+    Centrality,
+    /// Optional checker directory containing canonical language directories.
+    #[error("--spell-model")]
+    SpellModel,
     /// Input index copy.
     #[error("--index")]
     Index,
@@ -146,6 +157,18 @@ pub enum ArgumentReason {
     /// Output cannot alias a source directory.
     #[error("output inside an input directory")]
     OutputInput,
+    /// A create-new report or completion marker already exists.
+    #[error("OutputExists: output or completion marker already exists")]
+    OutputExists,
+    /// An I/O operation failed without echoing its path.
+    #[error("filesystem operation failed")]
+    Io,
+    /// Input bytes or membership changed while in use.
+    #[error("input changed while in use")]
+    Changed,
+    /// Supplied roots or evidence identities do not agree.
+    #[error("input identities do not agree")]
+    Identity,
 }
 
 impl EvalError {
@@ -155,6 +178,10 @@ impl EvalError {
             Self::UnsafePath => ArgumentReason::Components,
             Self::InvalidInput => ArgumentReason::Structure,
             Self::InputLimit => ArgumentReason::Limit,
+            Self::OutputExists => ArgumentReason::OutputExists,
+            Self::Io => ArgumentReason::Io,
+            Self::InputChanged => ArgumentReason::Changed,
+            Self::IdentityMismatch => ArgumentReason::Identity,
             _ => return self,
         };
         Self::Argument { argument, reason }
@@ -224,6 +251,8 @@ pub struct Recall {
 /// Existing binary's evaluation subtree; each helper shares guarded I/O.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Inspect local host centrality and optional spelling through private snapshots.
+    Features(features::Arguments),
     /// Measure each label once in file order with a fresh HTTP/1 connection.
     Recall(Recall),
     /// Compare runs by label identity, optionally importing the frozen spike.
@@ -241,6 +270,7 @@ impl Command {
     pub async fn run(self) -> Result<(), EvalError> {
         self.validate_paths()?;
         match self {
+            Self::Features(args) => features::run(args),
             Self::Recall(args) => runner::run(args).await,
             Self::Diff(args) => diff::run(args),
             Self::ValidateLabels(args) => labels::run(args),
@@ -252,6 +282,17 @@ impl Command {
     fn validate_paths(&self) -> Result<(), EvalError> {
         let mut paths = Vec::new();
         let out = match self {
+            Self::Features(a) => {
+                paths.push((&a.graph, Argument::Graph, true));
+                paths.push((&a.centrality, Argument::Centrality, true));
+                paths.extend(a.index.iter().map(|p| (p, Argument::Index, true)));
+                paths.extend(
+                    a.spell_model
+                        .iter()
+                        .map(|p| (p, Argument::SpellModel, true)),
+                );
+                &a.out
+            }
             Self::Recall(a) => {
                 paths.push((&a.labels, Argument::Labels, false));
                 paths.push((&a.service_manifest, Argument::ServiceManifest, false));

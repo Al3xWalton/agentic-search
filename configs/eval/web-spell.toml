@@ -1,0 +1,7 @@
+output_path = "sample/web-spell"
+languages = ["eng"]
+limit_warc_files = 2
+[warc_source]
+type = "Local"
+folder = "sample"
+names = ["cc-sample.warc.gz", "seeds.warc.gz"]
