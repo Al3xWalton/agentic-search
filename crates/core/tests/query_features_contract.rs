@@ -19,7 +19,7 @@ mod contracts {
     use std::{
         fs,
         io::Cursor,
-        os::unix::fs::{symlink, PermissionsExt},
+        os::unix::fs::{symlink, DirBuilderExt, MetadataExt, PermissionsExt},
         path::Path,
         process::Command,
         sync::{Arc, Mutex},
@@ -981,6 +981,119 @@ mod contracts {
             );
         }
     }
+
+    #[test]
+    fn features_accepts_trusted_temporary_roots() {
+        let temporary = std::env::temp_dir().canonicalize().unwrap();
+        let root = [
+            "/dev/shm",
+            "/var/tmp",
+            "/private/var/tmp",
+            "/private/tmp",
+            "/tmp",
+        ]
+        .into_iter()
+        .filter_map(|candidate| Path::new(candidate).canonicalize().ok())
+        .find(|candidate| {
+            fs::symlink_metadata(candidate).is_ok_and(|metadata| {
+                metadata.is_dir()
+                    && eval::input::trusted_temporary_root(
+                        candidate,
+                        metadata.uid(),
+                        metadata.mode(),
+                    )
+                    && !temporary.starts_with(candidate)
+            })
+        });
+        let Some(root) = root else {
+            eprintln!(
+                "SKIP features_accepts_trusted_temporary_roots: no trusted root outside {}",
+                temporary.display()
+            );
+            return;
+        };
+        eprintln!("trusted temporary witness root: {}", root.display());
+
+        struct PrivateDirectory(std::path::PathBuf);
+        impl PrivateDirectory {
+            fn new(parent: &Path) -> Self {
+                let path = parent.join(format!("stract-features-{}", uuid::Uuid::new_v4()));
+                fs::DirBuilder::new().mode(0o700).create(&path).unwrap();
+                Self(path)
+            }
+        }
+        impl Drop for PrivateDirectory {
+            fn drop(&mut self) {
+                fs::remove_dir_all(&self.0).unwrap();
+            }
+        }
+
+        let accepted = PrivateDirectory::new(&root);
+        let args = fixture::fixture_at(&accepted.0);
+        assert_eq!(features::input_roots(&args).unwrap().len(), 4);
+        features::run(args.clone()).unwrap();
+        let value = read(&args.out);
+        for (key, expected) in [
+            ("page_nodes", 3),
+            ("host_nodes", 3),
+            ("edge_records", 4),
+            ("unique_page_edges", 3),
+            ("unique_host_edges", 3),
+            ("segments", 1),
+        ] {
+            assert_eq!(value["graph"][key], expected, "{key}");
+        }
+        assert_eq!(value["indexes"][0]["documents"], 2);
+        assert_eq!(value["indexes"][1]["documents"], 2);
+        assert_eq!(value["centrality"]["union"]["nonzero"]["numerator"], 1);
+        assert_eq!(value["centrality"]["union"]["nonzero"]["denominator"], 3);
+        assert_eq!(value["source_unchanged"], true);
+
+        let outside =
+            PrivateDirectory::new(&std::env::current_dir().unwrap().canonicalize().unwrap());
+        let invalid = fixture::fixture_at(&outside.0);
+        assert_eq!(
+            features::input_roots(&invalid).unwrap_err(),
+            EvalError::Argument {
+                argument: eval::Argument::Graph,
+                reason: eval::ArgumentReason::IndexTemporary,
+            }
+        );
+        for alias in [
+            root.clone(),
+            format!("{}/", root.display()).into(),
+            format!("{}/.", root.display()).into(),
+        ] {
+            for argument in [
+                eval::Argument::Graph,
+                eval::Argument::Centrality,
+                eval::Argument::Index,
+                eval::Argument::SpellModel,
+            ] {
+                let mut root_itself = args.clone();
+                match argument {
+                    eval::Argument::Graph => root_itself.graph = alias.clone(),
+                    eval::Argument::Centrality => root_itself.centrality = alias.clone(),
+                    eval::Argument::Index => root_itself.index[0] = alias.clone(),
+                    eval::Argument::SpellModel => root_itself.spell_model = Some(alias.clone()),
+                    _ => unreachable!(),
+                }
+                assert_eq!(
+                    features::input_roots(&root_itself).unwrap_err(),
+                    EvalError::Argument {
+                        argument,
+                        reason: eval::ArgumentReason::IndexTemporary,
+                    },
+                    "{argument:?} root alias {}",
+                    alias.display()
+                );
+            }
+        }
+        let mut dotted_child = args;
+        dotted_child.graph = dotted_child.graph.join(".");
+        assert!(features::input_roots(&dotted_child).is_err());
+    }
+
     #[test]
     fn features_graph_counts_rejected_endpoints() {
         let fixture = fixture::fixture_with_rejected_endpoints();
