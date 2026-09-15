@@ -33,7 +33,17 @@ pub fn fixture_with_rejected_endpoints() -> Fixture {
 
 fn fixture_graph(rejected_endpoints: bool) -> Fixture {
     let directory = stract::gen_temp_dir().unwrap();
-    let root = directory.as_ref();
+    let args = fixture_arguments(directory.as_ref(), rejected_endpoints);
+    Fixture { args, directory }
+}
+
+/// Build the standard fixture inside a caller-owned, empty directory at any absolute path.
+/// The caller retains and removes the directory; fixture setup errors panic.
+pub fn fixture_at(root: &Path) -> Arguments {
+    fixture_arguments(root, false)
+}
+
+fn fixture_arguments(root: &Path, rejected_endpoints: bool) -> Arguments {
     let graph = root.join("graph");
     let mut writer = stract::webgraph::Webgraph::open(&graph, 0.into()).unwrap();
     for (from, to) in [
@@ -112,15 +122,12 @@ fn fixture_graph(rejected_endpoints: bool) -> Fixture {
             ("https://c.test/three", "gamma", "contact information"),
         ],
     );
-    Fixture {
-        args: Arguments {
-            graph,
-            centrality,
-            index: paths,
-            spell_model: None,
-            out: root.join("reports/features.json"),
-        },
-        directory,
+    Arguments {
+        graph,
+        centrality,
+        index: paths,
+        spell_model: None,
+        out: root.join("reports/features.json"),
     }
 }
 

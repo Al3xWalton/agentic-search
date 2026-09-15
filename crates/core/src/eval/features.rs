@@ -2,6 +2,8 @@
 //! Inspect bounded local feature assets and compare independently measured feature panels.
 //! Store readers operate only on private independent snapshots, with source identities
 //! checked before and after use. Counts retain duplicates; coverage uses unique host ids.
+//! Input directories must be below a trusted temporary root, as
+//! input::trusted_temporary_root defines it; the shared root itself is never an input.
 //! Bloom preflight bounds both file bytes and decoding: a claimed length is an allocation
 //! request, so a small file alone does not establish a safe decoded size.
 //! Empty, over-long and non-HTTP graph endpoint names are classified without dropping
@@ -35,10 +37,10 @@ const BLOOM_DECODE_LIMIT: usize = 64 * 1024 * 1024;
 /// Local diagnostics inputs; indexes are exactly two distinct copies in shard order.
 #[derive(Debug, Clone, Args)]
 pub struct Arguments {
-    /// Graph root containing the existing `edges` index, below canonical TMPDIR.
+    /// Graph root containing `edges`, below a trusted temporary root as defined by input.
     #[arg(long)]
     pub graph: PathBuf,
-    /// Parent containing both harmonic host stores, below canonical TMPDIR.
+    /// Both harmonic host stores' parent, below a trusted temporary root as defined by input.
     #[arg(long)]
     pub centrality: PathBuf,
     /// Two independent index roots, shard zero followed by shard one.
@@ -177,15 +179,39 @@ fn directory(path: &Path, argument: Argument) -> Result<PathBuf, EvalError> {
 }
 
 fn directory_inner(path: &Path, argument: Argument) -> Result<PathBuf, EvalError> {
-    let path = input::argument_path(path, false, argument)?;
+    let path = input::argument_path(path, false, argument).or_else(|error| {
+        // Raw dot components stay invalid, but aliases of a shared root must fail
+        // as IndexTemporary before ownership is considered, including for UID 0.
+        let normalized: PathBuf = path.components().collect();
+        if let Ok(root) = input::argument_path(&normalized, false, argument) {
+            let metadata = fs::symlink_metadata(&root).map_err(|_| EvalError::Io)?;
+            if input::trusted_temporary_root(&root, metadata.uid(), metadata.mode()) {
+                return Err(EvalError::Argument {
+                    argument,
+                    reason: ArgumentReason::IndexTemporary,
+                });
+            }
+        }
+        Err(error)
+    })?;
     let metadata = fs::symlink_metadata(&path).map_err(|_| EvalError::Io)?;
-    let temporary = input::inspect_path(&std::env::temp_dir(), false)?
-        .canonicalize()
-        .map_err(|_| EvalError::Io)?;
     if !metadata.is_dir() {
         return Err(EvalError::InvalidInput.argument(argument));
     }
-    if path == temporary || !path.starts_with(&temporary) {
+    let mut ancestor = PathBuf::new();
+    let mut trusted_temporary_ancestor = false;
+    for component in path.components() {
+        ancestor.push(component);
+        if ancestor.components().eq(path.components()) {
+            break;
+        }
+        let metadata = fs::symlink_metadata(&ancestor).map_err(|_| EvalError::Io)?;
+        if input::trusted_temporary_root(&ancestor, metadata.uid(), metadata.mode()) {
+            trusted_temporary_ancestor = true;
+            break;
+        }
+    }
+    if !trusted_temporary_ancestor {
         return Err(EvalError::Argument {
             argument,
             reason: ArgumentReason::IndexTemporary,
@@ -220,6 +246,7 @@ fn distinct(roots: &[PathBuf]) -> Result<(), EvalError> {
 }
 
 /// Validate exact index arity and every supplied root before snapshot or store opening.
+/// Inputs must be below a trusted temporary root as input::trusted_temporary_root defines it.
 /// Returns ordered graph, centrality, index and optional checker roots; unsafe aliases fail.
 pub fn input_roots(args: &Arguments) -> Result<Vec<PathBuf>, EvalError> {
     if args.index.len() != 2 {
