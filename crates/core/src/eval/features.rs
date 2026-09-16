@@ -185,6 +185,23 @@ fn directory(path: &Path, argument: Argument) -> Result<PathBuf, EvalError> {
     directory_inner(path, argument).map_err(|error| error.argument(argument))
 }
 
+// Input admission and live gate binding share this rule so Linux /dev/shm and
+// other trusted roots cannot diverge from the process temporary directory.
+fn has_trusted_temporary_ancestor(path: &Path) -> Result<bool, EvalError> {
+    let mut ancestor = PathBuf::new();
+    for component in path.components() {
+        ancestor.push(component);
+        if ancestor.components().eq(path.components()) {
+            break;
+        }
+        let metadata = fs::symlink_metadata(&ancestor).map_err(|_| EvalError::Io)?;
+        if input::trusted_temporary_root(&ancestor, metadata.uid(), metadata.mode()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn directory_inner(path: &Path, argument: Argument) -> Result<PathBuf, EvalError> {
     let path = input::argument_path(path, false, argument).or_else(|error| {
         // Raw dot components stay invalid, but aliases of a shared root must fail
@@ -205,20 +222,7 @@ fn directory_inner(path: &Path, argument: Argument) -> Result<PathBuf, EvalError
     if !metadata.is_dir() {
         return Err(EvalError::InvalidInput.argument(argument));
     }
-    let mut ancestor = PathBuf::new();
-    let mut trusted_temporary_ancestor = false;
-    for component in path.components() {
-        ancestor.push(component);
-        if ancestor.components().eq(path.components()) {
-            break;
-        }
-        let metadata = fs::symlink_metadata(&ancestor).map_err(|_| EvalError::Io)?;
-        if input::trusted_temporary_root(&ancestor, metadata.uid(), metadata.mode()) {
-            trusted_temporary_ancestor = true;
-            break;
-        }
-    }
-    if !trusted_temporary_ancestor {
+    if !has_trusted_temporary_ancestor(&path)? {
         return Err(EvalError::Argument {
             argument,
             reason: ArgumentReason::IndexTemporary,
@@ -2722,11 +2726,7 @@ fn measurement_binding(
             .and_then(toml::Value::as_str)
             .ok_or(EvalError::InvalidInput)?;
         let index_path = input::inspect_path(Path::new(index_path), false)?;
-        if !index_path.starts_with(
-            std::env::temp_dir()
-                .canonicalize()
-                .map_err(|_| EvalError::Io)?,
-        ) {
+        if !has_trusted_temporary_ancestor(&index_path)? {
             return Err(EvalError::UnsafePath);
         }
         shards.push(
