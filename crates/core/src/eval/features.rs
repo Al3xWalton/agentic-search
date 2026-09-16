@@ -2,6 +2,8 @@
 //! Inspect bounded local feature assets and compare independently measured feature panels.
 //! Store readers operate only on private independent snapshots, with source identities
 //! checked before and after use. Counts retain duplicates; coverage uses unique host ids.
+//! Same-binary control identity excludes unstable keyword extraction; retained indexes
+//! supply acceptance anchors, not the equality operand for centrality comparisons.
 //! Input directories must be below a trusted temporary root, as
 //! input::trusted_temporary_root defines it; the shared root itself is never an input.
 //! Bloom preflight bounds both file bytes and decoding: a claimed length is an allocation
@@ -63,6 +65,9 @@ pub struct Limits {
     pub entries: usize,
     /// Individual metadata and serialized report ceiling, in bytes (64 MiB).
     pub metadata_bytes: u64,
+    /// Gate management and shard response frame ceiling, in bytes (64 KiB).
+    /// Checked on the native length header before allocating the response buffer.
+    pub native_response_bytes: usize,
     /// Individual binary file ceiling, in bytes (4 GiB).
     pub file_bytes: u64,
     /// Aggregate copied file ceiling, in bytes (16 GiB).
@@ -89,6 +94,7 @@ impl Default for Limits {
             depth: 16,
             entries: 1_000_000,
             metadata_bytes: 64 * 1024 * 1024,
+            native_response_bytes: 64 * 1024,
             file_bytes: 4 * 1024 * 1024 * 1024,
             total_bytes: 16 * 1024 * 1024 * 1024,
             documents: 1_000_000,
@@ -108,6 +114,7 @@ impl Limits {
         if self.depth > maximum.depth
             || self.entries > maximum.entries
             || self.metadata_bytes > maximum.metadata_bytes
+            || self.native_response_bytes > maximum.native_response_bytes
             || self.file_bytes > maximum.file_bytes
             || self.total_bytes > maximum.total_bytes
             || self.documents > maximum.documents
@@ -945,8 +952,7 @@ fn content_kind(field: crate::schema::Field) -> Option<StoredKind> {
             | T::AllBody(_)
             | T::Description(_)
             | T::DmozDescription(_)
-            | T::RecipeFirstIngredientTagId(_)
-            | T::Keywords(_),
+            | T::RecipeFirstIngredientTagId(_),
         ) => Some(StoredKind::Text),
         Field::Text(T::SchemaOrgJson(_)) => Some(StoredKind::Json),
         Field::Numerical(N::LastUpdated(_)) => Some(StoredKind::Timestamp),
@@ -1047,8 +1053,16 @@ pub struct IndexIdentity {
     pub documents: usize,
     /// Unique indexed host count in this shard.
     pub hosts: usize,
-    /// Hash of the sorted multiset of exact URL bytes and canonical content hashes.
+    /// Hash of exact URL bytes and twelve canonical stored fields, excluding keywords.
+    /// Sorted duplicate occurrences remain distinct; this is not a physical-file digest.
     pub content_sha256: String,
+    /// Physical pre-open inspect-manifest hash attached by the control driver.
+    /// A semantic snapshot alone has no producer binding and leaves this empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub manifest_sha256: String,
+    /// Frozen executable hash attached by the control driver with its manifest binding.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub executable_sha256: String,
     /// Internal multiset for semantic comparisons; never serialized into diagnostics.
     #[serde(skip)]
     pub records: Vec<(String, String)>,
@@ -1108,6 +1122,8 @@ fn inspect_documents(
         ]
     }));
     Ok(IndexIdentity {
+        manifest_sha256: String::new(),
+        executable_sha256: String::new(),
         shard: shard as u64,
         documents: records.len(),
         hosts: hosts.len(),
@@ -1119,6 +1135,9 @@ fn inspect_documents(
 
 /// Compare-ready identities for exactly two copied indexes, using private reader snapshots.
 /// No supplied index is opened; malformed schemas, records, limits or source changes fail.
+/// Keywords are excluded because RAKE ties can change both order and membership at the cut.
+/// Same-binary, same-WARC content under fixed ingestion settings therefore compares across
+/// centrality stores without claiming reproducibility of every searchable byte or ranking.
 pub fn document_identities(
     paths: &[PathBuf],
     limits: &Limits,
@@ -1534,7 +1553,9 @@ pub fn retrieval_identity(response: &Value) -> Result<Value, EvalError> {
 }
 
 /// Validate sixteen fixed-query observations (off then on) and preserve all nontiming content.
-/// A missing/reordered query, wrong mode, failed HTTP attempt or malformed response fails.
+/// A missing/reordered query, wrong mode, failed HTTP attempt or malformed response fails,
+/// or a response outside the fixed control contract checked by `control_response_shape`.
+/// An explicit `error: null` is required; an absent key is not a recorded attempt.
 pub fn fixed_query_identities(rows: &[Value]) -> Result<Vec<Value>, EvalError> {
     if rows.len() != 16 {
         return Err(EvalError::IdentityMismatch);
@@ -1545,7 +1566,7 @@ pub fn fixed_query_identities(rows: &[Value]) -> Result<Vec<Value>, EvalError> {
         if row["query"] != FIXED_CONTROL_QUERIES[ordinal % 8]
             || row["mode"] != mode
             || row["status"] != 200
-            || !row["error"].is_null()
+            || row.get("error") != Some(&Value::Null)
         {
             return Err(EvalError::IdentityMismatch);
         }
@@ -1554,10 +1575,72 @@ pub fn fixed_query_identities(rows: &[Value]) -> Result<Vec<Value>, EvalError> {
         } else {
             Planner::On
         };
-        super::runner::response(&row["response"], expected)?;
+        observation_shape(&row["response"], expected)?;
         values.push(json!({"query":row["query"],"mode":mode,"status":row["status"],"response":retrieval_identity(&row["response"])?}));
     }
     Ok(values)
+}
+
+/// Validate the retrieval response and project the fixed contract used for comparison.
+fn control_response_shape(response: &Value, expected: Planner) -> Result<Value, EvalError> {
+    super::runner::response(response, expected)?;
+    if !response.is_object()
+        || response["_type"] != "websites"
+        || !response["hasMoreResults"].is_boolean()
+    {
+        return Err(EvalError::InvalidResponse);
+    }
+    let _: crate::collector::approx_count::Count =
+        serde_json::from_value(response["numHits"].clone())
+            .map_err(|_| EvalError::InvalidResponse)?;
+    let pages = response["webpages"]
+        .as_array()
+        .filter(|pages| pages.len() <= 10)
+        .ok_or(EvalError::InvalidResponse)?;
+    for page in pages {
+        if ["url", "title", "planStage"]
+            .iter()
+            .any(|key| page[*key].as_str().is_none())
+            || !page["snippet"].is_object()
+        {
+            return Err(EvalError::InvalidResponse);
+        }
+    }
+    // Centrality can select different documents and stages. Validate their provenance,
+    // then compare this fixed contract rather than optional result content or array size.
+    Ok(json!({
+        "_type":"websites", "numHits":response["numHits"]["_type"].clone(),
+        "hasMoreResults":"boolean", "webpages":"array of validated webpages",
+        "queryPlan":{"mode":response["queryPlan"]["mode"],"version":1,"stages":"ordered valid producers"}
+    }))
+}
+
+/// Timing-stripped receipts omit the request duration; restore a neutral value for validation.
+fn observation_shape(response: &Value, expected: Planner) -> Result<Value, EvalError> {
+    let mut timed = response.clone();
+    if timed.get("searchDurationMs").is_none() {
+        timed["searchDurationMs"] = json!(0);
+    }
+    control_response_shape(&timed, expected)
+}
+
+/// Take order/mode/status from `fixed_query_identities`; each row projects its validated shape.
+fn fixed_query_shapes(rows: &[Value]) -> Result<Vec<Value>, EvalError> {
+    fixed_query_identities(rows)?;
+    rows.iter()
+        .enumerate()
+        .map(|(ordinal, row)| {
+            let planner = if ordinal < 8 {
+                Planner::Off
+            } else {
+                Planner::On
+            };
+            Ok(
+                json!({"query":row["query"],"mode":row["mode"],"status":200,"error":null,
+                "response":observation_shape(&row["response"], planner)?}),
+            )
+        })
+        .collect()
 }
 
 /// Content and fixed-query identities of one ordered pair, independent of physical segments.
@@ -1567,7 +1650,8 @@ pub struct ControlIdentity {
     pub counts: Vec<(u64, u64)>,
     /// One sorted document-multiset SHA-256 per shard, in the same order.
     pub documents: Vec<String>,
-    /// Sixteen raw fixed-query observations, validated during comparison; empty for centrality.
+    /// Sixteen gate-measured observations on this pair, validated during comparison.
+    /// Retained observations are reporting only and never affect the verdict.
     pub rankings: Vec<Value>,
 }
 
@@ -1575,15 +1659,22 @@ pub struct ControlIdentity {
 /// Deserialization is only transport: the gate recomputes every flag before accepting it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ControlVerdict {
-    /// Whether the control comparison actually completed, including measured mismatches.
+    /// Whether the control comparison completed and the expected tuple is well-formed.
+    /// Measured mismatches still count as completed comparisons.
     completed: bool,
-    /// Ordered retained/control counts agree with each other and the expected pair.
+    /// Both control-mode receipts contain eight valid observations each.
+    control_receipts_present: bool,
+    /// Both centrality-mode receipts contain eight valid observations each.
+    centrality_receipts_present: bool,
+    /// Four gate receipt hashes in control off/on, centrality off/on order; absent slots are null.
+    observation_digests: Vec<Option<String>>,
+    /// Ordered control counts agree with the independently audited expected pair.
     counts_match: bool,
-    /// Retained/control document-content multisets agree per shard.
+    /// Valid control/centrality content multisets and counts agree per shard.
     content_matches: bool,
-    /// Both fixed-query modes agree in all nontiming result content.
+    /// Legacy name: valid control/centrality responses agree in fixed schema shape.
     rankings_match: bool,
-    /// Control/centrality counts and content agree; their rankings may differ.
+    /// Compatibility component derived from counts_match and content_matches.
     centrality_content_matches: bool,
     /// All comparison components agree; required only for centrality contrasts.
     comparable: bool,
@@ -1596,8 +1687,9 @@ pub struct ControlVerdict {
 }
 
 impl ControlIdentity {
-    /// Compare ordered counts/content and validated fixed-query rankings against a control.
-    /// Expected counts are caller-supplied fixture/retained facts, never inferred from totals.
+    /// Compare same-binary control/centrality counts, content and response shapes.
+    /// Retained document evidence must be valid; its rankings are reporting only.
+    /// Expected counts are independently audited caller inputs, never inferred from totals.
     pub fn comparable(
         &self,
         control: &Self,
@@ -1605,11 +1697,16 @@ impl ControlIdentity {
         expected: [(u64, u64); 2],
     ) -> ControlVerdict {
         let retained = self;
-        let counts_match = retained.counts == control.counts;
-        let content_matches = retained.documents == control.documents;
-        let retained_rankings = fixed_query_identities(&retained.rankings).ok();
+        let counts_match = control.counts == expected;
+        // Value identities gate completeness only; shapes are the compared contract.
+        // Raw rankings remain in the seal for reporting legitimate retrieval differences.
         let control_rankings = fixed_query_identities(&control.rankings).ok();
-        let rankings_match = retained_rankings == control_rankings;
+        let centrality_rankings = fixed_query_identities(&centrality.rankings).ok();
+        let control_shapes = fixed_query_shapes(&control.rankings).ok();
+        let centrality_shapes = fixed_query_shapes(&centrality.rankings).ok();
+        let rankings_match = control_shapes == centrality_shapes
+            && control_shapes.is_some()
+            && centrality_shapes.is_some();
         let valid_documents = |identity: &Self| {
             identity.counts.len() == 2
                 && identity
@@ -1628,31 +1725,26 @@ impl ControlIdentity {
         let completed = [retained, control, centrality]
             .into_iter()
             .all(valid_documents)
-            && retained_rankings.is_some()
-            && control_rankings.is_some();
-        let counts_match = counts_match && retained.counts == expected;
-        let content_matches = content_matches
-            && retained.documents.len() == 2
-            && retained
-                .documents
-                .iter()
-                .all(|digest| decoded_sha(digest).is_ok());
-        let rankings_match =
-            rankings_match && retained_rankings.is_some() && control_rankings.is_some();
-        let centrality_content_matches = centrality.counts == control.counts
-            && centrality.counts == expected
-            && centrality.documents == control.documents;
+            && control_rankings.is_some()
+            && centrality_rankings.is_some()
+            && expected.iter().enumerate().all(|(shard, (id, count))| {
+                *id == shard as u64 && *count <= Limits::default().documents as u64
+            });
+        let content_matches = control.documents == centrality.documents
+            && centrality.counts == control.counts
+            && valid_documents(control)
+            && valid_documents(centrality);
+        let centrality_content_matches = counts_match && content_matches;
         ControlVerdict {
             completed,
+            control_receipts_present: control_rankings.as_ref().map(Vec::len) == Some(16),
+            centrality_receipts_present: centrality_rankings.as_ref().map(Vec::len) == Some(16),
+            observation_digests: Vec::new(),
             counts_match,
             content_matches,
             rankings_match,
             centrality_content_matches,
-            comparable: completed
-                && counts_match
-                && content_matches
-                && rankings_match
-                && centrality_content_matches,
+            comparable: completed && counts_match && content_matches && rankings_match,
             input_identity: String::new(),
             comparison_identity: input::sha256(
                 &serde_json::to_vec(&(retained, control, centrality, expected))
@@ -1679,23 +1771,32 @@ impl ControlVerdict {
         Ok(self)
     }
 
-    /// Whether validated identities and all sixteen observations per measured pair are present.
+    /// Whether validated identities and all sixteen observations per pair are present,
+    /// and the expected tuple is well-formed.
     pub fn completed(&self) -> bool {
         self.completed
+    }
+    /// Whether both control modes have valid gate measurements.
+    pub fn control_receipts_present(&self) -> bool {
+        self.control_receipts_present
+    }
+    /// Whether both centrality modes have valid gate measurements.
+    pub fn centrality_receipts_present(&self) -> bool {
+        self.centrality_receipts_present
     }
     /// Whether every control component matched; required for centrality feature cells.
     pub fn comparable(&self) -> bool {
         self.comparable
     }
-    /// Whether ordered counts matched the retained pair and expected per-shard counts.
+    /// Whether ordered control counts matched the independently audited per-shard counts.
     pub fn counts_match(&self) -> bool {
         self.counts_match
     }
-    /// Whether the retained/control document multisets matched per shard.
+    /// Whether valid control/centrality document multisets and counts matched per shard.
     pub fn content_matches(&self) -> bool {
         self.content_matches
     }
-    /// Whether all validated fixed-query responses matched apart from durations.
+    /// Whether control/centrality observations agreed on the validated response-shape contract.
     pub fn rankings_match(&self) -> bool {
         self.rankings_match
     }
@@ -1705,16 +1806,23 @@ impl ControlVerdict {
     }
 }
 
-/// Derive a control from bounded identity JSON and four observation files in retained-off,
-/// retained-on, control-off, control-on order. Missing/malformed evidence fails closed.
-/// The input seal binds these comparison inputs and the caller's frozen envelope SHA-256.
+/// Derive a control from bounded identity JSON and gate measurement receipts.
+/// The six slots are retained/control/centrality off/on; retained slots are reporting only.
+/// Missing control/centrality receipts produce an incomplete verdict, never authorization.
+/// The envelope binds each shard to its physical inspect manifest and each observation to
+/// its pair, mode, served-service receipt, resolved API config and frozen executable.
+/// Producer mismatches make the comparison incomplete; legitimate equal rankings remain valid.
 pub fn control_from_files(
     identities: &Path,
-    observations: &[PathBuf; 4],
+    observations: &[PathBuf; 6],
     expected: [(u64, u64); 2],
-    input_identity: &str,
+    envelope: &Value,
 ) -> Result<ControlVerdict, EvalError> {
     let documents = read_metadata(identities, &Limits::default())?;
+    let provenance = &envelope["provenance"];
+    let executable = &envelope["freeze"]["binary_sha256"];
+    let mut producers_valid = valid_digest(executable);
+    let mut observation_valid = [true; 3];
     let mut comparisons = Vec::new();
     for (ordinal, pair) in ["retained", "reindexed", "centrality"]
         .into_iter()
@@ -1729,7 +1837,10 @@ pub fn control_from_files(
             documents: Vec::new(),
             rankings: Vec::new(),
         };
-        for index in indexes {
+        for (shard, index) in indexes.iter().enumerate() {
+            producers_valid &= index["manifest_sha256"] == provenance["indexes"][pair][shard]
+                && valid_digest(&provenance["indexes"][pair][shard])
+                && index["executable_sha256"] == *executable;
             identity.counts.push((
                 index["shard"].as_u64().ok_or(EvalError::IdentityMismatch)?,
                 index["documents"]
@@ -1743,30 +1854,78 @@ pub fn control_from_files(
                     .to_owned(),
             );
         }
-        if ordinal < 2 {
-            for path in &observations[ordinal * 2..ordinal * 2 + 2] {
-                let observation = read_metadata(path, &Limits::default())?;
-                let rows = observation["rows"]
-                    .as_array()
-                    .filter(|rows| rows.len() <= 8)
-                    .ok_or(EvalError::IdentityMismatch)?;
-                identity.rankings.extend(rows.iter().cloned());
+        for (mode, path) in ["off", "on"]
+            .into_iter()
+            .zip(&observations[ordinal * 2..ordinal * 2 + 2])
+        {
+            if ordinal == 0 {
+                continue;
             }
+            if !path.try_exists().map_err(|_| EvalError::Io)? {
+                continue;
+            }
+            let Ok(observation) = read_measurement(path) else {
+                observation_valid[ordinal] = false;
+                continue;
+            };
+            observation_valid[ordinal] &= observation["pair"]
+                == if pair == "reindexed" { "control" } else { pair }
+                && observation["mode"] == mode
+                && observation["service_sha256"] == provenance["services"][pair][mode]
+                && valid_digest(&provenance["services"][pair][mode])
+                && observation["config_sha256"] == provenance["configs"][mode]
+                && valid_digest(&provenance["configs"][mode])
+                && observation["executable_sha256"] == *executable
+                && indexes.iter().enumerate().all(|(shard, index)| {
+                    let binding = &observation["pair_binding"]["shards"][shard];
+                    binding["manifest_sha256"] == index["manifest_sha256"]
+                        && binding["documents"] == index["documents"]
+                        && binding["config_sha256"]
+                            == provenance["search_configs"][pair][shard]["sha256"]
+                        && binding["config_path"]
+                            == provenance["search_configs"][pair][shard]["path"]
+                });
+            let rows = &observation["rows"];
+            let rows = rows
+                .as_array()
+                .filter(|rows| rows.len() <= 8)
+                .ok_or(EvalError::IdentityMismatch)?;
+            identity.rankings.extend(rows.iter().cloned());
         }
         comparisons.push(identity);
     }
-    comparisons[0]
-        .comparable(&comparisons[1], &comparisons[2], expected)
-        .sealed(input_identity)
+    let mut verdict = comparisons[0].comparable(&comparisons[1], &comparisons[2], expected);
+    verdict.control_receipts_present &= producers_valid && observation_valid[1];
+    verdict.centrality_receipts_present &= producers_valid && observation_valid[2];
+    verdict.completed &= producers_valid && observation_valid[1] && observation_valid[2];
+    verdict.rankings_match &= producers_valid && observation_valid[1] && observation_valid[2];
+    verdict.comparable &= producers_valid && observation_valid[1] && observation_valid[2];
+    let envelope = bind_receipt_envelope(envelope, observations)?;
+    verdict.observation_digests = envelope["gate_receipts"]
+        .as_array()
+        .ok_or(EvalError::IdentityMismatch)?
+        .iter()
+        .map(|entry| entry["sha256"].as_str().map(str::to_owned))
+        .collect();
+    verdict.sealed(&input::sha256(
+        &serde_json::to_vec(&envelope).map_err(|_| EvalError::IdentityMismatch)?,
+    ))
+}
+
+/// Require a present, correctly encoded SHA-256 before comparing producer bindings.
+fn valid_digest(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|digest| decoded_sha(digest).is_ok())
 }
 
 /// The six isolated feature cells; there is deliberately no combined-feature variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FeatureCell {
-    /// Retained indexes, planner off, no spelling.
+    /// Base indexes, planner off, no spelling; the run's pair and suite identify the base.
     BaseOff,
-    /// Retained indexes, planner on, no spelling.
+    /// Base indexes, planner on, no spelling; the run's pair and suite identify the base.
     BaseOn,
     /// Host-centrality indexes, planner off, no spelling.
     CentralityOff,
@@ -1796,7 +1955,7 @@ impl FeatureCell {
     }
 }
 
-/// Return the retained baseline with the same planner mode; never attribute feature gain to planning.
+/// Return the base cell with the same planner mode; its measured pair is bound separately.
 pub fn matching_base(cell: FeatureCell) -> FeatureCell {
     match cell.planner() {
         Planner::Off => FeatureCell::BaseOff,
@@ -1804,27 +1963,28 @@ pub fn matching_base(cell: FeatureCell) -> FeatureCell {
     }
 }
 
-/// Enforce the completed control gate before held-out access and comparability for centrality.
-/// A completed mismatch permits retained-base/spelling cells; stale or changed seals fail.
-pub fn require_control_before_held_out(
+/// Validate sealed evidence before held-out access and centrality comparisons.
+/// This offline check does not authorize a diagnostic launch: the gate must measure it.
+/// A completed mismatch permits independent base/spelling cells; stale or changed seals fail.
+pub fn validate_control_evidence(
     control: &ControlVerdict,
     held_out: bool,
     cell: FeatureCell,
-    expected_input_identity: &str,
+    expected_envelope: &Value,
     identities: &Path,
-    observations: &[PathBuf; 4],
+    observations: &[PathBuf; 6],
     expected_counts: [(u64, u64); 2],
 ) -> Result<(), EvalError> {
-    let recomputed = control_from_files(
-        identities,
-        observations,
-        expected_counts,
-        expected_input_identity,
-    )?;
+    let recomputed =
+        control_from_files(identities, observations, expected_counts, expected_envelope)?;
+    let expected_input_identity = input::sha256(
+        &serde_json::to_vec(&bind_receipt_envelope(expected_envelope, observations)?)
+            .map_err(|_| EvalError::IdentityMismatch)?,
+    );
     if *control != recomputed {
         return Err(EvalError::IdentityMismatch);
     }
-    if held_out && !control.completed {
+    if held_out && !control.control_receipts_present {
         return Err(EvalError::IdentityMismatch);
     }
     if control.input_identity != expected_input_identity
@@ -1836,6 +1996,914 @@ pub fn require_control_before_held_out(
         return Err(EvalError::IdentityMismatch);
     }
     Ok(())
+}
+
+/// Canonical receipt digest. The seal covers every field except the seal itself.
+pub fn measurement_seal(receipt: &Value) -> Result<String, EvalError> {
+    let mut value = receipt.clone();
+    value
+        .as_object_mut()
+        .ok_or(EvalError::InvalidInput)?
+        .remove("seal");
+    Ok(input::sha256(
+        &serde_json::to_vec(&value).map_err(|_| EvalError::InvalidInput)?,
+    ))
+}
+
+/// Read a bounded, sealed measurement and validate all eight ordered, timing-stripped rows.
+/// This proves integrity; a fresh launch still has to measure rather than adopt this file.
+pub fn read_measurement(path: &Path) -> Result<Value, EvalError> {
+    let receipt = read_metadata(path, &Limits::default())?;
+    if receipt["seal"] != measurement_seal(&receipt)? {
+        return Err(EvalError::IdentityMismatch);
+    }
+    validate_pair_binding(&receipt)?;
+    let planner: Planner =
+        serde_json::from_value(receipt["mode"].clone()).map_err(|_| EvalError::IdentityMismatch)?;
+    if receipt["schema_version"] != 1
+        || receipt["status"] != "passed"
+        || !matches!(
+            receipt["pair"].as_str(),
+            Some("retained" | "control" | "centrality")
+        )
+        || ["service_sha256", "config_sha256", "executable_sha256"]
+            .iter()
+            .any(|key| !valid_digest(&receipt[*key]))
+        || receipt["measured_at"]
+            .as_str()
+            .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
+            .is_none()
+    {
+        return Err(EvalError::IdentityMismatch);
+    }
+    let rows = receipt["rows"]
+        .as_array()
+        .filter(|rows| rows.len() == 8)
+        .ok_or(EvalError::IdentityMismatch)?;
+    for (ordinal, row) in rows.iter().enumerate() {
+        if row["query"] != FIXED_CONTROL_QUERIES[ordinal]
+            || row["mode"] != receipt["mode"]
+            || row["status"] != 200
+            || row.get("error") != Some(&Value::Null)
+            || row["response"] != retrieval_identity(&row["response"])?
+        {
+            return Err(EvalError::IdentityMismatch);
+        }
+        observation_shape(&row["response"], planner)?;
+    }
+    Ok(receipt)
+}
+
+fn validate_pair_binding(receipt: &Value) -> Result<(), EvalError> {
+    let binding = &receipt["pair_binding"];
+    let shards = binding["shards"]
+        .as_array()
+        .filter(|v| v.len() == 2)
+        .ok_or(EvalError::IdentityMismatch)?;
+    let members = binding["cluster_members"]
+        .as_array()
+        .filter(|v| v.len() == 2)
+        .ok_or(EvalError::IdentityMismatch)?;
+    if binding["verified"] != true
+        || binding["management_endpoint"] != receipt["management_endpoint"]
+    {
+        return Err(EvalError::IdentityMismatch);
+    }
+    super::endpoint::Endpoint::parse(
+        receipt["management_endpoint"]
+            .as_str()
+            .ok_or(EvalError::IdentityMismatch)?,
+    )?;
+    for member in members {
+        if member.as_array().map(Vec::len) != Some(2) || member[0].as_u64().is_none() {
+            return Err(EvalError::IdentityMismatch);
+        }
+        super::endpoint::Endpoint::shard(member[1].as_str().ok_or(EvalError::IdentityMismatch)?)?;
+    }
+    for (ordinal, shard) in shards.iter().enumerate() {
+        if shard["shard_id"] != ordinal
+            || shard["documents"].as_u64().is_none()
+            || shard["documents"] != shard["wire_documents"]
+            || ["config_sha256", "manifest_sha256", "files_sha256"]
+                .iter()
+                .any(|key| !valid_digest(&shard[*key]))
+            || ["config_path", "index_path"].iter().any(|key| {
+                shard[*key]
+                    .as_str()
+                    .is_none_or(|v| !Path::new(v).is_absolute())
+            })
+        {
+            return Err(EvalError::IdentityMismatch);
+        }
+        super::endpoint::Endpoint::shard(
+            shard["socket"]
+                .as_str()
+                .ok_or(EvalError::IdentityMismatch)?,
+        )?;
+    }
+    Ok(())
+}
+
+/// Locate the earlier control-phase report corresponding to a gate receipt.
+/// Reporting files are never read by the verdict's observation component.
+pub fn reporting_observation_path(receipt: &Path) -> Result<PathBuf, EvalError> {
+    let root = receipt
+        .parent()
+        .and_then(Path::parent)
+        .ok_or(EvalError::UnsafePath)?;
+    let stem = receipt
+        .file_stem()
+        .and_then(|v| v.to_str())
+        .ok_or(EvalError::UnsafePath)?;
+    let (pair, mode) = stem.rsplit_once('-').ok_or(EvalError::UnsafePath)?;
+    if !matches!(pair, "retained" | "control" | "centrality") || !matches!(mode, "off" | "on") {
+        return Err(EvalError::UnsafePath);
+    }
+    Ok(root
+        .join("control")
+        .join(format!(
+            "{}-{mode}",
+            if pair == "control" { "reindexed" } else { pair }
+        ))
+        .join("fixed.json"))
+}
+
+/// Bind exactly the four diagnostic receipt files, including explicit missing slots.
+pub fn bind_receipt_envelope(
+    envelope: &Value,
+    receipts: &[PathBuf; 6],
+) -> Result<Value, EvalError> {
+    let mut bound = envelope.clone();
+    let mut files = Vec::new();
+    for path in receipts.iter().skip(2) {
+        files.push(if path.try_exists().map_err(|_| EvalError::Io)? {
+            let document = input::read(path)?;
+            json!({"path":path,"sha256":document.sha256})
+        } else {
+            Value::Null
+        });
+    }
+    bound["gate_receipts"] = json!(files);
+    Ok(bound)
+}
+
+/// Immutable content/audit inputs and the receipt slots used to derive launch authorization.
+pub struct ControlGateInputs<'a> {
+    /// Whether this cell may access the held-out set.
+    pub held_out: bool,
+    /// Diagnostic cell being authorized.
+    pub cell: FeatureCell,
+    /// Frozen producer and file identities; receipt digests are always rederived.
+    pub envelope: &'a Value,
+    /// Three ordered pairs' document identities.
+    pub identities: &'a Path,
+    /// Retained/control/centrality off/on measurement receipt paths.
+    pub observations: &'a [PathBuf; 6],
+    /// Counts independently derived from the admission ledger.
+    pub expected_counts: [(u64, u64); 2],
+    /// Created-new final verdict output, outside every evidence input.
+    pub final_verdict: &'a Path,
+}
+
+/// One mode of a continuously running pair of index services.
+/// API mode switches may restart the API; they do not restart the measured index services.
+pub struct LiveControlCheck<'a> {
+    /// Literal loopback endpoint, validated by the recall runner.
+    pub endpoint: &'a str,
+    /// Literal loopback management endpoint from the same frozen API config.
+    pub management_endpoint: &'a str,
+    /// The pair's two resolved, digest-bound search configs in shard order.
+    pub search_configs: &'a [PathBuf; 2],
+    /// Document identities whose physical inspect manifests bind this pair.
+    pub identities: &'a Path,
+    /// Frozen configs, executable and inspect-manifest provenance.
+    pub envelope: &'a Value,
+    /// Exactly retained (reporting), control or centrality.
+    pub pair: &'a str,
+    /// Expected planner mode.
+    pub planner: Planner,
+    /// This pair launch's successful native served-shard manifest.
+    pub served: &'a Path,
+    /// Frozen resolved API config for this mode.
+    pub config: &'a Path,
+    /// Frozen executable digest.
+    pub executable_sha256: &'a str,
+    /// Created-new measurement output; numeric raw responses use its raw sibling.
+    pub receipt: &'a Path,
+}
+
+/// Fixed errors name only a failed ordinal or a missing prerequisite.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum LiveControlError {
+    /// Bounded evidence, I/O or identity failure.
+    #[error(transparent)]
+    Evidence(#[from] EvalError),
+    /// A request or response failed validation at this one-based ordinal.
+    #[error("gate measurement failed at query ordinal {ordinal}")]
+    Observation {
+        /// One-based fixed-query ordinal.
+        ordinal: usize,
+    },
+    /// Measurement was retained, but both modes of both diagnostic pairs are not yet present.
+    #[error("centrality requires all four gate measurement receipts")]
+    PendingMeasurements,
+}
+
+/// Private capability created by this process's measurement, never by deserialization.
+#[derive(Debug)]
+pub struct LiveControlReceipt {
+    path: PathBuf,
+    seal: String,
+    binding: Value,
+}
+
+impl LiveControlReceipt {
+    fn verify(
+        &self,
+        live: Option<&LiveControlCheck<'_>>,
+        expected: [(u64, u64); 2],
+    ) -> Result<(), EvalError> {
+        let receipt = read_measurement(&self.path)?;
+        if receipt["seal"] != self.seal
+            || self
+                .binding
+                .as_object()
+                .ok_or(EvalError::IdentityMismatch)?
+                .iter()
+                .any(|(key, value)| receipt[key] != *value)
+            || live
+                .map(|live| measurement_binding(live, expected))
+                .transpose()?
+                .is_some_and(|binding| binding != self.binding)
+        {
+            return Err(EvalError::IdentityMismatch);
+        }
+        Ok(())
+    }
+}
+
+/// Process-owned measurements across the ordered control and centrality pair launches.
+/// A fresh state never adopts prewritten files. Retain it for the round; never reuse it for
+/// another index-service launch. Only the gate can insert measurement capabilities.
+#[derive(Debug, Default)]
+pub struct GateMeasurements {
+    receipts: BTreeMap<String, LiveControlReceipt>,
+    final_file: Option<(PathBuf, String)>,
+    binding_limits: Limits,
+}
+
+impl GateMeasurements {
+    /// Reduce the native-frame and physical-walk ceilings for a new measurement state.
+    /// Limits cannot exceed production defaults; existing capabilities cannot be imported.
+    pub fn with_binding_limits(limits: Limits) -> Result<Self, EvalError> {
+        limits.validate()?;
+        Ok(Self {
+            binding_limits: limits,
+            ..Self::default()
+        })
+    }
+
+    /// Measure once for reporting anchors; diagnostic callers use the gate below.
+    pub async fn measure_once(
+        &mut self,
+        live: &LiveControlCheck<'_>,
+        expected: [(u64, u64); 2],
+    ) -> Result<(), LiveControlError> {
+        let key = format!(
+            "{}-{}",
+            live.pair,
+            if live.planner == Planner::Off {
+                "off"
+            } else {
+                "on"
+            }
+        );
+        if let Some(receipt) = self.receipts.get(&key) {
+            receipt.verify(Some(live), expected)?;
+        } else {
+            let receipt = measure_fixed_queries(live, expected, &self.binding_limits).await?;
+            self.receipts.insert(key, receipt);
+        }
+        Ok(())
+    }
+
+    /// Derive the current envelope from trusted measurement capabilities and their files.
+    pub fn envelope(&self, inputs: &ControlGateInputs<'_>) -> Result<Value, EvalError> {
+        let mut envelope = inputs.envelope.clone();
+        for (i, path) in inputs.observations.iter().enumerate().skip(2) {
+            let pair = if i < 4 { "control" } else { "centrality" };
+            let mode = if i % 2 == 0 { "off" } else { "on" };
+            if let Some(receipt) = self.receipts.get(&format!("{pair}-{mode}")) {
+                if receipt.path != *path {
+                    return Err(EvalError::IdentityMismatch);
+                }
+                receipt.verify(None, inputs.expected_counts)?;
+                let key = if pair == "control" { "reindexed" } else { pair };
+                envelope["provenance"]["services"][key][mode] =
+                    receipt.binding["service_sha256"].clone();
+            } else if path.try_exists().map_err(|_| EvalError::Io)? {
+                return Err(EvalError::IdentityMismatch);
+            }
+        }
+        bind_receipt_envelope(&envelope, inputs.observations)
+    }
+
+    /// Derive a partial or final verdict without trusting serialized flags.
+    pub fn verdict(&self, inputs: &ControlGateInputs<'_>) -> Result<ControlVerdict, EvalError> {
+        control_from_files(
+            inputs.identities,
+            inputs.observations,
+            inputs.expected_counts,
+            &self.envelope(inputs)?,
+        )
+    }
+
+    fn finish_verdict(
+        &mut self,
+        inputs: &ControlGateInputs<'_>,
+        verdict: &ControlVerdict,
+    ) -> Result<(), EvalError> {
+        let envelope = self.envelope(inputs)?;
+        let value = json!({"schema_version":1,"inputs":envelope,"input_identity":verdict.input_identity,
+            "verdict":verdict,"expected_counts":inputs.expected_counts,"fixed_queries":FIXED_CONTROL_QUERIES});
+        if let Some((path, hash)) = &self.final_file {
+            if path != inputs.final_verdict
+                || input::hash_file(path)? != *hash
+                || read_metadata(path, &Limits::default())? != value
+            {
+                return Err(EvalError::IdentityMismatch);
+            }
+        } else {
+            let mut sources = inputs.observations.to_vec();
+            sources.push(inputs.identities.to_path_buf());
+            for receipt in self.receipts.values() {
+                sources.extend(measurement_sources(&receipt.binding, inputs.identities)?);
+            }
+            output::external(inputs.final_verdict, &sources)?;
+            finish_report(
+                Output::reserve(inputs.final_verdict, false)?,
+                &value,
+                &Limits::default(),
+            )?;
+            self.final_file = Some((
+                inputs.final_verdict.to_path_buf(),
+                input::hash_file(inputs.final_verdict)?,
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn config_socket(config: &toml::Value, key: &str) -> Result<std::net::SocketAddr, EvalError> {
+    super::endpoint::Endpoint::shard(
+        config
+            .get(key)
+            .and_then(toml::Value::as_str)
+            .ok_or(EvalError::InvalidInput)?,
+    )
+}
+
+/// Re-walk a copied index with metadata byte limits before computing any file hash.
+/// Entry/depth and per-file/aggregate ceilings share the snapshot preflight rule.
+/// Hash only the admitted paths, bound each read by its admitted length, and report
+/// each completed hash to the observer. The observer cannot supply digest values.
+/// Failures are attributed to --index; the returned order matches inspect-index.
+pub fn bounded_index_manifest(
+    path: &Path,
+    limits: &Limits,
+    mut on_hashed: impl FnMut(&Path),
+) -> Result<Vec<Value>, EvalError> {
+    let result = (|| {
+        limits.validate()?;
+        let root = directory(path, Argument::Index)?;
+        let mut tree = Enumerated::default();
+        enumerate(&root, &root, limits, &mut 0, &mut 0, 0, &mut tree)?;
+        tree.files
+            .sort_by(|(a, _), (b, _)| a.components().cmp(b.components()));
+        let mut files = Vec::new();
+        for (path, bytes) in tree.files {
+            let file = open_input(&path)?;
+            if file.metadata().map_err(|_| EvalError::Io)?.len() != bytes {
+                return Err(EvalError::InputChanged);
+            }
+            // One extra byte detects growth without allowing an unbounded hash read.
+            let mut reader = file.take(bytes.checked_add(1).ok_or(EvalError::InputLimit)?);
+            let mut digest = ring::digest::Context::new(&ring::digest::SHA256);
+            let mut hashed = 0_u64;
+            let mut chunk = [0_u8; 64 * 1024];
+            loop {
+                let count = reader.read(&mut chunk).map_err(|_| EvalError::Io)?;
+                if count == 0 {
+                    break;
+                }
+                hashed = hashed
+                    .checked_add(count as u64)
+                    .ok_or(EvalError::InputLimit)?;
+                digest.update(&chunk[..count]);
+            }
+            if hashed != bytes {
+                return Err(EvalError::InputChanged);
+            }
+            let sha256 = digest
+                .finish()
+                .as_ref()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            on_hashed(&path);
+            files.push(json!({"path":path.strip_prefix(&root).map_err(|_| EvalError::UnsafePath)?,"bytes":bytes,"sha256":sha256}));
+        }
+        Ok(files)
+    })();
+    result.map_err(|error: EvalError| error.argument(Argument::Index))
+}
+
+/// Recreate the exact inspect-index JSON bytes, including its terminal newline.
+fn walked_inspect_digest(
+    path: &Path,
+    documents: u64,
+    limits: &Limits,
+) -> Result<(String, String), EvalError> {
+    let files = bounded_index_manifest(path, limits, |_| {})?;
+    if files.is_empty() {
+        return Err(EvalError::InvalidInput);
+    }
+    let files_sha256 =
+        input::sha256(&serde_json::to_vec(&files).map_err(|_| EvalError::InvalidInput)?);
+    let mut bytes = serde_json::to_vec_pretty(&json!({"schema_version":1,"index":path,
+        "pre_open_files":files,"documents":documents}))
+    .map_err(|_| EvalError::InvalidInput)?;
+    bytes.push(b'\n');
+    Ok((input::sha256(&bytes), files_sha256))
+}
+
+/// The gate implements Sonic's native-usize frame header with its own small ceiling.
+/// This connection is used only under the enclosing 60-second binding deadline.
+struct GateNativeConnection(tokio::net::TcpStream);
+
+impl GateNativeConnection {
+    async fn create(socket: std::net::SocketAddr) -> Result<Self, EvalError> {
+        let stream = tokio::net::TcpStream::connect(socket)
+            .await
+            .map_err(|_| EvalError::Network)?;
+        stream.set_nodelay(true).map_err(|_| EvalError::Network)?;
+        Ok(Self(stream))
+    }
+
+    async fn send<Req: bincode::Encode, Res: bincode::Decode>(
+        &mut self,
+        request: &Req,
+        limits: &Limits,
+    ) -> Result<Res, EvalError> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let request = bincode::encode_to_vec(request, common::bincode_config())
+            .map_err(|_| EvalError::InvalidInput)?;
+        self.0
+            .write_all(&request.len().to_ne_bytes())
+            .await
+            .map_err(|_| EvalError::Network)?;
+        self.0
+            .write_all(&request)
+            .await
+            .map_err(|_| EvalError::Network)?;
+        self.0.flush().await.map_err(|_| EvalError::Network)?;
+        let mut header = [0_u8; std::mem::size_of::<usize>()];
+        self.0
+            .read_exact(&mut header)
+            .await
+            .map_err(|_| EvalError::Network)?;
+        let native_bytes = usize::from_ne_bytes(header);
+        if native_bytes > limits.native_response_bytes {
+            return Err(EvalError::InputLimit);
+        }
+        let mut bytes = vec![0_u8; native_bytes];
+        self.0
+            .read_exact(&mut bytes)
+            .await
+            .map_err(|_| EvalError::Network)?;
+        // Bound decoded collection claims too; malformed input must not panic.
+        let (response, consumed) = bincode::decode_from_slice(
+            &bytes,
+            common::bincode_config().with_limit::<{ 64 * 1024 }>(),
+        )
+        .map_err(|_| EvalError::InvalidResponse)?;
+        if consumed != bytes.len() {
+            return Err(EvalError::InvalidResponse);
+        }
+        Ok(response)
+    }
+}
+
+async fn bind_live_pair(binding: &Value, limits: &Limits) -> Result<Value, EvalError> {
+    use crate::{
+        distributed::{
+            member::Service as MemberService,
+            sonic::service::{Service, Wrapper},
+        },
+        entrypoint::api::{ClusterStatus, ManagementService},
+        inverted_index::ShardId,
+        OneOrMany,
+    };
+    let management = super::endpoint::Endpoint::parse(
+        binding["management_endpoint"]
+            .as_str()
+            .ok_or(EvalError::InvalidInput)?,
+    )?;
+    let status = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        let mut connection = GateNativeConnection::create(management.socket).await?;
+        let response: OneOrMany<<ManagementService as Service>::Response> = connection
+            .send(
+                &OneOrMany::One(ClusterStatus::wrap_request(ClusterStatus)),
+                limits,
+            )
+            .await?;
+        let response = response.one().ok_or(EvalError::InvalidResponse)?;
+        ClusterStatus::unwrap_response(response).ok_or(EvalError::InvalidResponse)
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+    .map_err(|error| error.argument(Argument::ServiceManifest))?;
+    if status.members.len() > 16 {
+        return Err(EvalError::InputLimit.argument(Argument::ServiceManifest));
+    }
+    let mut members = Vec::new();
+    for member in status.members {
+        match member.service {
+            MemberService::Searcher {
+                host,
+                shard: ShardId::Backbone(shard),
+            } => members.push((shard, host)),
+            // API entries are not shard members. Only the bound HTTP address is allowed.
+            MemberService::Api { host }
+                if host
+                    == super::endpoint::Endpoint::parse(
+                        binding["endpoint"]
+                            .as_str()
+                            .ok_or(EvalError::InvalidInput)?,
+                    )?
+                    .socket => {}
+            _ => return Err(EvalError::IdentityMismatch),
+        }
+    }
+    members.sort();
+    let shards = binding["shards"]
+        .as_array()
+        .ok_or(EvalError::IdentityMismatch)?;
+    let expected_members = shards
+        .iter()
+        .map(|shard| {
+            Ok((
+                shard["shard_id"]
+                    .as_u64()
+                    .ok_or(EvalError::IdentityMismatch)?,
+                super::endpoint::Endpoint::shard(
+                    shard["socket"]
+                        .as_str()
+                        .ok_or(EvalError::IdentityMismatch)?,
+                )?,
+            ))
+        })
+        .collect::<Result<Vec<_>, EvalError>>()?;
+    if members != expected_members {
+        return Err(EvalError::IdentityMismatch);
+    }
+    let mut verified = shards.clone();
+    for shard in &mut verified {
+        let path = Path::new(
+            shard["index_path"]
+                .as_str()
+                .ok_or(EvalError::IdentityMismatch)?,
+        );
+        let count = shard["documents"]
+            .as_u64()
+            .ok_or(EvalError::IdentityMismatch)?;
+        let (actual_manifest, files_sha256) = walked_inspect_digest(path, count, limits)?;
+        if actual_manifest != shard["manifest_sha256"] {
+            return Err(EvalError::IdentityMismatch);
+        }
+        // The bound inspect digest is emitted only after this fresh physical comparison.
+        shard["files_sha256"] = json!(files_sha256);
+    }
+    for shard in &mut verified {
+        let socket = super::endpoint::Endpoint::shard(
+            shard["socket"]
+                .as_str()
+                .ok_or(EvalError::IdentityMismatch)?,
+        )?;
+        let ordinal = shard["shard_id"]
+            .as_u64()
+            .ok_or(EvalError::IdentityMismatch)?;
+        let expected = shard["documents"]
+            .as_u64()
+            .ok_or(EvalError::IdentityMismatch)?;
+        shard["wire_documents"] = json!(wire_documents(socket, ordinal, expected, limits).await?);
+    }
+    Ok(
+        json!({"verified":true,"management_endpoint":management.base,"cluster_members":members,
+        "shards":verified,"protocol":"ClusterStatus; SizeQuery then SizeQueryRetrieve; one connection per shard; no HTTP searches"}),
+    )
+}
+
+async fn wire_documents(
+    socket: std::net::SocketAddr,
+    ordinal: u64,
+    expected: u64,
+    limits: &Limits,
+) -> Result<u64, EvalError> {
+    use crate::{
+        distributed::sonic::service::{Service, Wrapper},
+        entrypoint::search_server::{SearchService, SizeQueryRetrieve},
+        generic_query::SizeQuery,
+        inverted_index::ShardId,
+        OneOrMany,
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        let mut conn = GateNativeConnection::create(socket).await?;
+        let response: OneOrMany<<SearchService as Service>::Response> = conn
+            .send(&OneOrMany::One(SizeQuery::wrap_request(SizeQuery)), limits)
+            .await?;
+        let response = response.one().ok_or(EvalError::InvalidResponse)?;
+        let fruit = SizeQuery::unwrap_response(response)
+            .ok_or(EvalError::InvalidResponse)?
+            .map_err(|_| EvalError::InvalidResponse)?;
+        if fruit.len() != 1
+            || fruit
+                .get(&ShardId::Backbone(ordinal))
+                .is_none_or(|v| v.pages != expected)
+        {
+            return Err(EvalError::IdentityMismatch);
+        }
+        let response: OneOrMany<<SearchService as Service>::Response> = conn
+            .send(
+                &OneOrMany::One(SizeQueryRetrieve::wrap_request(SizeQueryRetrieve {
+                    query: SizeQuery,
+                    fruit,
+                })),
+                limits,
+            )
+            .await?;
+        let response = response.one().ok_or(EvalError::InvalidResponse)?;
+        let size = SizeQueryRetrieve::unwrap_response(response)
+            .ok_or(EvalError::InvalidResponse)?
+            .map_err(|_| EvalError::InvalidResponse)?;
+        if size.pages != expected {
+            return Err(EvalError::IdentityMismatch);
+        }
+        Ok(size.pages)
+    })
+    .await
+    .map_err(|_| EvalError::Timeout)?
+    .map_err(|error| error.argument(Argument::Shard))
+}
+
+fn measurement_binding(
+    live: &LiveControlCheck<'_>,
+    expected: [(u64, u64); 2],
+) -> Result<Value, EvalError> {
+    if !matches!(live.pair, "retained" | "control" | "centrality") {
+        return Err(EvalError::IdentityMismatch);
+    }
+    decoded_sha(live.executable_sha256)?;
+    let endpoint = super::endpoint::Endpoint::parse(live.endpoint)?;
+    let served = read_metadata(live.served, &Limits::default())?;
+    if served["verified"] != true
+        || served["schema_version"] != 1
+        || served["shards"].as_array().map(Vec::len) != Some(2)
+        || expected.iter().enumerate().any(|(i, (shard, count))| {
+            served["shards"][i]["shard_id"] != *shard || served["shards"][i]["documents"] != *count
+        })
+    {
+        return Err(EvalError::IdentityMismatch);
+    }
+    let config = input::read(live.config)?;
+    let api: toml::Value =
+        toml::from_str(std::str::from_utf8(&config.bytes).map_err(|_| EvalError::InvalidInput)?)
+            .map_err(|_| EvalError::InvalidInput)?;
+    let management = super::endpoint::Endpoint::parse(live.management_endpoint)?;
+    if config_socket(&api, "host")? != endpoint.socket
+        || config_socket(&api, "management_host")? != management.socket
+    {
+        return Err(EvalError::IdentityMismatch);
+    }
+    let pair = if live.pair == "control" {
+        "reindexed"
+    } else {
+        live.pair
+    };
+    let documents = read_metadata(live.identities, &Limits::default())?;
+    let indexes = documents[pair]
+        .as_array()
+        .filter(|v| v.len() == 2)
+        .ok_or(EvalError::IdentityMismatch)?;
+    let mut shards = Vec::new();
+    for (ordinal, path) in live.search_configs.iter().enumerate() {
+        let document = input::read(path)?;
+        let config: toml::Value = toml::from_str(
+            std::str::from_utf8(&document.bytes).map_err(|_| EvalError::InvalidInput)?,
+        )
+        .map_err(|_| EvalError::InvalidInput)?;
+        let index = &indexes[ordinal];
+        let bound = &live.envelope["provenance"]["search_configs"][pair][ordinal];
+        if bound["path"] != json!(path)
+            || bound["sha256"] != document.sha256
+            || config.get("shard").and_then(toml::Value::as_integer) != Some(ordinal as i64)
+            || expected[ordinal].0 != ordinal as u64
+            || index["shard"] != ordinal
+            || index["documents"] != expected[ordinal].1
+            || index["manifest_sha256"] != live.envelope["provenance"]["indexes"][pair][ordinal]
+            || !valid_digest(&index["manifest_sha256"])
+            || index["executable_sha256"] != live.executable_sha256
+        {
+            return Err(EvalError::IdentityMismatch);
+        }
+        let socket = config_socket(&config, "host")?;
+        let index_path = config
+            .get("index_path")
+            .and_then(toml::Value::as_str)
+            .ok_or(EvalError::InvalidInput)?;
+        let index_path = input::inspect_path(Path::new(index_path), false)?;
+        if !index_path.starts_with(
+            std::env::temp_dir()
+                .canonicalize()
+                .map_err(|_| EvalError::Io)?,
+        ) {
+            return Err(EvalError::UnsafePath);
+        }
+        shards.push(
+            json!({"shard_id":ordinal,"socket":socket,"config_path":path,
+            "config_sha256":document.sha256,"index_path":index_path,
+            "manifest_sha256":index["manifest_sha256"],"documents":expected[ordinal].1}),
+        );
+    }
+    if shards[0]["socket"] == shards[1]["socket"] {
+        return Err(EvalError::IdentityMismatch);
+    }
+    Ok(
+        json!({"pair":live.pair,"mode":live.planner,"endpoint":endpoint.base,
+        "management_endpoint":management.base,"shards":shards,
+        "service_path":live.served,"service_sha256":input::hash_file(live.served)?,
+        "config_path":live.config,"config_sha256":config.sha256,"executable_sha256":live.executable_sha256}),
+    )
+}
+
+fn measurement_sources(binding: &Value, identities: &Path) -> Result<Vec<PathBuf>, EvalError> {
+    let mut sources = vec![identities.to_path_buf()];
+    for key in ["service_path", "config_path"] {
+        sources.push(PathBuf::from(
+            binding[key].as_str().ok_or(EvalError::IdentityMismatch)?,
+        ));
+    }
+    for shard in binding["shards"]
+        .as_array()
+        .ok_or(EvalError::IdentityMismatch)?
+    {
+        for key in ["config_path", "index_path"] {
+            sources.push(PathBuf::from(
+                shard[key].as_str().ok_or(EvalError::IdentityMismatch)?,
+            ));
+        }
+    }
+    Ok(sources)
+}
+
+async fn measure_fixed_queries(
+    live: &LiveControlCheck<'_>,
+    expected: [(u64, u64); 2],
+    limits: &Limits,
+) -> Result<LiveControlReceipt, LiveControlError> {
+    let binding = measurement_binding(live, expected)?;
+    let pair_binding = bind_live_pair(&binding, limits).await?;
+    output::external(
+        live.receipt,
+        &measurement_sources(&binding, live.identities)?,
+    )?;
+    let output = Output::reserve(live.receipt, true)?;
+    let endpoint = super::endpoint::Endpoint::parse(live.endpoint)?;
+    let started = chrono::Utc::now().to_rfc3339();
+    let mut rows = Vec::new();
+    for (ordinal, query) in FIXED_CONTROL_QUERIES.iter().enumerate() {
+        let measured = measure_query(&endpoint, query, ordinal, live.planner, &output).await;
+        match measured {
+            Ok(row) => rows.push(row),
+            Err(_) => {
+                finish_report(
+                    output,
+                    &json!({"schema_version":1,"status":"failed","binding":binding,
+                    "failed_ordinal":ordinal+1,"rows":rows}),
+                    &Limits::default(),
+                )?;
+                return Err(LiveControlError::Observation {
+                    ordinal: ordinal + 1,
+                });
+            }
+        }
+    }
+    if measurement_binding(live, expected)? != binding {
+        return Err(EvalError::InputChanged.into());
+    }
+    let mut receipt = binding.clone();
+    receipt["pair_binding"] = pair_binding;
+    receipt["schema_version"] = json!(1);
+    receipt["status"] = json!("passed");
+    receipt["rows"] = json!(rows);
+    receipt["started_at"] = json!(started);
+    receipt["measured_at"] = json!(chrono::Utc::now().to_rfc3339());
+    let seal = measurement_seal(&receipt)?;
+    receipt["seal"] = json!(seal);
+    finish_report(output, &receipt, &Limits::default())?;
+    Ok(LiveControlReceipt {
+        path: live.receipt.to_path_buf(),
+        seal,
+        binding,
+    })
+}
+
+async fn measure_query(
+    endpoint: &super::endpoint::Endpoint,
+    query: &str,
+    ordinal: usize,
+    planner: Planner,
+    output: &Output,
+) -> Result<Value, EvalError> {
+    let attempt = super::runner::attempt(
+        endpoint,
+        query,
+        output,
+        ordinal,
+        std::time::Duration::from_secs(super::runner::TIMEOUT_SECONDS),
+        super::runner::MAX_RESPONSE_BYTES,
+    )
+    .await?;
+    if let Some(error) = attempt.error {
+        return Err(error);
+    }
+    if attempt.status != Some(200) {
+        return Err(EvalError::HttpStatus);
+    }
+    let response: Value =
+        serde_json::from_slice(&attempt.bytes).map_err(|_| EvalError::InvalidResponse)?;
+    control_response_shape(&response, planner)?;
+    Ok(
+        json!({"query":query,"mode":planner,"status":200,"error":null,
+        "response":retrieval_identity(&response)?,"raw_path":attempt.raw_path,"raw_sha256":input::sha256(&attempt.bytes)}),
+    )
+}
+
+/// Measure the fixed queries at the first call, then authorize only from gate-owned receipts.
+/// The runner supplies the exact request protocol, fresh connections, timeout and body bound.
+/// Later calls verify the seal and service/config/executable bindings without another query.
+/// Both centrality modes must be measured before either centrality cell is authorized.
+pub async fn require_control_before_held_out(
+    inputs: &ControlGateInputs<'_>,
+    live: &LiveControlCheck<'_>,
+    measurements: &mut GateMeasurements,
+) -> Result<ControlVerdict, LiveControlError> {
+    let pair = if inputs.cell.centrality() {
+        "centrality"
+    } else {
+        "control"
+    };
+    let mode = if live.planner == Planner::Off {
+        "off"
+    } else {
+        "on"
+    };
+    if live.pair != pair
+        || live.planner != inputs.cell.planner()
+        || inputs.cell.spelling()
+        || inputs.envelope["freeze"]["binary_sha256"] != live.executable_sha256
+        || inputs.envelope["provenance"]["configs"][mode] != input::hash_file(live.config)?
+        || live.identities != inputs.identities
+        || live.envelope != inputs.envelope
+    {
+        return Err(EvalError::IdentityMismatch.into());
+    }
+    measurements
+        .measure_once(live, inputs.expected_counts)
+        .await?;
+    let envelope = measurements.envelope(inputs)?;
+    let verdict = control_from_files(
+        inputs.identities,
+        inputs.observations,
+        inputs.expected_counts,
+        &envelope,
+    )?;
+    if inputs.cell.centrality() && !verdict.completed() {
+        return Err(LiveControlError::PendingMeasurements);
+    }
+    validate_control_evidence(
+        &verdict,
+        inputs.held_out,
+        inputs.cell,
+        &envelope,
+        inputs.identities,
+        inputs.observations,
+        inputs.expected_counts,
+    )?;
+    if inputs.cell.centrality() {
+        measurements.finish_verdict(inputs, &verdict)?;
+    }
+    Ok(verdict)
 }
 
 fn cell(value: &Value) -> Result<FeatureCell, EvalError> {
@@ -1860,15 +2928,50 @@ fn config_values(run: &Value) -> Result<Vec<Value>, EvalError> {
         .collect()
 }
 
+/// Check pair cardinality and the measured control required by centrality contrasts.
+fn validate_contrast_inputs(
+    before: &Value,
+    after: &Value,
+    diagnostics: &Value,
+    control: &ControlIdentity,
+    feature: FeatureCell,
+) -> Result<(), EvalError> {
+    if [before, after].iter().any(|run| {
+        run["indexes"]
+            .as_array()
+            .is_none_or(|indexes| indexes.len() != 2)
+    }) {
+        return Err(EvalError::IdentityMismatch);
+    }
+    if feature.centrality()
+        && (before["suite"] != "diagnostic"
+            || after["suite"] != "diagnostic"
+            || control.counts.len() != 2
+            || control.documents.len() != 2
+            || diagnostics["indexes"]
+                .as_array()
+                .is_none_or(|indexes| indexes.len() != 2))
+    {
+        return Err(EvalError::IdentityMismatch);
+    }
+    Ok(())
+}
+
 /// Validate a native run contrast before the existing evaluator diff is called.
 /// Requires the matching-mode base, identical labels/executable/timing/request/corpus, and
 /// only the declared spelling section or centrality index-path/config identity changes.
+/// Centrality uses diagnostic runs bound to the supplied measured control identity.
+/// Every contrast requires exactly two index entries. Centrality manifests are the driver's
+/// bound `*-index-bound.json` files carrying `shard` and `content_sha256`; raw
+/// `eval inspect-index` manifests contain neither and are rejected by design.
 pub fn validate_contrast(
     before: &Value,
     after: &Value,
     diagnostics: &Value,
+    control: &ControlIdentity,
 ) -> Result<(), EvalError> {
     let feature = cell(after)?;
+    validate_contrast_inputs(before, after, diagnostics, control, feature)?;
     if cell(before)? != matching_base(feature)
         || matches!(feature, FeatureCell::BaseOff | FeatureCell::BaseOn)
     {
@@ -1961,7 +3064,7 @@ pub fn validate_contrast(
         }
         let old_index = &before["indexes"][ordinal]["manifest"];
         let new_index = &after["indexes"][ordinal]["manifest"];
-        validate_index_identity(old_index, new_index, feature, diagnostics, ordinal)?;
+        validate_index_identity(old_index, new_index, feature, diagnostics, control, ordinal)?;
     }
     if before["service"]["manifest"] != after["service"]["manifest"] {
         return Err(EvalError::IdentityMismatch);
@@ -1969,11 +3072,14 @@ pub fn validate_contrast(
     Ok(())
 }
 
+/// Validate driver-bound centrality manifests containing `shard` and `content_sha256`.
+/// Raw `eval inspect-index` manifests lack those fields and are rejected by design.
 fn validate_index_identity(
     old_index: &Value,
     new_index: &Value,
     feature: FeatureCell,
     diagnostics: &Value,
+    control: &ControlIdentity,
     ordinal: usize,
 ) -> Result<(), EvalError> {
     if old_index["documents"].is_null() || old_index["documents"] != new_index["documents"] {
@@ -1989,7 +3095,21 @@ fn validate_index_identity(
     decoded_sha(new_digest)?;
     let expected_digest = if feature.centrality() {
         let index = &diagnostics["indexes"][ordinal];
-        if index["shard"] != ordinal || index["documents"] != new_index["documents"] {
+        let (shard, count) = control.counts[ordinal];
+        let control_digest = &control.documents[ordinal];
+        decoded_sha(control_digest)?;
+        if old_digest != control_digest {
+            return Err(EvalError::IdentityMismatch);
+        }
+        if shard != ordinal as u64
+            || count > Limits::default().documents as u64
+            || old_index["documents"] != count
+            || old_index["shard"] != ordinal
+            || new_index["shard"] != ordinal
+            || index["shard"] != ordinal
+            || index["documents"] != new_index["documents"]
+            || index["content_sha256"] != *control_digest
+        {
             return Err(EvalError::IdentityMismatch);
         }
         index["content_sha256"]

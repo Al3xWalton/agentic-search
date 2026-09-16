@@ -11,6 +11,263 @@ use stract::{
     webpage::{Html, Webpage},
 };
 
+/// Owned native protocol fixtures. Dropping the owner aborts every bounded server task.
+pub struct GateServices {
+    /// Literal socket of the owned ClusterStatus fixture.
+    pub management: String,
+    /// Resolved synthetic configs, in backbone shard order.
+    pub search_configs: [PathBuf; 2],
+    /// Two identities bound to exact synthetic inspect-manifest bytes.
+    pub indexes: serde_json::Value,
+    /// Mutable membership used to exercise wrong and extra shard sockets.
+    pub members: std::sync::Arc<std::sync::Mutex<Vec<(u64, std::net::SocketAddr)>>>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl Drop for GateServices {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
+// Sonic exposes neither a bound listener constructor nor its selected local address.
+// Retry only the reservation-to-bind race, with a finite number of fresh ports.
+async fn native_server<Req: bincode::Decode, Res>() -> (
+    std::net::SocketAddr,
+    stract::distributed::sonic::Server<Req, Res>,
+) {
+    use stract::distributed::sonic::{Error, Server};
+    for _ in 0..16 {
+        let reserved = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let socket = reserved.local_addr().unwrap();
+        drop(reserved);
+        match Server::bind(socket).await {
+            Ok(server) => return (socket, server),
+            Err(Error::IO(error)) if error.kind() == std::io::ErrorKind::AddrInUse => {}
+            Err(error) => panic!("native fixture bind: {error}"),
+        }
+    }
+    panic!("native fixture bind exhausted 16 port reservations");
+}
+
+impl GateServices {
+    /// Serve ClusterStatus and exactly the native SizeQuery/retrieve protocol.
+    pub async fn start(root: &Path, counts: [u64; 2]) -> Self {
+        use serde_json::json;
+        type SearchRequest = <SearchService as Service>::Request;
+        type ManagementRequest = <ManagementService as Service>::Request;
+        use stract::{
+            distributed::sonic::service::Service,
+            entrypoint::{
+                api::{ManagementService, Status},
+                search_server::SearchService,
+            },
+            generic_query::size::SizeResponse,
+            inverted_index::ShardId,
+            OneOrMany,
+        };
+        let mut tasks = Vec::new();
+        let mut sockets = Vec::new();
+        for (ordinal, pages) in counts.into_iter().enumerate() {
+            let (socket, server) = native_server::<
+                OneOrMany<<SearchService as Service>::Request>,
+                OneOrMany<<SearchService as Service>::Response>,
+            >()
+            .await;
+            sockets.push(socket);
+            tasks.push(tokio::spawn(async move {
+                loop {
+                    let Ok(Ok(mut conn)) =
+                        tokio::time::timeout(std::time::Duration::from_secs(30), server.accept())
+                            .await
+                    else {
+                        break;
+                    };
+                    let req = conn.request().await.unwrap();
+                    assert!(matches!(
+                        req.body(),
+                        OneOrMany::One(SearchRequest::SizeQuery(_))
+                    ));
+                    let fruit = [(ShardId::Backbone(ordinal as u64), SizeResponse { pages })]
+                        .into_iter()
+                        .collect();
+                    req.respond(OneOrMany::One(
+                        <SearchService as Service>::Response::SizeQuery(Box::new(Ok(fruit))),
+                    ))
+                    .await
+                    .unwrap();
+                    if let Ok(req) = conn.request().await {
+                        assert!(matches!(
+                            req.body(),
+                            OneOrMany::One(SearchRequest::SizeQueryRetrieve(_))
+                        ));
+                        req.respond(OneOrMany::One(
+                            <SearchService as Service>::Response::SizeQueryRetrieve(Box::new(Ok(
+                                SizeResponse { pages },
+                            ))),
+                        ))
+                        .await
+                        .unwrap();
+                    }
+                }
+            }));
+        }
+        let members = std::sync::Arc::new(std::sync::Mutex::new(
+            sockets
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (i as u64, *s))
+                .collect::<Vec<_>>(),
+        ));
+        let (socket, server) = native_server::<
+            OneOrMany<<ManagementService as Service>::Request>,
+            OneOrMany<<ManagementService as Service>::Response>,
+        >()
+        .await;
+        let status_members = members.clone();
+        tasks.push(tokio::spawn(async move {
+            loop {
+                let Ok(Ok(mut conn)) =
+                    tokio::time::timeout(std::time::Duration::from_secs(30), server.accept()).await
+                else {
+                    break;
+                };
+                let req = conn.request().await.unwrap();
+                assert!(matches!(
+                    req.body(),
+                    OneOrMany::One(ManagementRequest::ClusterStatus(_))
+                ));
+                let members = status_members
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(id, host)| {
+                        stract::distributed::member::Member::new(
+                            stract::distributed::member::Service::Searcher {
+                                host: *host,
+                                shard: ShardId::Backbone(*id),
+                            },
+                        )
+                    })
+                    .collect();
+                req.respond(OneOrMany::One(
+                    <ManagementService as Service>::Response::ClusterStatus(Box::new(Status {
+                        members,
+                    })),
+                ))
+                .await
+                .unwrap();
+            }
+        }));
+        let search_configs = std::array::from_fn(|i| root.join(format!("search-{i}.toml")));
+        let mut indexes = Vec::new();
+        for (i, path) in search_configs.iter().enumerate() {
+            let index = root.parent().unwrap().join(format!("index-{i}"));
+            std::fs::create_dir(&index).unwrap();
+            std::fs::write(index.join("physical-data"), b"bound synthetic index bytes").unwrap();
+            let config = format!(
+                "host = {:?}\nindex_path = {:?}\nshard = {i}\n",
+                sockets[i].to_string(),
+                index.to_str().unwrap()
+            );
+            std::fs::write(path, config).unwrap();
+            let files = stract::eval::index::manifest(&index).unwrap();
+            let mut bytes = serde_json::to_vec_pretty(
+                &json!({"schema_version":1,"index":index,"pre_open_files":files,"documents":2}),
+            )
+            .unwrap();
+            bytes.push(b'\n');
+            indexes.push(json!({"shard":i,"documents":2,"content_sha256":if i==0{"a".repeat(64)}else{"b".repeat(64)},
+                "manifest_sha256":stract::eval::input::sha256(&bytes),"executable_sha256":"a".repeat(64)}));
+        }
+        Self {
+            management: format!("http://{socket}"),
+            search_configs,
+            indexes: json!(indexes),
+            members,
+            tasks,
+        }
+    }
+}
+
+/// Captured gate request used to assert exact runner protocol and zero requests on refusal.
+pub struct GateRequest {
+    /// Exact HTTP method and path.
+    pub line: String,
+    /// Request headers for encoding and connection assertions.
+    pub headers: String,
+    /// Parsed runner request body.
+    pub body: serde_json::Value,
+}
+
+/// Bounded synthetic HTTP server; the owner explicitly stops and joins it after the gate.
+pub async fn gate_http(
+    responses: Vec<serde_json::Value>,
+) -> (
+    stract::eval::endpoint::Endpoint,
+    std::sync::Arc<std::sync::Mutex<Vec<GateRequest>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = stract::eval::endpoint::Endpoint::parse(&format!(
+        "http://{}",
+        listener.local_addr().unwrap()
+    ))
+    .unwrap();
+    let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = requests.clone();
+    let task = tokio::spawn(async move {
+        for response in responses {
+            let (mut socket, _) =
+                tokio::time::timeout(std::time::Duration::from_secs(30), listener.accept())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let mut bytes = Vec::new();
+            let (end, headers, length) = loop {
+                let mut chunk = [0; 1024];
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert!(n > 0 && bytes.len() + n <= 128 * 1024);
+                bytes.extend_from_slice(&chunk[..n]);
+                if let Some(end) = bytes.windows(4).position(|p| p == b"\r\n\r\n") {
+                    let end = end + 4;
+                    let headers = String::from_utf8(bytes[..end].to_vec()).unwrap();
+                    let length: usize = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse().unwrap())
+                        })
+                        .unwrap();
+                    break (end, headers, length);
+                }
+            };
+            assert!(length <= 64 * 1024);
+            while bytes.len() - end < length {
+                let mut chunk = [0; 1024];
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert!(n > 0);
+                bytes.extend_from_slice(&chunk[..n]);
+            }
+            recorded.lock().unwrap().push(GateRequest {
+                line: headers.lines().next().unwrap().into(),
+                headers,
+                body: serde_json::from_slice(&bytes[end..end + length]).unwrap(),
+            });
+            let body = serde_json::to_vec(&response).unwrap();
+            let head=format!("HTTP/1.1 200 Fixture\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n",body.len());
+            socket.write_all(head.as_bytes()).await.unwrap();
+            socket.write_all(&body).await.unwrap();
+            socket.shutdown().await.unwrap();
+        }
+    });
+    (endpoint, requests, task)
+}
+
 /// A private synthetic feature fixture; its directory must outlive every reader.
 pub struct Fixture {
     /// Owner of all graphs, stores, indexes, model files and output paths in this fixture.
@@ -152,6 +409,19 @@ pub fn stores(parent: &Path) {
 /// Build real stored webpages with fixed timestamps and no centrality-dependent content.
 /// Each tuple is (exact URL, title, body); duplicated tuples remain duplicated documents.
 pub fn build_index(path: &Path, shard: u64, documents: &[(&str, &str, &str)]) {
+    build_index_with_keywords(path, shard, documents, &[], 0.0, u64::MAX);
+}
+
+/// Build real stored pages with explicit keywords and independent host centrality values.
+/// Keyword order and membership are preserved at insertion; all timestamps remain fixed.
+pub fn build_index_with_keywords(
+    path: &Path,
+    shard: u64,
+    documents: &[(&str, &str, &str)],
+    keywords: &[&str],
+    host_centrality: f64,
+    host_rank: u64,
+) {
     let mut index = Index::open(path).unwrap();
     index.set_shard_id(stract::inverted_index::ShardId::Backbone(shard));
     index.inverted_index.prepare_writer().unwrap();
@@ -160,9 +430,41 @@ pub fn build_index(path: &Path, shard: u64, documents: &[(&str, &str, &str)]) {
         let mut page = Webpage::from(Html::parse(&html, url).unwrap());
         page.fetch_time_ms = 500;
         page.inserted_at = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        page.keywords = keywords.iter().map(|word| (*word).to_owned()).collect();
+        page.host_centrality = host_centrality;
+        page.host_centrality_rank = host_rank;
         index.insert(&page).unwrap();
     }
     index.commit().unwrap();
+}
+
+/// Read exact stored keyword strings from a stopped synthetic index, ordered by URL.
+pub fn stored_keywords(path: &Path) -> Vec<(String, String)> {
+    use tantivy::schema::Value as _;
+    let index = tantivy::Index::open_in_dir(path.join("inverted_index")).unwrap();
+    let schema = index.schema();
+    let url = schema.get_field("url").unwrap();
+    let keywords = schema.get_field("keywords").unwrap();
+    let reader = index.reader().unwrap();
+    let searcher = reader.searcher();
+    let mut rows = Vec::new();
+    for (ordinal, segment) in searcher.segment_readers().iter().enumerate() {
+        for id in segment.doc_ids() {
+            let doc: tantivy::TantivyDocument = searcher
+                .doc(tantivy::DocAddress::new(ordinal as u32, id))
+                .unwrap();
+            rows.push((
+                doc.get_first(url).unwrap().as_str().unwrap().to_owned(),
+                doc.get_first(keywords)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            ));
+        }
+    }
+    rows.sort();
+    rows
 }
 
 /// Train English with 512 correct, 16 typo and 32 alternate-context typo occurrences.
