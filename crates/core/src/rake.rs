@@ -21,6 +21,11 @@
 //! We have modified the algorithm a bit so that it generates
 //! the keywords based on a summary of the text as extracted
 //! by the sentences with most frequent words.
+//! Distinct phrases are ordered by descending score, with ties retaining their
+//! first occurrence in that summary. Stable input order must survive the cut,
+//! which can fall inside an equal-score band and determine keyword membership.
+//! The result is a pure function of the input, so stored keywords reproduce across
+//! processes and builds.
 
 use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
@@ -169,6 +174,9 @@ impl RakeModel {
         Self { stopwords, params }
     }
 
+    /// Returns deduplicated keywords in descending score order.
+    /// Equal scores retain each phrase's first occurrence in summary order,
+    /// making both order and membership at the cut depend only on the input.
     pub fn keywords(&self, text: &str, lang: Lang) -> Vec<Keyword> {
         let text = text.to_lowercase();
         let stopwords = self
@@ -198,7 +206,8 @@ impl RakeModel {
             }
         }
 
-        let mut keywords = HashMap::with_capacity(num_words);
+        let mut keywords = Vec::with_capacity(phrases.len());
+        let mut seen = HashSet::with_capacity(phrases.len());
         for phrase in phrases {
             let words = &phrase.0;
             let mut score = 0.0;
@@ -206,7 +215,9 @@ impl RakeModel {
                 score += word_degree[word] / word_frequency[word];
             }
             score /= words.len() as f64;
-            keywords.insert(phrase, score);
+            if seen.insert(phrase.clone()) {
+                keywords.push((phrase, score));
+            }
         }
 
         keywords
@@ -285,5 +296,119 @@ Between the springs of 1935 and 1936, at the same time as Church, Turing worked 
         let keywords = rake.keywords(TURING_TEXT, Lang::Eng);
 
         assert!(!keywords.is_empty());
+    }
+
+    #[test]
+    fn keywords_are_deterministic_across_fresh_models() {
+        let phrase_texts = (0..32)
+            .map(|i| format!("kwleft{i:02} kwright{i:02}"))
+            .collect::<Vec<_>>();
+        let text = phrase_texts.join(" and ");
+        let model = RakeModel::new();
+        let stopwords = &model.stopwords[&Lang::Eng];
+        assert!(stopwords.contains("and"));
+        let summary = smmry(
+            sentences(&text).collect(),
+            stopwords,
+            model.params.summary_sentences,
+        );
+        assert_eq!(summary.len(), 1);
+        let phrases = phrases(&summary[0], stopwords, model.params.max_words);
+        assert_eq!(phrases.len(), 32);
+        let mut frequency = HashMap::new();
+        let mut degree = HashMap::new();
+        for phrase in &phrases {
+            assert_eq!(phrase.0.len(), 2);
+            for word in &phrase.0 {
+                assert!(!stopwords.contains(word));
+                *frequency.entry(word).or_insert(0) += 1;
+                *degree.entry(word).or_insert(0) += phrase.0.len() - 1;
+            }
+        }
+        assert_eq!(frequency.len(), 64);
+        assert_eq!(degree.len(), 64);
+        assert!(frequency.values().all(|value| *value == 1));
+        assert!(degree.values().all(|value| *value == 1));
+        assert_eq!(degree.len() / 3, 21);
+        assert!(degree.len() / 3 < phrases.len());
+        let expected = phrase_texts
+            .into_iter()
+            .take(21)
+            .map(|text| (text, 1.0_f64.to_bits()))
+            .collect::<Vec<_>>();
+        // Hash keys are fixed per process: pin the exact order, then repeat once.
+        let actual = model
+            .keywords(&text, Lang::Eng)
+            .into_iter()
+            .map(|keyword| (keyword.text, keyword.score.to_bits()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+        let repeated = RakeModel::new()
+            .keywords(&text, Lang::Eng)
+            .into_iter()
+            .map(|keyword| (keyword.text, keyword.score.to_bits()))
+            .collect::<Vec<_>>();
+        assert_eq!(repeated, actual);
+    }
+
+    #[test]
+    fn keywords_turing_golden() {
+        let expected: [(&str, u64); 22] = [
+            (
+                "max newman's computing machine laboratory",
+                0x400acccccccccccd,
+            ),
+            ("cracking intercepted coded messages", 0x4008000000000000),
+            ("\"universal computing machine\"", 0x4002aaaaaaaaaaab),
+            ("decide algorithmically whether", 0x4000000000000000),
+            ("conceivable mathematical computation", 0x4000000000000000),
+            ("1912 – 7", 0x4000000000000000),
+            ("1911 – 13", 0x4000000000000000),
+            ("theoretical computer science", 0x4000000000000000),
+            ("outlawed homosexual acts", 0x4000000000000000),
+            ("bicycle unaccompanied 60", 0x4000000000000000),
+            ("simple hypothetical devices", 0x4000000000000000),
+            ("\"alan turing law\"", 0x3ffba2e8ba2e8ba3),
+            ("julius mathison turing", 0x3ffba2e8ba2e8ba3),
+            ("turing machine", 0x3ff7745d1745d174),
+            ("turing machines", 0x3ff1745d1745d174),
+            ("turing proved", 0x3ff1745d1745d174),
+            ("[5] turing", 0x3ff1745d1745d174),
+            ("alan turing", 0x3ff1745d1745d174),
+            ("decision problem", 0x3ff0000000000000),
+            ("halting problem", 0x3ff0000000000000),
+            ("ever halt", 0x3ff0000000000000),
+            ("significant friendship", 0x3ff0000000000000),
+        ];
+        let expected = expected
+            .into_iter()
+            .map(|(text, bits)| (text.to_owned(), bits))
+            .collect::<Vec<_>>();
+        let actual = RakeModel::new()
+            .keywords(TURING_TEXT, Lang::Eng)
+            .into_iter()
+            .map(|keyword| (keyword.text, keyword.score.to_bits()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn keywords_preserve_first_occurrence_deduplication() {
+        let mut phrases = (0..32)
+            .map(|i| format!("kwleft{i:02} kwright{i:02}"))
+            .collect::<Vec<_>>();
+        let expected = phrases
+            .iter()
+            .take(21)
+            .map(|text| (text.clone(), 1.0_f64.to_bits()))
+            .collect::<Vec<_>>();
+        phrases.insert(2, phrases[0].clone());
+        let text = phrases.join(" and ");
+        let actual = RakeModel::new()
+            .keywords(&text, Lang::Eng)
+            .into_iter()
+            .map(|keyword| (keyword.text, keyword.score.to_bits()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
     }
 }
