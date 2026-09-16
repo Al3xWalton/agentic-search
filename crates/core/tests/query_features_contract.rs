@@ -1151,21 +1151,26 @@ mod contracts {
             rankings: (0..16).map(|i| json!({
                 "query": features::FIXED_CONTROL_QUERIES[i % 8],
                 "mode": if i < 8 {"off"} else {"on"}, "status": 200, "error": null,
-                "response": {"webpages":[{"url":"https://a.test/", "planStage":"strict", "snippet":"fixture"}],
+                "response": {"_type":"websites","numHits":{"_type":"exact","value":1},"hasMoreResults":false,
+                    "webpages":[{"url":"https://a.test/", "title":"fixture", "planStage":"strict", "snippet":{"text":"fixture"}}],
                     "searchDurationMs":1, "queryPlan":{"mode":if i < 8 {"strict_only"} else {"staged"}, "version":1,
                     "stages":[{"id":"strict", "renderedQuery":"fixture", "elapsedMs":1}]}}
             })).collect(),
         }
     }
-    fn comparable(retained: &ControlIdentity, control: &ControlIdentity) -> bool {
+    fn comparable(
+        retained: &ControlIdentity,
+        control: &ControlIdentity,
+        centrality: &ControlIdentity,
+    ) -> bool {
         retained
-            .comparable(control, control, [(0, 2), (1, 2)])
+            .comparable(control, centrality, [(0, 2), (1, 2)])
             .comparable()
     }
     #[test]
     fn centrality_control_identity() {
         let retained = identity();
-        assert!(comparable(&retained, &retained));
+        assert!(comparable(&retained, &retained, &retained));
         for counts in [
             vec![(0, 1), (1, 3)],
             vec![(1, 2), (0, 2)],
@@ -1182,13 +1187,52 @@ mod contracts {
         assert!(!identity()
             .comparable(&retained, &retained, [(0, 7), (1, 11)])
             .comparable());
+        for expected in [[(1, 2), (0, 2)], [(0, u64::MAX), (1, 2)]] {
+            assert!(!retained
+                .comparable(&retained, &retained, expected)
+                .completed());
+        }
+        let mut centrality = retained.clone();
+        centrality.counts = vec![(0, 1), (1, 3)];
+        let verdict = retained.comparable(&retained, &centrality, [(0, 2), (1, 2)]);
+        assert!(verdict.completed());
+        assert!(verdict.counts_match());
+        assert!(!verdict.content_matches());
+        assert!(!verdict.centrality_content_matches());
+        assert!(!verdict.comparable());
+        let mut malformed = retained.clone();
+        malformed.counts.clear();
+        malformed.documents.clear();
+        assert!(!retained
+            .comparable(&malformed, &malformed, [(0, 2), (1, 2)])
+            .content_matches());
+    }
+    #[test]
+    fn centrality_control_same_binary_base() {
+        let control = identity();
+        let centrality = identity();
+        let mut retained = identity();
+        retained.counts = vec![(0, 8), (1, 3)];
+        retained.documents = vec!["c".repeat(64), "f".repeat(64)];
+        retained.rankings[0]["response"]["numHits"]["value"] = json!(200);
+        retained.rankings[0]["response"]["webpages"] = json!([]);
+        let verdict = retained.comparable(&control, &centrality, [(0, 2), (1, 2)]);
+        assert!(verdict.completed());
+        assert!(verdict.counts_match());
+        assert!(verdict.content_matches());
+        assert!(verdict.rankings_match());
+        assert!(verdict.centrality_content_matches());
+        assert!(verdict.comparable());
     }
     #[test]
     fn centrality_control_content_identity() {
         let retained = identity();
         let mut control = retained.clone();
         control.documents[0] = "c".repeat(64);
-        assert!(!comparable(&retained, &control));
+        assert!(!comparable(&retained, &control, &retained));
+        assert!(!retained
+            .comparable(&control, &retained, [(0, 2), (1, 2)])
+            .content_matches());
         let a = fixture::fixture();
         let identities = features::document_identities(&a.args.index, &Limits::default()).unwrap();
         let b = fixture::fixture();
@@ -1226,12 +1270,140 @@ mod contracts {
         assert_eq!(duplicates[0].records[0], duplicates[0].records[1]);
     }
     #[test]
+    fn document_identity_ignores_keywords() {
+        let root = stract::gen_temp_dir().unwrap();
+        let pairs: [Vec<_>; 3] = std::array::from_fn(|pair| {
+            (0..2)
+                .map(|shard| root.as_ref().join(format!("pair-{pair}-{shard}")))
+                .collect()
+        });
+        for (pair, paths) in pairs.iter().enumerate() {
+            for (shard, path) in paths.iter().enumerate() {
+                fixture::build_index_with_keywords(
+                    path,
+                    shard as u64,
+                    &[
+                        (
+                            "https://a.test/one",
+                            if pair == 2 && shard == 0 {
+                                "ALTERED TITLE"
+                            } else {
+                                "alpha"
+                            },
+                            "the quick brown fox",
+                        ),
+                        ("https://b.test/two", "beta", "privacy policy"),
+                    ],
+                    if pair == 0 {
+                        &["alpha", "beta", "gamma"]
+                    } else {
+                        &["beta", "alpha", "delta"]
+                    },
+                    if pair == 0 { 0.0 } else { 1.5 },
+                    if pair == 0 { u64::MAX } else { 2 },
+                );
+            }
+        }
+        for (a, b) in pairs[0].iter().zip(&pairs[1]) {
+            let a = fixture::stored_keywords(a);
+            let b = fixture::stored_keywords(b);
+            assert_ne!(a, b);
+            for ((url_a, words_a), (url_b, words_b)) in a.iter().zip(&b) {
+                assert_eq!(url_a, url_b);
+                assert!(words_a.contains("gamma") && !words_a.contains("delta"));
+                assert!(words_b.contains("delta") && !words_b.contains("gamma"));
+                assert!(words_a.find("alpha").unwrap() < words_a.find("beta").unwrap());
+                assert!(words_b.find("beta").unwrap() < words_b.find("alpha").unwrap());
+            }
+        }
+        let identities = pairs
+            .iter()
+            .map(|paths| features::document_identities(paths, &Limits::default()).unwrap())
+            .collect::<Vec<_>>();
+        for (a, b) in identities[0].iter().zip(&identities[1]) {
+            assert_eq!(a.records, b.records);
+            assert_eq!(a.content_sha256, b.content_sha256);
+            assert_eq!(a.documents, b.documents);
+            assert_eq!(a.shard, b.shard);
+        }
+        assert_ne!(
+            identities[0][0].content_sha256,
+            identities[2][0].content_sha256
+        );
+        assert_eq!(
+            identities[0][1].content_sha256,
+            identities[2][1].content_sha256
+        );
+    }
+    #[test]
     fn centrality_control_fixed_queries() {
         let retained = identity();
-        for key in ["url", "planStage", "snippet"] {
-            let mut control = retained.clone();
-            control.rankings[3]["response"]["webpages"][0][key] = json!("changed");
-            assert!(!comparable(&retained, &control));
+        let control = identity();
+        let mut centrality = identity();
+        for row in &mut centrality.rankings {
+            row["response"]["webpages"][0]["url"] = json!("https://other.test/");
+            row["response"]["webpages"][0]["title"] = json!("another title");
+            row["response"]["webpages"][0]["snippet"] =
+                json!({"different":{"rich":[1,null,"value"]}});
+            row["response"]["numHits"]["value"] = json!(42);
+            row["response"]["hasMoreResults"] = json!(true);
+            row["response"]["searchDurationMs"] = json!(12);
+        }
+        centrality.rankings[0]["response"]["webpages"] = json!([]);
+        centrality.rankings[8]["response"]["queryPlan"]["stages"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":"relaxed","renderedQuery":"other","elapsedMs":5}));
+        centrality.rankings[8]["response"]["webpages"][0]["planStage"] = json!("relaxed");
+        assert!(comparable(&retained, &control, &centrality));
+        let mut count_type = control.clone();
+        count_type.rankings[0]["response"]["numHits"]["_type"] = json!("approximate");
+        let mismatch = retained.comparable(&control, &count_type, [(0, 2), (1, 2)]);
+        assert!(mismatch.completed());
+        assert!(!mismatch.rankings_match());
+        assert!(!mismatch.comparable());
+        for pair in 0..3 {
+            let mut identities = [identity(), identity(), identity()];
+            identities[pair].rankings.pop();
+            let verdict =
+                identities[0].comparable(&identities[1], &identities[2], [(0, 2), (1, 2)]);
+            assert_eq!(verdict.completed(), pair == 0);
+            assert_eq!(verdict.comparable(), pair == 0);
+        }
+        for mutation in 0..15 {
+            let mut bad = identity();
+            match mutation {
+                0 => {
+                    bad.rankings.swap(0, 1);
+                }
+                1 => {
+                    bad.rankings[1] = bad.rankings[0].clone();
+                }
+                2 => bad.rankings[0]["mode"] = json!("on"),
+                3 => bad.rankings[0]["status"] = json!(500),
+                4 => bad.rankings[0]["error"] = json!("failed"),
+                5 => bad.rankings[0]["response"]["_type"] = json!("other"),
+                6 => bad.rankings[0]["response"]["numHits"]["value"] = json!(-1),
+                7 => bad.rankings[0]["response"]["numHits"]["_type"] = json!("unknown"),
+                8 => bad.rankings[0]["response"]["hasMoreResults"] = Value::Null,
+                9 => bad.rankings[0]["response"]["webpages"][0]["title"] = Value::Null,
+                10 => bad.rankings[0]["response"]["webpages"][0]["snippet"] = json!("string"),
+                11 => bad.rankings[0]["response"]["webpages"][0]["planStage"] = json!("core"),
+                12 => bad.rankings[0]["response"]["queryPlan"]["mode"] = json!("staged"),
+                13 => bad.rankings[0]["response"]["queryPlan"]["version"] = json!(2),
+                _ => {
+                    bad.rankings[0]["response"]["webpages"] =
+                        json!(vec![bad.rankings[0]["response"]["webpages"][0].clone(); 11])
+                }
+            }
+            assert!(
+                features::fixed_query_identities(&bad.rankings).is_err(),
+                "mutation {mutation}"
+            );
+            let verdict = retained.comparable(&control, &bad, [(0, 2), (1, 2)]);
+            assert!(!verdict.completed(), "mutation {mutation}");
+            assert!(!verdict.rankings_match(), "mutation {mutation}");
+            assert!(!verdict.comparable(), "mutation {mutation}");
         }
         let mut one = json!({"webpages":[],"searchDurationMs":1,"queryPlan":{"stages":[{"id":"strict","elapsedMs":1,"renderedQuery":"same"}]}});
         let expected = features::retrieval_identity(&one).unwrap();
@@ -1245,41 +1417,94 @@ mod contracts {
         );
         assert!(features::fixed_query_identities(&[]).is_err());
     }
+    fn control_envelope() -> Value {
+        let mut envelope = json!({"freeze":{"binary_sha256":"a".repeat(64)},
+            "provenance":{"indexes":{},"services":{},"configs":{"off":"b".repeat(64),"on":"c".repeat(64)}}});
+        for pair in ["retained", "reindexed", "centrality"] {
+            envelope["provenance"]["indexes"][pair] = json!(
+                [0, 1].map(|shard| eval::input::sha256(format!("{pair}/{shard}").as_bytes()))
+            );
+            envelope["provenance"]["search_configs"][pair] = json!([0,1].map(|i|json!({"path":format!("/synthetic/{pair}/search-{i}.toml"),"sha256":eval::input::sha256(format!("config/{pair}/{i}").as_bytes())})));
+            for mode in ["off", "on"] {
+                envelope["provenance"]["services"][pair][mode] = json!(eval::input::sha256(
+                    format!("served/{pair}/{mode}").as_bytes()
+                ));
+            }
+        }
+        envelope
+    }
     fn control_files(
         root: &Path,
         retained: &ControlIdentity,
         control: &ControlIdentity,
-    ) -> (std::path::PathBuf, [std::path::PathBuf; 4]) {
-        let indexes = |identity: &ControlIdentity| {
+        centrality: &ControlIdentity,
+    ) -> (std::path::PathBuf, [std::path::PathBuf; 6]) {
+        let envelope = control_envelope();
+        let indexes = |pair: &str, identity: &ControlIdentity| {
             identity.counts.iter().zip(&identity.documents)
-            .map(|((shard, documents), digest)| json!({"shard":shard,"documents":documents,"content_sha256":digest})).collect::<Vec<_>>()
+            .map(|((shard, documents), digest)| json!({"shard":shard,"documents":documents,"content_sha256":digest,"manifest_sha256":envelope["provenance"]["indexes"][pair][*shard as usize],"executable_sha256":envelope["freeze"]["binary_sha256"]})).collect::<Vec<_>>()
         };
         let identities = root.join("identities.json");
-        fs::write(&identities, serde_json::to_vec(&json!({"retained":indexes(retained),"reindexed":indexes(control),"centrality":indexes(control)})).unwrap()).unwrap();
-        let paths = std::array::from_fn(|i| root.join(format!("observations-{i}.json")));
+        fs::write(&identities, serde_json::to_vec(&json!({"retained":indexes("retained",retained),"reindexed":indexes("reindexed",control),"centrality":indexes("centrality",centrality)})).unwrap()).unwrap();
+        let paths = std::array::from_fn(|i| {
+            root.join(format!(
+                "live/{}-{}.json",
+                ["retained", "control", "centrality"][i / 2],
+                ["off", "on"][i % 2]
+            ))
+        });
         for (i, path) in paths.iter().enumerate() {
-            let rows = if i < 2 {
-                &retained.rankings
-            } else {
-                &control.rankings
-            };
-            let rows: Vec<_> = rows.iter().skip((i % 2) * 8).take(8).collect();
-            fs::write(path, serde_json::to_vec(&json!({"rows": rows})).unwrap()).unwrap();
+            let rows = &[retained, control, centrality][i / 2].rankings;
+            let mut rows: Vec<_> = rows.iter().skip((i % 2) * 8).take(8).cloned().collect();
+            let pair = ["retained", "reindexed", "centrality"][i / 2];
+            let mode = ["off", "on"][i % 2];
+            let report = features::reporting_observation_path(path).unwrap();
+            fs::create_dir_all(report.parent().unwrap()).unwrap();
+            fs::write(report, serde_json::to_vec(&json!({"rows":rows})).unwrap()).unwrap();
+            for row in &mut rows {
+                row["response"] = features::retrieval_identity(&row["response"]).unwrap();
+            }
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            write_receipt(
+                path,
+                json!({"schema_version":1,"status":"passed","measured_at":"2026-09-16T00:00:00Z","rows": rows,"pair":if pair == "reindexed" {"control"} else {pair},"mode":mode,"service_sha256":envelope["provenance"]["services"][pair][mode],"config_sha256":envelope["provenance"]["configs"][mode],"executable_sha256":envelope["freeze"]["binary_sha256"]}),
+            );
         }
         (identities, paths)
+    }
+    fn write_receipt(path: &Path, mut receipt: Value) {
+        if receipt.get("pair_binding").is_none() {
+            let pair = if receipt["pair"] == "control" {
+                "reindexed"
+            } else {
+                receipt["pair"].as_str().unwrap()
+            }
+            .to_owned();
+            let envelope = control_envelope();
+            receipt["management_endpoint"] = json!("http://127.0.0.1:57311");
+            receipt["pair_binding"] = json!({"verified":true,"management_endpoint":"http://127.0.0.1:57311",
+                "cluster_members":[[0,"127.0.0.1:57302"],[1,"127.0.0.1:57303"]],
+                "shards":([0,1].map(|i|json!({"shard_id":i,"socket":format!("127.0.0.1:{}",57302+i),
+                "documents":2,"wire_documents":2,"index_path":format!("/synthetic/{pair}/{i}"),
+                "manifest_sha256":envelope["provenance"]["indexes"][pair.as_str()][i],"files_sha256":"f".repeat(64),
+                "config_path":envelope["provenance"]["search_configs"][pair.as_str()][i]["path"],
+                "config_sha256":envelope["provenance"]["search_configs"][pair.as_str()][i]["sha256"]})))});
+        }
+        receipt["seal"] = json!(features::measurement_seal(&receipt).unwrap());
+        fs::write(path, serde_json::to_vec(&receipt).unwrap()).unwrap();
     }
     #[test]
     fn control_gate_precedes_held_out() {
         let dir = stract::gen_temp_dir().unwrap();
-        let digest = "a".repeat(64);
+        let digest = control_envelope();
         let mut id = identity();
         id.rankings.clear();
-        let (identities, observations) = control_files(dir.as_ref(), &id, &id);
+        let (identities, observations) = control_files(dir.as_ref(), &id, &id, &id);
         let pending =
             features::control_from_files(&identities, &observations, [(0, 2), (1, 2)], &digest)
                 .unwrap();
         assert!(!pending.completed());
-        assert!(features::require_control_before_held_out(
+        assert!(features::validate_control_evidence(
             &pending,
             true,
             FeatureCell::BaseOff,
@@ -1290,11 +1515,11 @@ mod contracts {
         )
         .is_err());
         let id = identity();
-        let (identities, observations) = control_files(dir.as_ref(), &id, &id);
+        let (identities, observations) = control_files(dir.as_ref(), &id, &id, &id);
         let passed =
             features::control_from_files(&identities, &observations, [(0, 2), (1, 2)], &digest)
                 .unwrap();
-        features::require_control_before_held_out(
+        features::validate_control_evidence(
             &passed,
             true,
             FeatureCell::CentralityOn,
@@ -1304,11 +1529,11 @@ mod contracts {
             [(0, 2), (1, 2)],
         )
         .unwrap();
-        assert!(features::require_control_before_held_out(
+        assert!(features::validate_control_evidence(
             &passed,
             true,
             FeatureCell::SpellOn,
-            &"b".repeat(64),
+            &json!({"changed":true}),
             &identities,
             &observations,
             [(0, 2), (1, 2)]
@@ -1316,7 +1541,7 @@ mod contracts {
         .is_err());
         let mut other = id.clone();
         other.documents[0] = "f".repeat(64);
-        let (identities, observations) = control_files(dir.as_ref(), &id, &other);
+        let (identities, observations) = control_files(dir.as_ref(), &id, &other, &id);
         let failed =
             features::control_from_files(&identities, &observations, [(0, 2), (1, 2)], &digest)
                 .unwrap();
@@ -1326,7 +1551,7 @@ mod contracts {
             FeatureCell::SpellOff,
             FeatureCell::SpellOn,
         ] {
-            features::require_control_before_held_out(
+            features::validate_control_evidence(
                 &failed,
                 true,
                 cell,
@@ -1337,16 +1562,20 @@ mod contracts {
             )
             .unwrap();
         }
-        assert!(features::require_control_before_held_out(
-            &failed,
-            true,
-            FeatureCell::CentralityOff,
-            &digest,
-            &identities,
-            &observations,
-            [(0, 2), (1, 2)]
-        )
-        .is_err());
+        for held_out in [false, true] {
+            for cell in [FeatureCell::CentralityOff, FeatureCell::CentralityOn] {
+                assert!(features::validate_control_evidence(
+                    &failed,
+                    held_out,
+                    cell,
+                    &digest,
+                    &identities,
+                    &observations,
+                    [(0, 2), (1, 2)]
+                )
+                .is_err());
+            }
+        }
     }
     #[test]
     fn control_verdict_is_derived() {
@@ -1354,8 +1583,8 @@ mod contracts {
         let id = identity();
         let mut other = id.clone();
         other.documents[0] = "f".repeat(64);
-        let (identities, observations) = control_files(dir.as_ref(), &id, &other);
-        let digest = "a".repeat(64);
+        let (identities, observations) = control_files(dir.as_ref(), &id, &other, &id);
+        let digest = control_envelope();
         let verdict =
             features::control_from_files(&identities, &observations, [(0, 2), (1, 2)], &digest)
                 .unwrap();
@@ -1367,7 +1596,7 @@ mod contracts {
         fs::write(&path, serde_json::to_vec(&forged).unwrap()).unwrap();
         let forged = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(
-            features::require_control_before_held_out(
+            features::validate_control_evidence(
                 &forged,
                 true,
                 FeatureCell::CentralityOn,
@@ -1378,11 +1607,41 @@ mod contracts {
             ),
             Err(EvalError::IdentityMismatch)
         );
-        let (identities, observations) = control_files(dir.as_ref(), &id, &id);
+        for key in [
+            "completed",
+            "control_receipts_present",
+            "centrality_receipts_present",
+            "counts_match",
+            "content_matches",
+            "rankings_match",
+            "centrality_content_matches",
+            "comparable",
+        ] {
+            let mut forged = json!(verdict);
+            forged[key] = json!(!forged[key].as_bool().unwrap());
+            let forged: features::ControlVerdict = serde_json::from_value(forged).unwrap();
+            let forged = forged
+                .sealed(json!(verdict)["input_identity"].as_str().unwrap())
+                .unwrap();
+            assert!(
+                features::validate_control_evidence(
+                    &forged,
+                    false,
+                    FeatureCell::BaseOff,
+                    &digest,
+                    &identities,
+                    &observations,
+                    [(0, 2), (1, 2)]
+                )
+                .is_err(),
+                "{key}"
+            );
+        }
+        let (identities, observations) = control_files(dir.as_ref(), &id, &id, &id);
         let genuine =
             features::control_from_files(&identities, &observations, [(0, 2), (1, 2)], &digest)
                 .unwrap();
-        features::require_control_before_held_out(
+        features::validate_control_evidence(
             &genuine,
             true,
             FeatureCell::CentralityOn,
@@ -1392,15 +1651,727 @@ mod contracts {
             [(0, 2), (1, 2)],
         )
         .unwrap();
+        assert!(features::validate_control_evidence(
+            &genuine,
+            true,
+            FeatureCell::BaseOff,
+            &digest,
+            &identities,
+            &observations,
+            [(0, 1), (1, 3)]
+        )
+        .is_err());
+        let envelope = dir.as_ref().join("freeze.json");
+        fs::write(&envelope, b"changed frozen envelope").unwrap();
+        let changed_envelope = eval::input::hash_file(&envelope).unwrap();
+        assert!(features::validate_control_evidence(
+            &genuine,
+            true,
+            FeatureCell::BaseOff,
+            &json!({"changed":changed_envelope}),
+            &identities,
+            &observations,
+            [(0, 2), (1, 2)]
+        )
+        .is_err());
+        let mut observed = read(&observations[4]);
+        observed["rows"][0]["response"]["numHits"]["value"] = json!(99);
+        fs::write(&observations[4], serde_json::to_vec(&observed).unwrap()).unwrap();
+        assert!(features::validate_control_evidence(
+            &genuine,
+            true,
+            FeatureCell::BaseOff,
+            &digest,
+            &identities,
+            &observations,
+            [(0, 2), (1, 2)]
+        )
+        .is_err());
+        write_receipt(&observations[4], observed);
+        let updated =
+            features::control_from_files(&identities, &observations, [(0, 2), (1, 2)], &digest)
+                .unwrap();
+        assert!(updated.comparable());
+        for extra in [false, true] {
+            let (identities, paths) = control_files(dir.as_ref(), &id, &id, &id);
+            let mut file = read(&paths[4]);
+            if extra {
+                let row = file["rows"][0].clone();
+                file["rows"].as_array_mut().unwrap().push(row);
+            } else {
+                file["rows"].as_array_mut().unwrap().pop();
+            }
+            fs::write(&paths[4], serde_json::to_vec(&file).unwrap()).unwrap();
+            assert!(
+                features::control_from_files(&identities, &paths, [(0, 2), (1, 2)], &digest)
+                    .map_or(true, |v| !v.completed())
+            );
+        }
+    }
+    #[test]
+    fn control_observations_bound_to_service() {
+        let dir = stract::gen_temp_dir().unwrap();
+        let id = identity();
+        let envelope = control_envelope();
+        let (documents, paths) = control_files(dir.as_ref(), &id, &id, &id);
+        let derive = || {
+            features::control_from_files(&documents, &paths, [(0, 2), (1, 2)], &envelope).unwrap()
+        };
+        assert!(
+            derive().comparable(),
+            "equal legitimate rankings are comparable"
+        );
+        let genuine = read(&paths[4]);
+        let mut copied = read(&paths[2]);
+        copied["pair"] = json!("centrality");
+        copied["pair_binding"] = genuine["pair_binding"].clone();
+        write_receipt(&paths[4], copied);
+        assert!(
+            !derive().completed(),
+            "copied control service cannot produce centrality observations"
+        );
+        for (key, wrong) in [
+            ("pair", json!("reindexed")),
+            ("mode", json!("on")),
+            ("config_sha256", json!("d".repeat(64))),
+            ("executable_sha256", json!("e".repeat(64))),
+        ] {
+            let mut altered = genuine.clone();
+            altered[key] = wrong;
+            write_receipt(&paths[4], altered);
+            assert!(!derive().completed(), "{key}");
+        }
+        fs::write(&paths[4], serde_json::to_vec(&genuine).unwrap()).unwrap();
+        assert!(derive().completed());
+    }
+    fn live_fixture_inputs(
+        root: &Path,
+        services: &fixture::GateServices,
+        endpoint: &str,
+    ) -> (
+        Value,
+        std::path::PathBuf,
+        [std::path::PathBuf; 6],
+        std::path::PathBuf,
+    ) {
+        let id = identity();
+        fs::create_dir(root.join("evidence")).unwrap();
+        let (original_identities, observations) =
+            control_files(&root.join("evidence"), &id, &id, &id);
+        fs::create_dir(root.join("evidence/documents")).unwrap();
+        let identities = root.join("evidence/documents/identities.json");
+        fs::rename(original_identities, &identities).unwrap();
+        for path in observations.iter().skip(2) {
+            fs::remove_file(path).unwrap();
+        }
+        let mut envelope = control_envelope();
+        let documents = json!({"retained":services.indexes,"reindexed":services.indexes,"centrality":services.indexes});
+        fs::write(&identities, serde_json::to_vec(&documents).unwrap()).unwrap();
+        let config = root.join("native/api.toml");
+        fs::write(
+            &config,
+            format!(
+                "host = {:?}\nmanagement_host = {:?}\n",
+                endpoint.strip_prefix("http://").unwrap(),
+                services.management.strip_prefix("http://").unwrap()
+            ),
+        )
+        .unwrap();
+        for mode in ["off", "on"] {
+            envelope["provenance"]["configs"][mode] =
+                json!(eval::input::hash_file(&config).unwrap());
+        }
+        for pair in ["retained", "reindexed", "centrality"] {
+            envelope["provenance"]["indexes"][pair] = json!(services
+                .indexes
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|index| index["manifest_sha256"].clone())
+                .collect::<Vec<_>>());
+            envelope["provenance"]["search_configs"][pair] = json!(services
+                .search_configs
+                .iter()
+                .map(|path| json!({"path":path,"sha256":eval::input::hash_file(path).unwrap()}))
+                .collect::<Vec<_>>());
+        }
+        (envelope, identities, observations, config)
+    }
+    fn live_fixture_served(root: &Path) -> std::path::PathBuf {
+        let served = root.join("native/served.json");
+        fs::write(
+            &served,
+            serde_json::to_vec(&json!({"schema_version":1,"verified":true,
+            "shards":[{"shard_id":0,"documents":2},{"shard_id":1,"documents":2}]}))
+            .unwrap(),
+        )
+        .unwrap();
+        served
+    }
+    #[tokio::test]
+    async fn gate_measures_fixed_queries_itself() {
+        use features::{ControlGateInputs, GateMeasurements, LiveControlCheck};
+        let dir = stract::gen_temp_dir().unwrap();
+        let root = dir.as_ref();
+        fs::create_dir(root.join("native")).unwrap();
+        let services = fixture::GateServices::start(&root.join("native"), [2, 2]).await;
+        let id = identity();
+        let responses = (0..32)
+            .map(|i| id.rankings[i % 16]["response"].clone())
+            .collect();
+        let (endpoint, requests, server) = fixture::gate_http(responses).await;
+        let (envelope, identities, observations, config) =
+            live_fixture_inputs(root, &services, &endpoint.base);
+        let served = live_fixture_served(root);
+        let final_verdict = root.join("verdict/verdict-final.json");
+        let inputs = ControlGateInputs {
+            held_out: false,
+            cell: FeatureCell::BaseOff,
+            envelope: &envelope,
+            identities: &identities,
+            observations: &observations,
+            expected_counts: [(0, 2), (1, 2)],
+            final_verdict: &final_verdict,
+        };
+        let live = LiveControlCheck {
+            endpoint: &endpoint.base,
+            management_endpoint: &services.management,
+            search_configs: &services.search_configs,
+            identities: &identities,
+            envelope: &envelope,
+            pair: "control",
+            planner: eval::Planner::Off,
+            served: &served,
+            config: &config,
+            executable_sha256: envelope["freeze"]["binary_sha256"].as_str().unwrap(),
+            receipt: &observations[2],
+        };
+        let mut measurements = GateMeasurements::default();
+        let first = features::require_control_before_held_out(&inputs, &live, &mut measurements)
+            .await
+            .unwrap();
+        assert!(!first.completed());
+        features::require_control_before_held_out(&inputs, &live, &mut measurements)
+            .await
+            .unwrap();
+        assert_eq!(
+            requests.lock().unwrap().len(),
+            8,
+            "later cell must reuse its measurement"
+        );
+        let receipt = features::read_measurement(&observations[2]).unwrap();
+        assert_eq!(receipt["pair_binding"]["verified"], true);
+        for (row, response) in receipt["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(&id.rankings[..8])
+        {
+            assert_eq!(
+                row["response"],
+                features::retrieval_identity(&response["response"]).unwrap()
+            );
+        }
+        let original = fs::read(&observations[2]).unwrap();
+        for case in ["row", "seal", "service", "binding"] {
+            let mut altered = receipt.clone();
+            match case {
+                "row" => {
+                    altered["rows"][0]["response"]["webpages"][0]["url"] =
+                        json!("https://tampered.test/")
+                }
+                "seal" => altered["seal"] = json!("f".repeat(64)),
+                "service" => altered["service_sha256"] = json!("f".repeat(64)),
+                _ => altered["pair_binding"]["shards"][0]["config_sha256"] = json!("f".repeat(64)),
+            }
+            fs::write(&observations[2], serde_json::to_vec(&altered).unwrap()).unwrap();
+            assert!(
+                features::require_control_before_held_out(&inputs, &live, &mut measurements)
+                    .await
+                    .is_err(),
+                "tampered {case}"
+            );
+            fs::write(&observations[2], &original).unwrap();
+        }
+        assert!(
+            features::require_control_before_held_out(
+                &inputs,
+                &live,
+                &mut GateMeasurements::default()
+            )
+            .await
+            .is_err(),
+            "fresh gate cannot adopt prewritten receipt"
+        );
+        assert_eq!(requests.lock().unwrap().len(), 8);
+        let centrality = ControlGateInputs {
+            cell: FeatureCell::CentralityOff,
+            ..inputs
+        };
+        assert!(!measurements
+            .verdict(&centrality)
+            .unwrap()
+            .centrality_receipts_present());
+        assert!(!final_verdict.exists());
+        for (pair, mode, slot, cell) in [
+            ("control", eval::Planner::On, 3, FeatureCell::BaseOn),
+            (
+                "centrality",
+                eval::Planner::Off,
+                4,
+                FeatureCell::CentralityOff,
+            ),
+            (
+                "centrality",
+                eval::Planner::On,
+                5,
+                FeatureCell::CentralityOn,
+            ),
+        ] {
+            let inputs = ControlGateInputs {
+                held_out: true,
+                cell,
+                ..centrality
+            };
+            let live = LiveControlCheck {
+                pair,
+                planner: mode,
+                receipt: &observations[slot],
+                ..live
+            };
+            if slot == 5 {
+                let unsafe_verdict = root.join("index-0/verdict.json");
+                let rejected = ControlGateInputs {
+                    final_verdict: &unsafe_verdict,
+                    ..inputs
+                };
+                assert!(features::require_control_before_held_out(
+                    &rejected,
+                    &live,
+                    &mut measurements
+                )
+                .await
+                .is_err());
+                assert!(
+                    !unsafe_verdict.exists(),
+                    "final verdict must not change a measured index"
+                );
+                assert_eq!(requests.lock().unwrap().len(), 32);
+            }
+            let result =
+                features::require_control_before_held_out(&inputs, &live, &mut measurements).await;
+            assert_eq!(requests.lock().unwrap().len(), (slot - 1) * 8);
+            if slot == 4 {
+                assert_eq!(
+                    result.unwrap_err(),
+                    features::LiveControlError::PendingMeasurements
+                );
+                assert!(!final_verdict.exists());
+            } else {
+                let verdict = result.unwrap();
+                assert!(verdict.control_receipts_present());
+                assert_eq!(verdict.completed(), slot == 5);
+            }
+        }
+        server.await.unwrap();
+        for (ordinal, request) in requests.lock().unwrap().iter().enumerate() {
+            assert_eq!(request.line, "POST /beta/api/search HTTP/1.1");
+            assert_eq!(
+                request.body,
+                eval::runner::request(features::FIXED_CONTROL_QUERIES[ordinal % 8])
+            );
+            let headers = request.headers.to_ascii_lowercase();
+            assert!(headers.contains("accept-encoding: identity"));
+            assert!(headers.contains("connection: close"));
+        }
+        assert_eq!(read(&final_verdict)["verdict"]["comparable"], true);
+    }
+    #[tokio::test]
+    async fn gate_binds_endpoint_to_pair() {
+        use features::{ControlGateInputs, GateMeasurements, LiveControlCheck};
+        for case in [
+            "valid",
+            "different-socket",
+            "third-member",
+            "wrong-index",
+            "wire-count",
+            "config-digest",
+            "api-endpoint",
+            "output-in-index",
+            "output-in-identities",
+        ] {
+            let dir = stract::gen_temp_dir().unwrap();
+            let root = dir.as_ref();
+            fs::create_dir(root.join("native")).unwrap();
+            let services = fixture::GateServices::start(
+                &root.join("native"),
+                if case == "wire-count" { [3, 2] } else { [2, 2] },
+            )
+            .await;
+            let (endpoint, requests, server) = fixture::gate_http(
+                identity().rankings[..8]
+                    .iter()
+                    .map(|r| r["response"].clone())
+                    .collect(),
+            )
+            .await;
+            let (mut envelope, identities, mut observations, config) =
+                live_fixture_inputs(root, &services, &endpoint.base);
+            let served = live_fixture_served(root);
+            let final_verdict = root.join("verdict/final.json");
+            match case {
+                "output-in-index" => observations[2] = root.join("index-0/receipt.json"),
+                "output-in-identities" => {
+                    observations[2] = root.join("evidence/documents/receipt.json")
+                }
+                "different-socket" => {
+                    services.members.lock().unwrap()[0].1 = "127.0.0.1:1".parse().unwrap()
+                }
+                "third-member" => services
+                    .members
+                    .lock()
+                    .unwrap()
+                    .push((2, "127.0.0.1:1".parse().unwrap())),
+                "wrong-index" => {
+                    let path = &services.search_configs[0];
+                    let mut config: toml::Value =
+                        toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+                    let wrong = root.join("native/wrong-index");
+                    fs::create_dir(&wrong).unwrap();
+                    fs::write(wrong.join("physical-data"), b"different bytes").unwrap();
+                    config["index_path"] = toml::Value::String(wrong.to_str().unwrap().into());
+                    fs::write(path, toml::to_string(&config).unwrap()).unwrap();
+                    envelope["provenance"]["search_configs"]["reindexed"][0]["sha256"] =
+                        json!(eval::input::hash_file(path).unwrap());
+                }
+                "config-digest" => fs::write(&services.search_configs[0], b"changed").unwrap(),
+                "api-endpoint" => {
+                    let mut api: toml::Value =
+                        toml::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
+                    api["host"] = toml::Value::String("127.0.0.1:1".into());
+                    fs::write(&config, toml::to_string(&api).unwrap()).unwrap();
+                    envelope["provenance"]["configs"]["off"] =
+                        json!(eval::input::hash_file(&config).unwrap());
+                }
+                _ => {}
+            }
+            let inputs = ControlGateInputs {
+                held_out: false,
+                cell: FeatureCell::BaseOff,
+                envelope: &envelope,
+                identities: &identities,
+                observations: &observations,
+                expected_counts: [(0, 2), (1, 2)],
+                final_verdict: &final_verdict,
+            };
+            let live = LiveControlCheck {
+                endpoint: &endpoint.base,
+                management_endpoint: &services.management,
+                search_configs: &services.search_configs,
+                identities: &identities,
+                envelope: &envelope,
+                pair: "control",
+                planner: eval::Planner::Off,
+                served: &served,
+                config: &config,
+                executable_sha256: envelope["freeze"]["binary_sha256"].as_str().unwrap(),
+                receipt: &observations[2],
+            };
+            let result = features::require_control_before_held_out(
+                &inputs,
+                &live,
+                &mut GateMeasurements::default(),
+            )
+            .await;
+            server.abort();
+            let _ = server.await;
+            assert_eq!(result.is_ok(), case == "valid", "case {case}: {result:?}");
+            assert_eq!(
+                requests.lock().unwrap().len(),
+                if case == "valid" { 8 } else { 0 },
+                "case {case}: refused before search"
+            );
+            if case == "valid" {
+                let receipt = features::read_measurement(&observations[2]).unwrap();
+                assert_eq!(
+                    receipt["pair_binding"]["cluster_members"],
+                    json!(*services.members.lock().unwrap())
+                );
+            } else {
+                assert!(!observations[2].exists());
+            }
+        }
+    }
+    #[tokio::test]
+    async fn gate_native_responses_are_bounded() {
+        use eval::{Argument, ArgumentReason};
+        use features::{ControlGateInputs, GateMeasurements, LiveControlCheck, LiveControlError};
+        assert_eq!(Limits::default().native_response_bytes, 64 * 1024);
+        assert!(GateMeasurements::with_binding_limits(Limits {
+            native_response_bytes: 64 * 1024 + 1,
+            ..Limits::default()
+        })
+        .is_err());
+        for case in ["valid", "oversized-frame", "seventeen-members"] {
+            let dir = stract::gen_temp_dir().unwrap();
+            let root = dir.as_ref();
+            fs::create_dir(root.join("native")).unwrap();
+            let services = fixture::GateServices::start(&root.join("native"), [2, 2]).await;
+            if case == "seventeen-members" {
+                services
+                    .members
+                    .lock()
+                    .unwrap()
+                    .extend((2..17).map(|i| (i, "127.0.0.1:1".parse().unwrap())));
+            }
+            let (endpoint, requests, server) = fixture::gate_http(
+                identity().rankings[..8]
+                    .iter()
+                    .map(|r| r["response"].clone())
+                    .collect(),
+            )
+            .await;
+            let (envelope, identities, observations, config) =
+                live_fixture_inputs(root, &services, &endpoint.base);
+            let served = live_fixture_served(root);
+            let final_verdict = root.join("verdict/final.json");
+            let inputs = ControlGateInputs {
+                held_out: false,
+                cell: FeatureCell::BaseOff,
+                envelope: &envelope,
+                identities: &identities,
+                observations: &observations,
+                expected_counts: [(0, 2), (1, 2)],
+                final_verdict: &final_verdict,
+            };
+            let live = LiveControlCheck {
+                endpoint: &endpoint.base,
+                management_endpoint: &services.management,
+                search_configs: &services.search_configs,
+                identities: &identities,
+                envelope: &envelope,
+                pair: "control",
+                planner: eval::Planner::Off,
+                served: &served,
+                config: &config,
+                executable_sha256: envelope["freeze"]["binary_sha256"].as_str().unwrap(),
+                receipt: &observations[2],
+            };
+            // A genuine, small management response declares more than this reduced cap.
+            // Removing the header check lets it decode and authorize all eight searches.
+            let limits = Limits {
+                native_response_bytes: if case == "oversized-frame" {
+                    1
+                } else {
+                    64 * 1024
+                },
+                ..Limits::default()
+            };
+            let result = features::require_control_before_held_out(
+                &inputs,
+                &live,
+                &mut GateMeasurements::with_binding_limits(limits).unwrap(),
+            )
+            .await;
+            server.abort();
+            let _ = server.await;
+            if case == "valid" {
+                result.unwrap();
+                assert_eq!(requests.lock().unwrap().len(), 8);
+            } else {
+                assert_eq!(
+                    result,
+                    Err(LiveControlError::Evidence(EvalError::Argument {
+                        argument: Argument::ServiceManifest,
+                        reason: ArgumentReason::Limit,
+                    })),
+                    "case {case}"
+                );
+                assert_eq!(
+                    requests.lock().unwrap().len(),
+                    0,
+                    "refused before any search"
+                );
+                assert!(!observations[2].exists());
+            }
+        }
+    }
+
+    #[test]
+    fn manifest_walk_is_byte_bounded() {
+        use eval::{Argument, ArgumentReason};
+        let dir = stract::gen_temp_dir().unwrap();
+        let root = dir.as_ref();
+        let sparse = root.join("sparse");
+        fs::File::create(&sparse).unwrap().set_len(4096).unwrap();
+        let mut hashed = Vec::new();
+        let result = features::bounded_index_manifest(
+            root,
+            &Limits {
+                file_bytes: 1024,
+                total_bytes: 8192,
+                ..Limits::default()
+            },
+            |path| hashed.push(path.to_path_buf()),
+        );
+        assert!(
+            hashed.is_empty(),
+            "oversized sparse file must not be hashed"
+        );
+        assert_eq!(
+            result,
+            Err(EvalError::Argument {
+                argument: Argument::Index,
+                reason: ArgumentReason::Limit,
+            })
+        );
+        fs::File::create(root.join("second"))
+            .unwrap()
+            .set_len(4096)
+            .unwrap();
+        let result = features::bounded_index_manifest(
+            root,
+            &Limits {
+                file_bytes: 4096,
+                total_bytes: 6144,
+                ..Limits::default()
+            },
+            |path| hashed.push(path.to_path_buf()),
+        );
+        assert!(
+            hashed.is_empty(),
+            "aggregate preflight must finish before hashing"
+        );
+        assert_eq!(
+            result,
+            Err(EvalError::Argument {
+                argument: Argument::Index,
+                reason: ArgumentReason::Limit,
+            })
+        );
+        let result = features::bounded_index_manifest(
+            root,
+            &Limits {
+                file_bytes: 4096,
+                total_bytes: 8192,
+                ..Limits::default()
+            },
+            |path| hashed.push(path.to_path_buf()),
+        )
+        .unwrap();
+        assert_eq!(hashed.len(), 2);
+        assert_eq!(result, eval::index::manifest(root).unwrap());
+        fs::create_dir(root.join("a")).unwrap();
+        fs::write(root.join("a/child"), b"nested").unwrap();
+        fs::write(root.join("a.txt"), b"sibling").unwrap();
+        assert_eq!(
+            features::bounded_index_manifest(root, &Limits::default(), |_| {}).unwrap(),
+            eval::index::manifest(root).unwrap(),
+            "preserve component-sorted depth-first order"
+        );
+    }
+
+    #[test]
+    fn verdict_observations_come_from_receipts() {
+        let dir = stract::gen_temp_dir().unwrap();
+        let id = identity();
+        let (documents, paths) = control_files(dir.as_ref(), &id, &id, &id);
+        let envelope = control_envelope();
+        let derive = || {
+            features::control_from_files(&documents, &paths, [(0, 2), (1, 2)], &envelope).unwrap()
+        };
+        let genuine = derive();
+        assert!(genuine.comparable());
+        let report = features::reporting_observation_path(&paths[4]).unwrap();
+        let mut reporting = read(&report);
+        reporting["rows"][0]["response"]["numHits"]["_type"] = json!("approximate");
+        reporting["rows"][0]["response"]["webpages"][0]["url"] = json!("https://fabricated.test/");
+        fs::write(&report, serde_json::to_vec(&reporting).unwrap()).unwrap();
+        assert_eq!(
+            derive(),
+            genuine,
+            "reporting observations have no authority"
+        );
+        let mut measured = read(&paths[4]);
+        measured["rows"][0]["response"]["numHits"]["_type"] = json!("approximate");
+        write_receipt(&paths[4], measured);
+        assert!(derive().completed());
+        assert!(!derive().rankings_match());
+        assert!(!derive().comparable());
+        for path in &paths[4..] {
+            fs::remove_file(path).unwrap();
+        }
+        let partial = derive();
+        assert!(partial.control_receipts_present());
+        assert!(!partial.centrality_receipts_present());
+        assert!(!partial.completed());
+        assert!(features::validate_control_evidence(
+            &partial,
+            false,
+            FeatureCell::CentralityOn,
+            &envelope,
+            &documents,
+            &paths,
+            [(0, 2), (1, 2)]
+        )
+        .is_err());
+        let mut forged = json!(partial);
+        for key in ["completed", "comparable", "centrality_receipts_present"] {
+            forged[key] = json!(true);
+        }
+        let forged = serde_json::from_value(forged).unwrap();
+        assert!(features::validate_control_evidence(
+            &forged,
+            false,
+            FeatureCell::CentralityOn,
+            &envelope,
+            &documents,
+            &paths,
+            [(0, 2), (1, 2)]
+        )
+        .is_err());
+    }
+    #[test]
+    fn control_identities_bound_to_manifests() {
+        let dir = stract::gen_temp_dir().unwrap();
+        let id = identity();
+        let envelope = control_envelope();
+        let (documents, paths) = control_files(dir.as_ref(), &id, &id, &id);
+        let derive = || {
+            features::control_from_files(&documents, &paths, [(0, 2), (1, 2)], &envelope).unwrap()
+        };
+        assert!(derive().completed());
+        let genuine = read(&documents);
+        for pair in ["retained", "reindexed", "centrality"] {
+            for shard in 0..2 {
+                let mut changed = genuine.clone();
+                changed[pair][shard]["manifest_sha256"] = json!("f".repeat(64));
+                fs::write(&documents, serde_json::to_vec(&changed).unwrap()).unwrap();
+                assert!(!derive().completed(), "{pair}/{shard} manifest");
+                changed = genuine.clone();
+                changed[pair][shard]["executable_sha256"] = json!("f".repeat(64));
+                fs::write(&documents, serde_json::to_vec(&changed).unwrap()).unwrap();
+                assert!(!derive().completed(), "{pair}/{shard} executable");
+            }
+        }
+        fs::write(&documents, serde_json::to_vec(&genuine).unwrap()).unwrap();
+        assert!(derive().comparable());
     }
     fn diagnostics() -> Value {
         json!({"indexes":[{"shard":0,"documents":2,"content_sha256":"d".repeat(64)}, {"shard":1,"documents":2,"content_sha256":"e".repeat(64)}]})
+    }
+    fn contrast_control() -> ControlIdentity {
+        let mut control = identity();
+        control.documents = vec!["d".repeat(64), "e".repeat(64)];
+        control
     }
     fn run_identity(cell: FeatureCell) -> Value {
         let mut run = raw_run_identity(cell);
         for (ordinal, digest) in ["d", "e"].into_iter().enumerate() {
             run["indexes"][ordinal]["manifest"]["content_sha256"] = json!(digest.repeat(64));
+            run["indexes"][ordinal]["manifest"]["shard"] = json!(ordinal);
         }
+        run["suite"] = json!("diagnostic");
         run
     }
     fn raw_run_identity(cell: FeatureCell) -> Value {
@@ -1427,13 +2398,20 @@ mod contracts {
             assert_eq!(features::matching_base(feature), expected);
             let base = run_identity(expected);
             let after = run_identity(feature);
-            features::validate_contrast(&base, &after, &diagnostics()).unwrap();
+            features::validate_contrast(&base, &after, &diagnostics(), &contrast_control())
+                .unwrap();
             let wrong = run_identity(if expected == FeatureCell::BaseOn {
                 FeatureCell::BaseOff
             } else {
                 FeatureCell::BaseOn
             });
-            assert!(features::validate_contrast(&wrong, &after, &diagnostics()).is_err());
+            assert!(features::validate_contrast(
+                &wrong,
+                &after,
+                &diagnostics(),
+                &contrast_control()
+            )
+            .is_err());
             for key in [
                 "executable",
                 "request",
@@ -1444,13 +2422,45 @@ mod contracts {
                 let mut changed = after.clone();
                 changed[key] = Value::Null;
                 assert!(
-                    features::validate_contrast(&base, &changed, &diagnostics()).is_err(),
+                    features::validate_contrast(
+                        &base,
+                        &changed,
+                        &diagnostics(),
+                        &contrast_control()
+                    )
+                    .is_err(),
                     "{key}"
                 );
             }
             let mut changed = after.clone();
             changed["rows"][0]["query"] = json!("new query");
-            assert!(features::validate_contrast(&base, &changed, &diagnostics()).is_err());
+            assert!(features::validate_contrast(
+                &base,
+                &changed,
+                &diagnostics(),
+                &contrast_control()
+            )
+            .is_err());
+            if feature.centrality() {
+                let mut anchor = base.clone();
+                anchor["suite"] = json!("frozen");
+                assert!(features::validate_contrast(
+                    &anchor,
+                    &after,
+                    &diagnostics(),
+                    &contrast_control()
+                )
+                .is_err());
+                let mut acceptance_feature = after.clone();
+                acceptance_feature["suite"] = json!("frozen");
+                assert!(features::validate_contrast(
+                    &base,
+                    &acceptance_feature,
+                    &diagnostics(),
+                    &contrast_control()
+                )
+                .is_err());
+            }
         }
         assert!(serde_json::from_value::<FeatureCell>(json!("centrality-spell-on")).is_err());
         assert_eq!(
@@ -1466,7 +2476,8 @@ mod contracts {
         assert!(features::validate_contrast(
             &run_identity(FeatureCell::BaseOn),
             &combined,
-            &diagnostics()
+            &diagnostics(),
+            &contrast_control()
         )
         .is_err());
     }
@@ -1475,13 +2486,55 @@ mod contracts {
         let base = run_identity(FeatureCell::BaseOff);
         for feature in [FeatureCell::CentralityOff, FeatureCell::SpellOff] {
             let mut run = run_identity(feature);
-            features::validate_contrast(&base, &run, &diagnostics()).unwrap();
+            features::validate_contrast(&base, &run, &diagnostics(), &contrast_control()).unwrap();
             run["indexes"][0]["manifest"]["content_sha256"] = json!("f".repeat(64));
             assert_eq!(
-                features::validate_contrast(&base, &run, &diagnostics()),
+                features::validate_contrast(&base, &run, &diagnostics(), &contrast_control()),
                 Err(EvalError::IdentityMismatch)
             );
         }
+        let feature = run_identity(FeatureCell::CentralityOff);
+        let control = contrast_control();
+        for side in 0..2 {
+            for mutation in 0..6 {
+                let mut runs = [base.clone(), feature.clone()];
+                match mutation {
+                    0 => {
+                        runs[side]["indexes"][0]["manifest"]["content_sha256"] =
+                            json!("f".repeat(64))
+                    }
+                    1 => runs[side]["indexes"][0]["manifest"]["content_sha256"] = Value::Null,
+                    2 => runs[side]["indexes"].as_array_mut().unwrap().swap(0, 1),
+                    3 => {
+                        runs[side]["indexes"].as_array_mut().unwrap().pop();
+                    }
+                    4 => {
+                        let extra = runs[side]["indexes"][0].clone();
+                        runs[side]["indexes"].as_array_mut().unwrap().push(extra);
+                    }
+                    _ => runs[side]["indexes"][0]["manifest"]["shard"] = json!(1),
+                }
+                assert!(
+                    features::validate_contrast(&runs[0], &runs[1], &diagnostics(), &control)
+                        .is_err(),
+                    "side {side}, mutation {mutation}"
+                );
+            }
+        }
+        let mut stale = diagnostics();
+        stale["indexes"][0]["content_sha256"] = json!("f".repeat(64));
+        assert!(features::validate_contrast(&base, &feature, &stale, &control).is_err());
+        let mut wrong_control = control.clone();
+        wrong_control.documents[0] = "a".repeat(64);
+        assert!(
+            features::validate_contrast(&base, &feature, &diagnostics(), &wrong_control).is_err()
+        );
+        let mut wrong_source = feature.clone();
+        wrong_source["configs"][0]["resolved"]["index_path"] =
+            base["configs"][0]["resolved"]["index_path"].clone();
+        assert!(
+            features::validate_contrast(&base, &wrong_source, &diagnostics(), &control).is_err()
+        );
     }
     #[test]
     fn spell_offer_bincode_rejects_applied() {
