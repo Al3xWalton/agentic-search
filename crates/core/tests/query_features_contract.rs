@@ -1989,8 +1989,50 @@ mod contracts {
     #[tokio::test]
     async fn gate_binds_endpoint_to_pair() {
         use features::{ControlGateInputs, GateMeasurements, LiveControlCheck};
+        let temporary = std::env::temp_dir().canonicalize().unwrap();
+        let trusted_root = [
+            "/dev/shm",
+            "/var/tmp",
+            "/private/var/tmp",
+            "/private/tmp",
+            "/tmp",
+        ]
+        .into_iter()
+        .filter_map(|candidate| Path::new(candidate).canonicalize().ok())
+        .find(|candidate| {
+            fs::symlink_metadata(candidate).is_ok_and(|metadata| {
+                metadata.is_dir()
+                    && eval::input::trusted_temporary_root(
+                        candidate,
+                        metadata.uid(),
+                        metadata.mode(),
+                    )
+                    && !temporary.starts_with(candidate)
+            })
+        })
+        .expect("gate witness requires a trusted root outside temp_dir");
+        let untrusted_parent = std::env::current_dir().unwrap().canonicalize().unwrap();
+        assert!(!untrusted_parent.ancestors().any(|ancestor| {
+            let metadata = fs::symlink_metadata(ancestor).unwrap();
+            eval::input::trusted_temporary_root(ancestor, metadata.uid(), metadata.mode())
+        }));
+        struct PrivateDirectory(std::path::PathBuf);
+        impl PrivateDirectory {
+            fn new(parent: &Path) -> Self {
+                let path = parent.join(format!("stract-gate-roots-{}", uuid::Uuid::new_v4()));
+                fs::DirBuilder::new().mode(0o700).create(&path).unwrap();
+                Self(path)
+            }
+        }
+        impl Drop for PrivateDirectory {
+            fn drop(&mut self) {
+                fs::remove_dir_all(&self.0).unwrap();
+            }
+        }
         for case in [
             "valid",
+            "trusted-root-outside-temp",
+            "no-trusted-ancestor",
             "different-socket",
             "third-member",
             "wrong-index",
@@ -2001,7 +2043,16 @@ mod contracts {
             "output-in-identities",
         ] {
             let dir = stract::gen_temp_dir().unwrap();
-            let root = dir.as_ref();
+            let relocated = match case {
+                "trusted-root-outside-temp" => Some(PrivateDirectory::new(&trusted_root)),
+                "no-trusted-ancestor" => Some(PrivateDirectory::new(&untrusted_parent)),
+                _ => None,
+            };
+            let root = relocated.as_ref().map_or(dir.as_ref(), |d| d.0.as_path());
+            if relocated.is_some() {
+                eprintln!("gate index-root witness {case}: {}", root.display());
+            }
+            let accepted = matches!(case, "valid" | "trusted-root-outside-temp");
             fs::create_dir(root.join("native")).unwrap();
             let services = fixture::GateServices::start(
                 &root.join("native"),
@@ -2085,13 +2136,19 @@ mod contracts {
             .await;
             server.abort();
             let _ = server.await;
-            assert_eq!(result.is_ok(), case == "valid", "case {case}: {result:?}");
+            assert_eq!(result.is_ok(), accepted, "case {case}: {result:?}");
+            if case == "no-trusted-ancestor" {
+                assert_eq!(
+                    result,
+                    Err(features::LiveControlError::Evidence(EvalError::UnsafePath))
+                );
+            }
             assert_eq!(
                 requests.lock().unwrap().len(),
-                if case == "valid" { 8 } else { 0 },
+                if accepted { 8 } else { 0 },
                 "case {case}: refused before search"
             );
-            if case == "valid" {
+            if accepted {
                 let receipt = features::read_measurement(&observations[2]).unwrap();
                 assert_eq!(
                     receipt["pair_binding"]["cluster_members"],
