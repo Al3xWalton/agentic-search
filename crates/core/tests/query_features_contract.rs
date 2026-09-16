@@ -1270,9 +1270,9 @@ mod contracts {
         assert_eq!(duplicates[0].records[0], duplicates[0].records[1]);
     }
     #[test]
-    fn document_identity_ignores_keywords() {
+    fn document_identity_includes_keywords() {
         let root = stract::gen_temp_dir().unwrap();
-        let pairs: [Vec<_>; 3] = std::array::from_fn(|pair| {
+        let pairs: [Vec<_>; 4] = std::array::from_fn(|pair| {
             (0..2)
                 .map(|shard| root.as_ref().join(format!("pair-{pair}-{shard}")))
                 .collect()
@@ -1283,56 +1283,56 @@ mod contracts {
                     path,
                     shard as u64,
                     &[
-                        (
-                            "https://a.test/one",
-                            if pair == 2 && shard == 0 {
-                                "ALTERED TITLE"
-                            } else {
-                                "alpha"
-                            },
-                            "the quick brown fox",
-                        ),
+                        ("https://a.test/one", "alpha", "the quick brown fox"),
                         ("https://b.test/two", "beta", "privacy policy"),
                     ],
-                    if pair == 0 {
-                        &["alpha", "beta", "gamma"]
-                    } else {
-                        &["beta", "alpha", "delta"]
+                    match (pair, shard) {
+                        (1, 0) => &["beta", "alpha", "gamma"],
+                        (2, 0) => &["alpha", "beta", "delta"],
+                        _ => &["alpha", "beta", "gamma"],
                     },
-                    if pair == 0 { 0.0 } else { 1.5 },
-                    if pair == 0 { u64::MAX } else { 2 },
+                    if pair == 3 && shard == 0 { 1.5 } else { 0.0 },
+                    if pair == 3 && shard == 0 { 2 } else { u64::MAX },
                 );
             }
         }
-        for (a, b) in pairs[0].iter().zip(&pairs[1]) {
-            let a = fixture::stored_keywords(a);
-            let b = fixture::stored_keywords(b);
-            assert_ne!(a, b);
-            for ((url_a, words_a), (url_b, words_b)) in a.iter().zip(&b) {
-                assert_eq!(url_a, url_b);
-                assert!(words_a.contains("gamma") && !words_a.contains("delta"));
-                assert!(words_b.contains("delta") && !words_b.contains("gamma"));
-                assert!(words_a.find("alpha").unwrap() < words_a.find("beta").unwrap());
-                assert!(words_b.find("beta").unwrap() < words_b.find("alpha").unwrap());
+        for (pair, paths) in pairs.iter().enumerate() {
+            for (shard, path) in paths.iter().enumerate() {
+                let expected = match (pair, shard) {
+                    (1, 0) => "beta\nalpha\ngamma",
+                    (2, 0) => "alpha\nbeta\ndelta",
+                    _ => "alpha\nbeta\ngamma",
+                };
+                assert_eq!(
+                    fixture::stored_keywords(path),
+                    ["https://a.test/one", "https://b.test/two"]
+                        .map(|url| (url.to_owned(), expected.to_owned()))
+                        .to_vec()
+                );
             }
         }
         let identities = pairs
             .iter()
             .map(|paths| features::document_identities(paths, &Limits::default()).unwrap())
             .collect::<Vec<_>>();
-        for (a, b) in identities[0].iter().zip(&identities[1]) {
-            assert_eq!(a.records, b.records);
-            assert_eq!(a.content_sha256, b.content_sha256);
-            assert_eq!(a.documents, b.documents);
-            assert_eq!(a.shard, b.shard);
+        for changed in &identities[1..] {
+            for (a, b) in identities[0].iter().zip(changed) {
+                assert_eq!(a.documents, b.documents);
+                assert_eq!(a.shard, b.shard);
+            }
         }
-        assert_ne!(
-            identities[0][0].content_sha256,
-            identities[2][0].content_sha256
-        );
+        for changed in &identities[1..3] {
+            assert_ne!(identities[0][0].records, changed[0].records);
+            assert_ne!(identities[0][0].content_sha256, changed[0].content_sha256);
+        }
+        for changed in &identities[1..] {
+            assert_eq!(identities[0][1].records, changed[1].records);
+            assert_eq!(identities[0][1].content_sha256, changed[1].content_sha256);
+        }
+        assert_eq!(identities[0][0].records, identities[3][0].records);
         assert_eq!(
-            identities[0][1].content_sha256,
-            identities[2][1].content_sha256
+            identities[0][0].content_sha256,
+            identities[3][0].content_sha256
         );
     }
     #[test]

@@ -2,7 +2,7 @@
 //! Inspect bounded local feature assets and compare independently measured feature panels.
 //! Store readers operate only on private independent snapshots, with source identities
 //! checked before and after use. Counts retain duplicates; coverage uses unique host ids.
-//! Same-binary control identity excludes unstable keyword extraction; retained indexes
+//! Same-binary control identity includes deterministic keyword extraction; retained indexes
 //! supply acceptance anchors, not the equality operand for centrality comparisons.
 //! Input directories must be below a trusted temporary root, as
 //! input::trusted_temporary_root defines it; the shared root itself is never an input.
@@ -956,6 +956,7 @@ fn content_kind(field: crate::schema::Field) -> Option<StoredKind> {
             | T::AllBody(_)
             | T::Description(_)
             | T::DmozDescription(_)
+            | T::Keywords(_)
             | T::RecipeFirstIngredientTagId(_),
         ) => Some(StoredKind::Text),
         Field::Text(T::SchemaOrgJson(_)) => Some(StoredKind::Json),
@@ -1057,8 +1058,8 @@ pub struct IndexIdentity {
     pub documents: usize,
     /// Unique indexed host count in this shard.
     pub hosts: usize,
-    /// Hash of exact URL bytes and twelve canonical stored fields, excluding keywords.
-    /// Sorted duplicate occurrences remain distinct; this is not a physical-file digest.
+    /// Hash of exact URL bytes and thirteen canonical stored fields, including deterministic keywords.
+    /// Sorted duplicate occurrences remain distinct; this is not a physical-file or ranking identity.
     pub content_sha256: String,
     /// Physical pre-open inspect-manifest hash attached by the control driver.
     /// A semantic snapshot alone has no producer binding and leaves this empty.
@@ -1139,9 +1140,9 @@ fn inspect_documents(
 
 /// Compare-ready identities for exactly two copied indexes, using private reader snapshots.
 /// No supplied index is opened; malformed schemas, records, limits or source changes fail.
-/// Keywords are excluded because RAKE ties can change both order and membership at the cut.
-/// Same-binary, same-WARC content under fixed ingestion settings therefore compares across
-/// centrality stores without claiming reproducibility of every searchable byte or ranking.
+/// The thirteen canonical stored fields include keywords because extraction is deterministic.
+/// Same-binary, same-WARC content under fixed ingestion settings compares across centrality stores.
+/// This semantic identity does not imply physical segment identity or identical rankings.
 pub fn document_identities(
     paths: &[PathBuf],
     limits: &Limits,
