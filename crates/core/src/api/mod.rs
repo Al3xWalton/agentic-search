@@ -62,6 +62,8 @@ mod metrics;
 pub mod search;
 mod source_offer;
 pub mod user_count;
+/// Bounded, versioned agent HTTP contract, independent of the legacy beta handlers.
+pub mod v1;
 pub mod webgraph;
 
 const WARMUP_QUERIES: usize = 100;
@@ -255,7 +257,16 @@ pub async fn router(
         })
     };
 
-    Ok(build_router(state).merge(policy_router))
+    let backend_searcher = state.searcher.clone();
+    let backend = Arc::new(move |query: crate::searcher::SearchQuery| {
+        let searcher = backend_searcher.clone();
+        async move { searcher.search(&query).await }
+    });
+    let v1_state = Arc::new(v1::V1State::initialize(config, backend)?);
+    Ok(v1::compose_api(
+        build_router(state).merge(policy_router),
+        v1_state,
+    ))
 }
 
 /// Enables CORS for development where the API and frontend are on
