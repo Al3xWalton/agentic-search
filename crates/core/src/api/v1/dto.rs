@@ -38,7 +38,6 @@ pub enum Country {
 #[serde(deny_unknown_fields)]
 pub struct V1SearchRequest {
     /// Original query, at most 4096 UTF-8 bytes, validated without truncation.
-    #[schema(max_length = 4096)]
     pub query: String,
     /// Zero-based page number in 0..=99; defaults to zero.
     #[serde(default)]
@@ -119,6 +118,7 @@ impl AttributedResult {
     /// Validates source text and URL, computes the ID, and retains the supplied plain snippet.
     /// Returns invalid_result for blank attribution or an unsupported URL.
     pub fn try_new(url: &str, domain: &str, title: &str, snippet: &str) -> Result<Self, V1Error> {
+        // Recompute the DTO's invariant rather than trusting a caller-supplied suppression ID.
         let (url, id) = canonical_identity(url)?;
         Ok(Self {
             id,
@@ -196,6 +196,7 @@ pub struct V1SearchResponse {
 }
 
 impl V1SearchResponse {
+    /// Assembles the versioned response from validated results and the upstream pagination hint.
     pub(super) fn new(
         results: Vec<AttributedResult>,
         page: u64,
@@ -232,6 +233,31 @@ impl V1SourceResponse {
             source_url: metadata.source_url,
             revision: metadata.revision.into(),
             revision_source: metadata.revision_source.into(),
+        }
+    }
+}
+
+/// A singleton true value; callers cannot construct a false acknowledgement.
+#[derive(Serialize, ToSchema)]
+#[serde(transparent)]
+#[schema(value_type = bool)]
+#[schema(as = V1Suppressed)]
+pub struct Suppressed(bool);
+
+/// Non-enumerating acknowledgement of durable local suppression.
+#[derive(Serialize, ToSchema)]
+pub struct V1DeleteResponse {
+    version: V1Version,
+    id: DocumentId,
+    suppressed: Suppressed,
+}
+impl V1DeleteResponse {
+    /// Constructs the sole successful acknowledgement shape after a completed transaction.
+    pub(super) fn new(id: DocumentId) -> Self {
+        Self {
+            version: V1Version::default(),
+            id,
+            suppressed: Suppressed(true),
         }
     }
 }

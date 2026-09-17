@@ -134,8 +134,10 @@ use utoipa_swagger_ui::SwaggerUi;
 pub(super) struct BetaApiDoc;
 
 /// Aggregates registrations while retaining the complete legacy document's metadata.
+#[cfg(test)]
 pub(super) struct ApiDoc;
 
+#[cfg(test)]
 impl OpenApi for ApiDoc {
     fn openapi() -> utoipa::openapi::OpenApi {
         let doc = BetaApiDoc::openapi();
@@ -146,7 +148,11 @@ impl OpenApi for ApiDoc {
 #[derive(OpenApi)]
 #[openapi(
     info(title = "Agentic Search v1", version = "v1"),
-    paths(super::v1::search::route, super::v1::source::route),
+    paths(
+        super::v1::search::route,
+        super::v1::source::route,
+        super::v1::documents::route
+    ),
     components(schemas(
         super::v1::dto::V1SearchRequest,
         super::v1::dto::V1SearchResponse,
@@ -155,6 +161,7 @@ impl OpenApi for ApiDoc {
         super::v1::dto::Country,
         super::v1::dto::V1Version,
         super::v1::dto::V1SourceResponse,
+        super::v1::dto::V1DeleteResponse,
         super::v1::error::V1ErrorResponse,
         super::v1::error::V1ErrorDetail,
         super::v1::error::V1ErrorCode
@@ -162,6 +169,7 @@ impl OpenApi for ApiDoc {
 )]
 struct V1ApiDoc;
 
+/// Describes only the versioned boundary, without applying the legacy path modifier.
 pub(super) fn v1_openapi() -> utoipa::openapi::OpenApi {
     let mut value =
         serde_json::to_value(V1ApiDoc::openapi()).expect("static OpenAPI serialization");
@@ -170,18 +178,40 @@ pub(super) fn v1_openapi() -> utoipa::openapi::OpenApi {
     for (path, item) in paths {
         for (method, operation) in item.as_object_mut().expect("static path item") {
             if ["get", "post", "delete"].contains(&method.as_str()) {
-                operation["x-listener"] = serde_json::json!(if path == "/v1/source" {
-                    "api-and-management"
-                } else {
-                    "api"
+                operation["x-listener"] = serde_json::json!(match path.as_str() {
+                    "/v1/source" => "api-and-management",
+                    "/v1/documents/{id}" => "management",
+                    _ => "api",
                 });
+                if method == "delete" {
+                    v1_management_docs(operation);
+                }
                 v1_responses(operation);
             }
         }
     }
     value["servers"] = serde_json::json!([{"url":"{api_base}","description":"Search/source API listener. Management operations use a separately configured trusted loopback listener.","variables":{"api_base":{"default":"http://127.0.0.1:3000","description":"Configured API base URL; no production URL is implied"}}}]);
     v1_error_schema(&mut value);
+    for name in ["InputError", "QueryServiceError", "V1Failure"] {
+        value["components"]["schemas"]
+            .as_object_mut()
+            .expect("static schemas")
+            .remove(name);
+    }
+    value["components"]["schemas"]["V1Suppressed"] =
+        serde_json::json!({"type":"boolean","enum":[true]});
+    value["components"]["schemas"]["V1SourceResponse"]["properties"]["licence"]["enum"] =
+        serde_json::json!(["AGPL-3.0-only"]);
+    value["components"]["schemas"]["V1SearchRequest"]["properties"]["country"] =
+        serde_json::json!({"type":"string","enum":["UK","non-UK","unknown"],"default":"unknown"});
+    value["paths"]["/v1/documents/{id}"]["delete"]["parameters"][0]["schema"] =
+        serde_json::json!({"$ref":"#/components/schemas/V1DocumentId"});
     serde_json::from_value(value).expect("valid static OpenAPI augmentation")
+}
+
+fn v1_management_docs(operation: &mut serde_json::Value) {
+    operation["description"] = serde_json::json!("Management listener only. DELETE accepts no body or query component. Any valid canonical-URL identifier receives the identical durable acknowledgement whether indexed, invented or already suppressed. No existence disclosure, lookup, count or undelete is available. The single local Unix owner writes a sorted format_version=1 snapshot of at most 16777216 bytes using a sibling lock, file sync, atomic rename and directory sync. A started transaction completes across requester timeout/disconnection while retaining admission capacity. Retry of the identical ID is safe; a 504 can have committed. Assemblies after successful deletion exclude the ID; previously assembled network bytes cannot be retracted. No multi-process or cross-host replication is promised.");
+    operation["servers"] = serde_json::json!([{"url":"{management_base}","description":"Separate trusted loopback management HTTP listener; never the public API socket","variables":{"management_base":{"default":"http://127.0.0.1:3012"}}}]);
 }
 
 fn v1_responses(operation: &mut serde_json::Value) {
@@ -195,7 +225,18 @@ fn v1_responses(operation: &mut serde_json::Value) {
     for status in [
         "400", "404", "405", "413", "415", "500", "503", "504", "default",
     ] {
-        responses.insert(status.into(), serde_json::json!({"description":"Closed V1ErrorResponse with a fixed safe message; no request text or internal cause", "content":{"application/json":{"schema":{"$ref":"#/components/schemas/V1ErrorResponse"}}}}));
+        let description = match status {
+            "400" => "InputError except request_too_large, or invalid_document_id; fixed safe message",
+            "404" => "not_found or no_bang_target; fixed safe message",
+            "405" => "method_not_allowed; HEAD has an empty wire body",
+            "413" => "request_too_large; fixed safe message",
+            "415" => "unsupported_media_type; fixed safe message",
+            "500" => "internal_error or invalid_result; no internal cause or request text",
+            "503" => "Typed QueryServiceError, overloaded, or suppression_unavailable; fixed safe message",
+            "504" => "request_timeout; a started DELETE transaction continues durably",
+            _ => "Closed V1ErrorResponse for unexpected failures; no request text or internal cause",
+        };
+        responses.insert(status.into(), serde_json::json!({"description":description, "content":{"application/json":{"schema":{"$ref":"#/components/schemas/V1ErrorResponse"}}}}));
     }
     for response in responses.values_mut() {
         response["headers"] = headers.clone();
@@ -321,12 +362,14 @@ mod tests {
     #[test]
     fn v1_openapi_matches_runtime_contract() {
         let doc = serde_json::to_value(super::super::v1::openapi()).unwrap();
+        v1_schema_details(&doc);
         let aggregate = serde_json::to_value(ApiDoc::openapi()).unwrap();
         assert_eq!(doc["info"]["version"], "v1");
-        assert_eq!(doc["paths"].as_object().unwrap().len(), 2);
+        assert_eq!(doc["paths"].as_object().unwrap().len(), 3);
         for (path, method, listener) in [
             ("/v1/search", "post", "api"),
             ("/v1/source", "get", "api-and-management"),
+            ("/v1/documents/{id}", "delete", "management"),
         ] {
             assert!(aggregate["paths"][path][method].is_object());
             let operation = &doc["paths"][path][method];
@@ -353,6 +396,7 @@ mod tests {
             "V1ErrorResponse",
             "V1ErrorDetail",
             "V1ErrorCode",
+            "V1DeleteResponse",
         ] {
             assert!(schemas[name].is_object(), "missing {name}");
         }
@@ -385,6 +429,94 @@ mod tests {
         if let Some(path) = std::env::var_os("V1_OPENAPI_ARTIFACT") {
             std::fs::write(path, serde_json::to_vec_pretty(&doc).unwrap()).unwrap();
         }
+    }
+
+    fn v1_schema_details(doc: &serde_json::Value) {
+        use serde_json::json;
+        let schemas = &doc["components"]["schemas"];
+        for (schema, fields) in [
+            (
+                "V1SearchResponse",
+                vec![
+                    "version",
+                    "results",
+                    "page",
+                    "num_results",
+                    "has_more_results",
+                ],
+            ),
+            (
+                "V1SourceResponse",
+                vec![
+                    "version",
+                    "licence",
+                    "source_url",
+                    "revision",
+                    "revision_source",
+                ],
+            ),
+            ("V1DeleteResponse", vec!["version", "id", "suppressed"]),
+            ("V1ErrorResponse", vec!["version", "error"]),
+            ("V1ErrorDetail", vec!["code", "message"]),
+        ] {
+            assert_eq!(
+                schemas[schema]["properties"].as_object().unwrap().len(),
+                fields.len()
+            );
+            for field in fields {
+                assert!(schemas[schema]["required"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!(field)));
+            }
+        }
+        assert_eq!(schemas["V1Suppressed"]["enum"], json!([true]));
+        assert_eq!(
+            schemas["V1SourceResponse"]["properties"]["licence"]["enum"],
+            json!(["AGPL-3.0-only"])
+        );
+        assert_eq!(
+            schemas["V1Country"]["enum"],
+            json!(["UK", "non-UK", "unknown"])
+        );
+        assert_eq!(
+            schemas["V1SearchRequest"]["properties"]["country"]["default"],
+            "unknown"
+        );
+        assert_eq!(
+            schemas["V1SearchRequest"]["properties"]["num_results"]["minimum"],
+            1
+        );
+        assert_eq!(
+            schemas["V1SearchRequest"]["properties"]["num_results"]["maximum"],
+            100
+        );
+        assert_eq!(schemas["V1DocumentId"]["maxLength"], 64);
+        assert_eq!(schemas["V1NonEmptyText"]["pattern"], "\\S");
+        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 38);
+        assert!(schemas
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|key| key.starts_with("V1")));
+        for name in ["InputError", "QueryServiceError", "V1Failure"] {
+            assert!(schemas.get(name).is_none());
+        }
+        let query = &schemas["V1SearchRequest"]["properties"]["query"];
+        assert!(query.get("maxLength").is_none());
+        assert!(query["description"]
+            .as_str()
+            .unwrap()
+            .contains("at most 4096 UTF-8 bytes"));
+        let delete = &doc["paths"]["/v1/documents/{id}"]["delete"];
+        assert_eq!(
+            delete["parameters"][0]["schema"]["$ref"],
+            "#/components/schemas/V1DocumentId"
+        );
+        assert_eq!(
+            delete["servers"][0]["variables"]["management_base"]["default"],
+            "http://127.0.0.1:3012"
+        );
     }
 
     #[test]

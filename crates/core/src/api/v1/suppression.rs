@@ -3,8 +3,24 @@
 
 use super::{error::V1Error, search::ServingContext};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::BTreeSet;
-use tokio::sync::RwLock;
+use std::{
+    collections::BTreeSet,
+    fs::{self, File, OpenOptions},
+    io::{self, Read, Write},
+    os::unix::{
+        fs::{MetadataExt, OpenOptionsExt},
+        io::AsRawFd,
+    },
+    path::{Component, Path, PathBuf},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
+use tokio::{
+    sync::{Mutex, OwnedSemaphorePermit, RwLock},
+    task::JoinSet,
+};
 
 /// Public SHA-256 identifier of the v1 canonical URL; never an authorization credential.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -82,30 +98,362 @@ pub fn canonical_identity(raw: &str) -> Result<(String, DocumentId), V1Error> {
 
 /// Serializes final response assembly against changes to the local suppression set.
 pub struct SuppressionStore {
-    pub(super) state: RwLock<ServingState>,
+    /// Final assembly/write gate; never held while retrieving backend results.
+    pub(super) state: Arc<RwLock<ServingState>>,
+    disk: Arc<Disk>,
+    tasks: Mutex<JoinSet<()>>,
 }
 
+/// Live state published only after durable replacement, or marked unavailable on uncertainty.
 pub(super) struct ServingState {
+    /// Strict, sorted public URL identifiers.
     pub(super) ids: BTreeSet<DocumentId>,
+    /// Prevents serving when a post-rename failure makes agreement uncertain.
     pub(super) unavailable: bool,
+    generation: u64,
 }
 
 impl SuppressionStore {
-    /// Creates an empty serving gate with no durable deletion operation.
-    pub fn empty() -> Self {
-        Self {
-            state: RwLock::new(ServingState {
-                ids: BTreeSet::new(),
+    /// Opens one local Unix snapshot owner, creating an empty durable snapshot if absent.
+    /// Call from startup blocking work. Invalid paths, files, locks or snapshots fail startup.
+    pub fn open(path: &Path) -> io::Result<Self> {
+        Self::open_with_hooks(path, Arc::new(NoHooks))
+    }
+
+    /// Opens the production store with bounded instrumentation at its actual filesystem stages.
+    /// Hook failures are handled exactly like I/O errors; no hook receives request URLs or text.
+    pub fn open_with_hooks(path: &Path, hooks: Arc<dyn StoreHooks>) -> io::Result<Self> {
+        let disk = Disk::open(path, hooks)?;
+        let ids = match read_snapshot(&disk) {
+            Ok(Some(ids)) => ids,
+            Ok(None) => {
+                let ids = BTreeSet::new();
+                let mut renamed = false;
+                disk.persist(&ids, &mut renamed)?;
+                ids
+            }
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
+            state: Arc::new(RwLock::new(ServingState {
+                ids,
                 unavailable: false,
-            }),
+                generation: 0,
+            })),
+            disk: Arc::new(disk),
+            tasks: Mutex::new(JoinSet::new()),
+        })
+    }
+
+    /// Returns the number of newly published suppressions for lifecycle instrumentation.
+    pub async fn generation(&self) -> u64 {
+        self.state.read().await.generation
+    }
+
+    /// Reports whether an uncertain commit has disabled serving until restart.
+    pub(super) async fn unavailable(&self) -> bool {
+        self.state.read().await.unavailable
+    }
+
+    /// Joins every started transaction during shutdown; completed tasks are pruned on admission.
+    pub async fn shutdown(&self) {
+        let mut tasks = self.tasks.lock().await;
+        while tasks.join_next().await.is_some() {}
+    }
+
+    /// Runs one serialized, cancellation-safe transaction while retaining its admission lease.
+    /// Waiting for the write gate is cancellable. Once started, the tracked task always completes
+    /// persistence/publication or makes the store unavailable before releasing its permit.
+    pub(super) async fn suppress(
+        &self,
+        id: DocumentId,
+        lease: Arc<OwnedSemaphorePermit>,
+    ) -> Result<(), V1Error> {
+        let mut tasks = self.tasks.lock().await;
+        while tasks.try_join_next().is_some() {}
+        let mut state = self.state.clone().write_owned().await;
+        if state.unavailable {
+            return Err(unavailable());
         }
+        if state.ids.contains(&id) {
+            return Ok(());
+        }
+        let disk = self.disk.clone();
+        let live = self.state.clone();
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        tasks.spawn(async move {
+            let outcome = tokio::task::spawn_blocking(move || {
+                let _lease = lease;
+                let mut renamed = false;
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let mut candidate = state.ids.clone();
+                    candidate.insert(id);
+                    disk.persist(&candidate, &mut renamed)?;
+                    state.ids = candidate;
+                    state.generation += 1;
+                    Ok::<_, io::Error>(())
+                }));
+                match outcome {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(_)) => {
+                        if renamed {
+                            state.unavailable = true;
+                        }
+                        Err(unavailable())
+                    }
+                    Err(_) => {
+                        state.unavailable = true;
+                        Err(unavailable())
+                    }
+                }
+            })
+            .await;
+            let result = match outcome {
+                Ok(result) => result,
+                Err(_) => {
+                    live.write().await.unavailable = true;
+                    Err(unavailable())
+                }
+            };
+            let _ = sender.send(result);
+        });
+        drop(tasks);
+        receiver.await.unwrap_or_else(|_| Err(unavailable()))
     }
 }
 
 impl ServingState {
+    /// Applies global suppression independently of the caller's conservative serving context.
     pub(super) fn allows_document(&self, id: &DocumentId, _context: &ServingContext) -> bool {
         !self.ids.contains(id)
     }
+}
+
+/// Maximum complete on-disk snapshot, including its terminating newline, in bytes.
+pub const MAX_STORE_BYTES: usize = 16_777_216;
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Actual persistence/decode stages available to deterministic fault instrumentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreStage {
+    /// Bounded bytes have been read and are about to be decoded.
+    Decode,
+    /// A new transaction has passed its serialized-size check.
+    Open,
+    /// The owned temporary file is about to receive the snapshot bytes.
+    Write,
+    /// The temporary file is about to be synced.
+    SyncFile,
+    /// The synced temporary file is about to replace the snapshot.
+    Rename,
+    /// Rename completed; a failure here requires fail-closed serving until restart.
+    SyncDirectory,
+}
+
+/// Synchronous bounded hooks, called only inside blocking startup or persistence work.
+pub trait StoreHooks: Send + Sync + 'static {
+    /// Observes or fails a real production stage; a blocking hook must eventually return.
+    fn at(&self, stage: StoreStage) -> io::Result<()>;
+}
+struct NoHooks;
+impl StoreHooks for NoHooks {
+    fn at(&self, _: StoreStage) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct Disk {
+    path: PathBuf,
+    directory: File,
+    _lock: File,
+    hooks: Arc<dyn StoreHooks>,
+}
+
+fn unavailable() -> V1Error {
+    V1Error::failure(super::error::V1Failure::SuppressionUnavailable)
+}
+
+fn owner() -> u32 {
+    // # Safety
+    // geteuid takes no pointers and reads the effective identity of this process.
+    unsafe { libc::geteuid() }
+}
+
+fn private_parent(path: &Path) -> io::Result<PathBuf> {
+    let path = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::other("store has no parent"))?;
+    let mut walked = PathBuf::new();
+    for component in parent.components() {
+        if !matches!(component, Component::RootDir | Component::Normal(_)) {
+            return Err(io::Error::other("store path must use normal components"));
+        }
+        walked.push(component);
+        match fs::symlink_metadata(&walked) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Ok(_) => return Err(io::Error::other("unsafe store parent")),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                use std::os::unix::fs::DirBuilderExt;
+                fs::DirBuilder::new().mode(0o700).create(&walked)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    let metadata = fs::metadata(parent)?;
+    if metadata.uid() != owner() || metadata.mode() & 0o077 != 0 {
+        return Err(io::Error::other(
+            "store directory must be private and owned",
+        ));
+    }
+    Ok(path)
+}
+
+fn check_file(metadata: &fs::Metadata) -> io::Result<()> {
+    if !metadata.is_file()
+        || metadata.nlink() != 1
+        || metadata.uid() != owner()
+        || metadata.mode() & 0o077 != 0
+    {
+        return Err(io::Error::other(
+            "store file must be regular, private, singly linked and owned",
+        ));
+    }
+    Ok(())
+}
+
+fn checked_open(path: &Path, create: bool) -> io::Result<File> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => check_file(&metadata)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound && create => {}
+        Err(error) => return Err(error),
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(create)
+        .create(create)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)?;
+    check_file(&file.metadata()?)?;
+    Ok(file)
+}
+
+impl Disk {
+    fn open(path: &Path, hooks: Arc<dyn StoreHooks>) -> io::Result<Self> {
+        let path = private_parent(path)?;
+        let mut lock_path = path.as_os_str().to_owned();
+        lock_path.push(".lock");
+        let lock = checked_open(Path::new(&lock_path), true)?;
+        // # Safety
+        // The borrowed descriptor belongs to a live File and is retained for the store lifetime.
+        let status = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if status != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let directory = File::open(path.parent().expect("validated parent"))?;
+        Ok(Self {
+            path,
+            directory,
+            _lock: lock,
+            hooks,
+        })
+    }
+
+    fn persist(&self, ids: &BTreeSet<DocumentId>, renamed: &mut bool) -> io::Result<()> {
+        #[derive(Serialize)]
+        struct Snapshot<'a> {
+            format_version: u8,
+            ids: &'a BTreeSet<DocumentId>,
+        }
+        let mut bytes = serde_json::to_vec(&Snapshot {
+            format_version: 1,
+            ids,
+        })
+        .map_err(io::Error::other)?;
+        bytes.push(b'\n');
+        if bytes.len() > MAX_STORE_BYTES {
+            return Err(io::Error::other("suppression store is full"));
+        }
+        self.hooks.at(StoreStage::Open)?;
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let mut temp = self.path.as_os_str().to_owned();
+        temp.push(format!(".{}.{}.tmp", std::process::id(), sequence));
+        let temp = PathBuf::from(temp);
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(&temp)?;
+        let temporary = OwnedTemporary(temp);
+        self.replace(&mut file, &temporary.0, &bytes, renamed)
+    }
+
+    fn replace(
+        &self,
+        file: &mut File,
+        temp: &Path,
+        bytes: &[u8],
+        renamed: &mut bool,
+    ) -> io::Result<()> {
+        self.hooks.at(StoreStage::Write)?;
+        file.write_all(bytes)?;
+        self.hooks.at(StoreStage::SyncFile)?;
+        file.sync_all()?;
+        self.hooks.at(StoreStage::Rename)?;
+        fs::rename(temp, &self.path)?;
+        *renamed = true;
+        self.hooks.at(StoreStage::SyncDirectory)?;
+        self.directory.sync_all()?;
+        Ok(())
+    }
+}
+
+struct OwnedTemporary(PathBuf);
+impl Drop for OwnedTemporary {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+fn read_snapshot(disk: &Disk) -> io::Result<Option<BTreeSet<DocumentId>>> {
+    let file = match checked_open(&disk.path, false) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if file.metadata()?.len() > MAX_STORE_BYTES as u64 {
+        return Err(io::Error::other(
+            "suppression snapshot exceeds its byte limit",
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_STORE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_STORE_BYTES {
+        return Err(io::Error::other(
+            "suppression snapshot exceeds its byte limit",
+        ));
+    }
+    disk.hooks.at(StoreStage::Decode)?;
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Snapshot {
+        format_version: u64,
+        ids: Vec<DocumentId>,
+    }
+    let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
+    if snapshot.format_version != 1 || !snapshot.ids.windows(2).all(|pair| pair[0] < pair[1]) {
+        return Err(io::Error::other(
+            "invalid suppression snapshot version or ordering",
+        ));
+    }
+    Ok(Some(snapshot.ids.into_iter().collect()))
 }
 
 #[cfg(test)]

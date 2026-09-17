@@ -151,11 +151,13 @@ fn build_router(state: Arc<State>) -> Router {
     finish_router(router)
 }
 
+/// Constructs the unchanged legacy API and the independently bounded v1 subtree.
 pub async fn router(
     config: &ApiConfig,
     counters: Counters,
     cluster: Arc<Cluster>,
-) -> Result<Router> {
+    v1_resources: &v1::V1Resources,
+) -> Result<(Router, Arc<v1::V1State>)> {
     let policy_router = crawler_policy::router(config.crawler_policy_config_path.as_deref())?;
     let lambda_model = match &config.lambda_model_path {
         Some(path) => Some(LambdaMART::open(path)?),
@@ -257,16 +259,25 @@ pub async fn router(
         })
     };
 
+    Ok(attach_v1(config, state, policy_router, v1_resources))
+}
+
+fn attach_v1(
+    config: &ApiConfig,
+    state: Arc<State>,
+    policy_router: Router,
+    v1_resources: &v1::V1Resources,
+) -> (Router, Arc<v1::V1State>) {
     let backend_searcher = state.searcher.clone();
     let backend = Arc::new(move |query: crate::searcher::SearchQuery| {
         let searcher = backend_searcher.clone();
         async move { searcher.search(&query).await }
     });
-    let v1_state = Arc::new(v1::V1State::initialize(config, backend)?);
-    Ok(v1::compose_api(
-        build_router(state).merge(policy_router),
+    let v1_state = Arc::new(v1::V1State::from_resources(config, backend, v1_resources));
+    (
+        v1::compose_api(build_router(state).merge(policy_router), v1_state.clone()),
         v1_state,
-    ))
+    )
 }
 
 /// Enables CORS for development where the API and frontend are on
@@ -499,6 +510,17 @@ mod source_offer_tests {
         let (status, headers, _) = call(finish_router(stub()), "GET", "/ok").await;
         assert_eq!(status, 200);
         assert!(headers.contains_key("source-offer"));
+    }
+
+    #[test]
+    fn v1_production_wiring() {
+        let source = include_str!("mod.rs");
+        assert!(function_body(source, "pub async fn router(").contains("attach_v1("));
+        assert!(function_body(source, "fn attach_v1(").contains("v1::compose_api("));
+        let entrypoint = include_str!("../entrypoint/api.rs");
+        assert_eq!(entrypoint.matches("v1::compose_management(").count(), 1);
+        assert!(!entrypoint.contains("v1::management_router("));
+        assert!(!entrypoint.contains("v1::finish_v1_router("));
     }
 
     #[tokio::test]

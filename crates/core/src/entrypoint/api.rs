@@ -170,12 +170,22 @@ async fn run_management(addr: SocketAddr, cluster: Arc<Cluster>) -> Result<()> {
 }
 
 pub async fn run(config: config::ApiConfig) -> Result<()> {
+    let startup_config = config.clone();
+    let resources =
+        tokio::task::spawn_blocking(move || crate::api::v1::V1Resources::load(&startup_config))
+            .await??;
     let mut registry = crate::metrics::PrometheusRegistry::default();
     let counters = counters(&mut registry)?;
 
     let cluster = Arc::new(cluster(&config).await?);
 
-    let app = router(&config, counters, cluster.clone()).await?;
+    let (app, v1_state) = router(&config, counters, cluster.clone(), &resources).await?;
+    let v1_store = v1_state.store();
+    let management_app = crate::api::v1::compose_management(v1_state);
+    let management_listener = TcpListener::bind(config.v1.management_http_host).await?;
+    let management_http = axum::serve(management_listener, management_app.into_make_service())
+        .into_future()
+        .map_err(|e| anyhow::anyhow!(e));
     let metrics_app = metrics_router(registry);
 
     let addr = config.host;
@@ -203,7 +213,9 @@ pub async fn run(config: config::ApiConfig) -> Result<()> {
     })
     .map_err(|e| e.into());
 
-    tokio::try_join!(server, metrics_server, management)?;
+    let result = tokio::try_join!(server, metrics_server, management, management_http);
+    v1_store.shutdown().await;
+    result?;
 
     Ok(())
 }
