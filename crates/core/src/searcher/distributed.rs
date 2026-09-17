@@ -17,7 +17,7 @@
 use crate::{
     distributed::{
         cluster::Cluster,
-        member::{LiveIndexState, Service},
+        member::{LiveIndexState, Member, Service},
         sonic::{
             self,
             replication::{
@@ -299,37 +299,53 @@ impl ReusableClientManager for SearchService {
     type ShardId = ShardId;
 
     async fn new_client(cluster: &Cluster) -> ShardedClient<Self::Service, Self::ShardId> {
-        let mut shards = HashMap::new();
-        for member in cluster.members().await {
-            if let Service::Searcher { host, shard } = member.service {
-                shards.entry(shard).or_insert_with(Vec::new).push(host);
-            } else if let Service::LiveIndex {
-                search_host,
-                shard,
-                state,
-                ..
-            } = member.service
-            {
-                if state == LiveIndexState::Ready {
-                    shards
-                        .entry(shard)
-                        .or_insert_with(Vec::new)
-                        .push(search_host);
-                }
+        search_client_from_members(cluster.members().await)
+    }
+}
+
+/// Captures the same eligible member multiset with canonical shard and replica order.
+/// Every refresh uses endpoint order for FirstReplica, independently of member UUIDs.
+/// Eligible members are Searcher hosts and Ready LiveIndex search hosts, grouped by shard; other services are ignored.
+fn search_client_from_members(members: Vec<Member>) -> ShardedClient<SearchService, ShardId> {
+    let mut shards = HashMap::new();
+    for member in members {
+        if let Service::Searcher { host, shard } = member.service {
+            shards.entry(shard).or_insert_with(Vec::new).push(host);
+        } else if let Service::LiveIndex {
+            search_host,
+            shard,
+            state,
+            ..
+        } = member.service
+        {
+            if state == LiveIndexState::Ready {
+                shards
+                    .entry(shard)
+                    .or_insert_with(Vec::new)
+                    .push(search_host);
             }
         }
-
-        let mut shard_clients = Vec::new();
-
-        for (id, replicas) in shards {
-            let replicated =
-                ReplicatedClient::new(replicas.into_iter().map(RemoteClient::new).collect());
-            let shard = Shard::new(id, replicated);
-            shard_clients.push(shard);
-        }
-
-        ShardedClient::new(shard_clients)
     }
+
+    let mut shard_clients = Vec::new();
+
+    for (id, mut replicas) in shards {
+        replicas.sort();
+        let replicated =
+            ReplicatedClient::new(replicas.into_iter().map(RemoteClient::new).collect());
+        let shard = Shard::new(id, replicated);
+        shard_clients.push(shard);
+    }
+
+    ShardedClient::new(canonical_search_shards(shard_clients))
+}
+
+/// Sorts shard clients by the existing ShardId order (Live before Backbone) so shard blocks are inserted identically on every refresh.
+fn canonical_search_shards(
+    mut shard_clients: Vec<Shard<SearchService, ShardId>>,
+) -> Vec<Shard<SearchService, ShardId>> {
+    shard_clients.sort_by_key(|shard| *shard.id());
+    shard_clients
 }
 
 impl ReusableClientManager for entity_search_server::SearchService {
@@ -861,6 +877,156 @@ impl SearchClient for LocalSearchClient {
         }
 
         Ok(res)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::distributed::sonic::replication::ReplicaSelector;
+    use std::{net::SocketAddr, sync::Mutex as StdMutex};
+
+    fn members() -> Vec<Member> {
+        let mut members = Vec::new();
+        for (i, shard) in [ShardId::Backbone(1), ShardId::Live(2), ShardId::Backbone(0)]
+            .into_iter()
+            .enumerate()
+        {
+            for port in [41002, 41001] {
+                let host = SocketAddr::from(([127, 0, 0, 1], port));
+                let service = if matches!(shard, ShardId::Live(_)) {
+                    Service::LiveIndex {
+                        host,
+                        search_host: host,
+                        shard,
+                        state: LiveIndexState::Ready,
+                    }
+                } else {
+                    Service::Searcher { host, shard }
+                };
+                members.push(Member {
+                    id: format!("fixed-{i}-{port}"),
+                    service,
+                });
+            }
+        }
+        members.push(Member {
+            id: "excluded-setup".into(),
+            service: Service::LiveIndex {
+                host: "127.0.0.1:40999".parse().unwrap(),
+                search_host: "127.0.0.1:40999".parse().unwrap(),
+                shard: ShardId::Live(2),
+                state: LiveIndexState::InSetup,
+            },
+        });
+        members.push(Member {
+            id: "excluded-entity".into(),
+            service: Service::EntitySearcher {
+                host: "127.0.0.1:40998".parse().unwrap(),
+            },
+        });
+        members
+    }
+
+    type ReplicaObservation = (Vec<SocketAddr>, Vec<SocketAddr>);
+    #[derive(Default)]
+    struct ObserveReplicas(StdMutex<Vec<ReplicaObservation>>);
+    impl ReplicaSelector<SearchService> for ObserveReplicas {
+        fn select<'a>(
+            &self,
+            replicas: &'a [RemoteClient<SearchService>],
+        ) -> Vec<&'a RemoteClient<SearchService>> {
+            self.0.lock().unwrap().push((
+                replicas.iter().map(RemoteClient::addr).collect(),
+                FirstReplica
+                    .select(replicas)
+                    .into_iter()
+                    .map(RemoteClient::addr)
+                    .collect(),
+            ));
+            // Observe the production selection, then suppress transport in this construction witness.
+            Vec::new()
+        }
+    }
+
+    async fn replicas(client: &ShardedClient<SearchService, ShardId>) -> Vec<ReplicaObservation> {
+        let observed = ObserveReplicas::default();
+        for shard in client.shards() {
+            assert!(shard
+                .replicas()
+                .send(
+                    search_server::Search {
+                        query: (&SearchQuery::default()).into(),
+                    },
+                    &observed
+                )
+                .await
+                .unwrap()
+                .is_empty());
+        }
+        observed.0.into_inner().unwrap()
+    }
+
+    #[tokio::test]
+    async fn shards_are_canonical_for_member_permutations() {
+        let expected = [ShardId::Live(2), ShardId::Backbone(0), ShardId::Backbone(1)];
+        for reverse in [false, true] {
+            let mut input = members();
+            if reverse {
+                input.reverse();
+            }
+            let client = search_client_from_members(input);
+            assert_eq!(
+                client.shards().iter().map(|s| *s.id()).collect::<Vec<_>>(),
+                expected
+            );
+            let actual = replicas(&client).await;
+            assert_eq!(actual.len(), 3);
+            for (endpoints, _) in actual {
+                assert_eq!(
+                    endpoints,
+                    [
+                        "127.0.0.1:41001".parse::<SocketAddr>().unwrap(),
+                        "127.0.0.1:41002".parse().unwrap()
+                    ]
+                );
+            }
+        }
+        let reversed = expected
+            .into_iter()
+            .rev()
+            .map(|id| Shard::new(id, ReplicatedClient::new(Vec::new())))
+            .collect();
+        assert_eq!(
+            canonical_search_shards(reversed)
+                .iter()
+                .map(|s| *s.id())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    async fn first_replica_is_canonical_for_member_permutations() {
+        for reverse in [false, true] {
+            let mut input = members();
+            if reverse {
+                input.reverse();
+            }
+            let client = search_client_from_members(input);
+            let actual = replicas(&client).await;
+            assert_eq!(actual.len(), 3);
+            for (endpoints, first) in actual {
+                assert_eq!(
+                    endpoints,
+                    [
+                        "127.0.0.1:41001".parse::<SocketAddr>().unwrap(),
+                        "127.0.0.1:41002".parse().unwrap()
+                    ]
+                );
+                assert_eq!(first, ["127.0.0.1:41001".parse::<SocketAddr>().unwrap()]);
+            }
+        }
     }
 }
 
