@@ -24,16 +24,32 @@ pub fn local(
     local_with_collector(docs, customize, Default::default())
 }
 
-/// Build deterministic documents with an explicit candidate consideration limit, in documents.
+/// Build deterministic documents with an explicit candidate consideration limit, in documents, on shard `Backbone(0)`.
 /// The returned directory owns the index; malformed synthetic input or an index operation failure panics.
 pub fn local_with_collector(
     docs: &[(&str, &str, &str)],
+    customize: impl FnMut(usize, &mut Webpage),
+    collector: stract::config::CollectorConfig,
+) -> (LocalSearcher, file_store::temp::TempDir) {
+    local_on_shard(
+        docs,
+        customize,
+        collector,
+        stract::inverted_index::ShardId::Backbone(0),
+    )
+}
+
+/// Builds an owned synthetic index with an explicit shard identity and collector settings.
+/// The directory must outlive the searcher; invalid fixture or index operations panic.
+pub fn local_on_shard(
+    docs: &[(&str, &str, &str)],
     mut customize: impl FnMut(usize, &mut Webpage),
     collector: stract::config::CollectorConfig,
+    shard: stract::inverted_index::ShardId,
 ) -> (LocalSearcher, file_store::temp::TempDir) {
     let directory = stract::gen_temp_dir().unwrap();
     let mut index = Index::open(&directory).unwrap();
-    index.set_shard_id(stract::inverted_index::ShardId::Backbone(0));
+    index.set_shard_id(shard);
     index.inverted_index.prepare_writer().unwrap();
     for (ordinal, (url, title, body)) in docs.iter().enumerate() {
         let html=format!("<html><head><title>{title}</title></head><body><main><p>{body}</p><p>Additional synthetic fixture material for indexing a stable searchable document.</p></main></body></html>");

@@ -58,6 +58,10 @@ impl PrecisionRankingWebpage {
 }
 
 impl collector::Doc for PrecisionRankingWebpage {
+    fn address(&self) -> crate::inverted_index::DocAddress {
+        self.ranking.pointer().address
+    }
+
     fn score(&self) -> f64 {
         RankableWebpage::score(self)
     }
