@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Describes the existing API and its unauthenticated build source offer.
+//! Preserves the beta document and separately describes the bounded v1 agent contract.
 
 use super::{autosuggest, crawler_policy, explore, hosts, search, source_offer, webgraph};
 use axum::Router;
@@ -131,7 +131,84 @@ use utoipa_swagger_ui::SwaggerUi;
         )
     )]
 /// Shared API schema used by the documentation route and local contract witnesses.
+pub(super) struct BetaApiDoc;
+
+/// Aggregates registrations while retaining the complete legacy document's metadata.
 pub(super) struct ApiDoc;
+
+impl OpenApi for ApiDoc {
+    fn openapi() -> utoipa::openapi::OpenApi {
+        let doc = BetaApiDoc::openapi();
+        doc.merge_from(super::v1::openapi())
+    }
+}
+
+#[derive(OpenApi)]
+#[openapi(
+    info(title = "Agentic Search v1", version = "v1"),
+    paths(super::v1::search::route, super::v1::source::route),
+    components(schemas(
+        super::v1::dto::V1SearchRequest,
+        super::v1::dto::V1SearchResponse,
+        super::v1::dto::AttributedResult,
+        super::v1::suppression::DocumentId,
+        super::v1::dto::Country,
+        super::v1::dto::V1Version,
+        super::v1::dto::V1SourceResponse,
+        super::v1::error::V1ErrorResponse,
+        super::v1::error::V1ErrorDetail,
+        super::v1::error::V1ErrorCode
+    ))
+)]
+struct V1ApiDoc;
+
+pub(super) fn v1_openapi() -> utoipa::openapi::OpenApi {
+    let mut value =
+        serde_json::to_value(V1ApiDoc::openapi()).expect("static OpenAPI serialization");
+    value["info"]["description"] = serde_json::json!("Versioned text retrieval with required URL/domain/title attribution. HTTP(S) URLs use url 2.5.4 serialization, remove fragments, preserve query order and trailing slashes, and receive lowercase SHA-256 identifiers. Bodies are limited to 65536 bytes on every method and fallback, without trusting Content-Length; content encoding must be identity. No query component is accepted. Source and DELETE accept only empty bodies. Each listener admits at most 32 requests without queuing (configurable 1..32); the whole-request timeout is 60000 ms (configurable 1..60000). HEAD is rejected with 405 and an empty wire body, retaining both contract headers; OPTIONS is a JSON 405. Malformed pre-router HTTP and broken connections cannot be enveloped. Country defaults to unknown; UK and unknown receive stored UK measures, non-UK uses stored same-as-uk. Missing/null adult_verified means child; true is only a caller assertion. Global suppression applies to every context. No classifier or age-assurance claim. Search pages are 0..99, sizes 1..100 (default 20); query limits are 4096 UTF-8 bytes, 32 atoms, 1024 scalars per atom, 32 phrase words, 8 operators and 8 repetitions. Bangs are unsupported. has_more_results is the upstream pre-suppression hint; pages can be short or empty without refill.");
+    let paths = value["paths"].as_object_mut().expect("static paths");
+    for (path, item) in paths {
+        for (method, operation) in item.as_object_mut().expect("static path item") {
+            if ["get", "post", "delete"].contains(&method.as_str()) {
+                operation["x-listener"] = serde_json::json!(if path == "/v1/source" {
+                    "api-and-management"
+                } else {
+                    "api"
+                });
+                v1_responses(operation);
+            }
+        }
+    }
+    value["servers"] = serde_json::json!([{"url":"{api_base}","description":"Search/source API listener. Management operations use a separately configured trusted loopback listener.","variables":{"api_base":{"default":"http://127.0.0.1:3000","description":"Configured API base URL; no production URL is implied"}}}]);
+    v1_error_schema(&mut value);
+    serde_json::from_value(value).expect("valid static OpenAPI augmentation")
+}
+
+fn v1_responses(operation: &mut serde_json::Value) {
+    let headers = serde_json::json!({
+        "Source-Offer":{"description":"Exactly one embedded Corresponding Source URL","schema":{"type":"string"}},
+        "X-Api-Version":{"description":"Explicit contract version, also present on HEAD","schema":{"type":"string","enum":["v1"]}}
+    });
+    let responses = operation["responses"]
+        .as_object_mut()
+        .expect("static responses");
+    for status in [
+        "400", "404", "405", "413", "415", "500", "503", "504", "default",
+    ] {
+        responses.insert(status.into(), serde_json::json!({"description":"Closed V1ErrorResponse with a fixed safe message; no request text or internal cause", "content":{"application/json":{"schema":{"$ref":"#/components/schemas/V1ErrorResponse"}}}}));
+    }
+    for response in responses.values_mut() {
+        response["headers"] = headers.clone();
+    }
+}
+
+fn v1_error_schema(document: &mut serde_json::Value) {
+    document["components"]["schemas"]["V1ErrorCode"] = serde_json::json!({"type":"string","enum":[
+        "invalid_request", "request_too_large", "empty_query", "query_too_long", "too_many_terms", "term_too_long", "phrase_too_long", "empty_phrase", "invalid_quotes", "invalid_operator", "invalid_query_syntax", "too_many_operators", "no_searchable_terms", "forbidden_character", "excessive_repetition", "invalid_result_count", "invalid_page", "plan_too_complex", "preferences_too_large",
+        "no_shards", "too_many_shards", "budget_exhausted", "protocol_unavailable", "invalid_plan", "schema_mismatch", "shard_failed", "retrieval_failed", "worker_failed",
+        "invalid_document_id", "not_found", "no_bang_target", "method_not_allowed", "unsupported_media_type", "internal_error", "invalid_result", "overloaded", "suppression_unavailable", "request_timeout"
+    ]});
+}
 
 struct ApiModifier;
 
@@ -195,7 +272,7 @@ Remember to always give proper attributions to the sources you use from the sear
 /// Serves the API schema and Swagger UI with existing paths intact.
 pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
     SwaggerUi::new("/beta/api/docs/swagger")
-        .url("/beta/api/docs/openapi.json", ApiDoc::openapi())
+        .url("/beta/api/docs/openapi.json", BetaApiDoc::openapi())
         .config(
             utoipa_swagger_ui::Config::default()
                 .use_base_layout()
@@ -206,6 +283,109 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn beta_openapi_bytes_are_unchanged_from_base() {
+        use axum::{
+            body::{to_bytes, Body},
+            http::Request,
+        };
+        use tower::ServiceExt;
+        let golden = include_bytes!("../../tests/fixtures/api_v1/beta-openapi.json");
+        assert_eq!(serde_json::to_vec(&BetaApiDoc::openapi()).unwrap(), golden);
+        let docs: Router = router().into();
+        let response = super::super::finish_router(docs)
+            .oneshot(
+                Request::builder()
+                    .uri("/beta/api/docs/openapi.json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers()["source-offer"],
+            crate::source_metadata::embedded().source_url
+        );
+        assert_eq!(response.headers()["content-type"], "application/json");
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            to_bytes(response.into_body(), 4 * 1024 * 1024)
+                .await
+                .unwrap()
+                .as_ref(),
+            golden
+        );
+    }
+
+    #[test]
+    fn v1_openapi_matches_runtime_contract() {
+        let doc = serde_json::to_value(super::super::v1::openapi()).unwrap();
+        let aggregate = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        assert_eq!(doc["info"]["version"], "v1");
+        assert_eq!(doc["paths"].as_object().unwrap().len(), 2);
+        for (path, method, listener) in [
+            ("/v1/search", "post", "api"),
+            ("/v1/source", "get", "api-and-management"),
+        ] {
+            assert!(aggregate["paths"][path][method].is_object());
+            let operation = &doc["paths"][path][method];
+            assert_eq!(operation["x-listener"], listener);
+            for status in [
+                "200", "400", "404", "405", "413", "415", "500", "503", "504", "default",
+            ] {
+                assert!(operation["responses"][status]["headers"]["Source-Offer"].is_object());
+                assert_eq!(
+                    operation["responses"][status]["headers"]["X-Api-Version"]["schema"]["enum"],
+                    serde_json::json!(["v1"])
+                );
+            }
+        }
+        let schemas = &doc["components"]["schemas"];
+        for name in [
+            "V1SearchRequest",
+            "V1SearchResponse",
+            "V1AttributedResult",
+            "V1DocumentId",
+            "V1Country",
+            "V1Version",
+            "V1SourceResponse",
+            "V1ErrorResponse",
+            "V1ErrorDetail",
+            "V1ErrorCode",
+        ] {
+            assert!(schemas[name].is_object(), "missing {name}");
+        }
+        assert_eq!(schemas["V1SearchRequest"]["additionalProperties"], false);
+        assert_eq!(schemas["V1DocumentId"]["pattern"], "^[0-9a-f]{64}$");
+        assert_eq!(schemas["V1DocumentId"]["minLength"], 64);
+        assert_eq!(schemas["V1Version"]["enum"], serde_json::json!(["v1"]));
+        assert_eq!(
+            schemas["V1AttributedResult"]["properties"]
+                .as_object()
+                .unwrap()
+                .len(),
+            5
+        );
+        for field in ["id", "url", "domain", "title", "snippet"] {
+            assert!(schemas["V1AttributedResult"]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!(field)));
+        }
+        assert_eq!(schemas["V1NonEmptyText"]["minLength"], 1);
+        assert_eq!(
+            schemas["V1SearchRequest"]["properties"]["page"]["maximum"],
+            99
+        );
+        assert_eq!(
+            schemas["V1SearchRequest"]["properties"]["num_results"]["default"],
+            20
+        );
+        if let Some(path) = std::env::var_os("V1_OPENAPI_ARTIFACT") {
+            std::fs::write(path, serde_json::to_vec_pretty(&doc).unwrap()).unwrap();
+        }
+    }
 
     #[test]
     fn openapi_spell_offer_contract() {

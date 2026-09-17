@@ -17,6 +17,8 @@
 pub mod defaults;
 /// Validated ingestion configuration shared by crawling, retention and policy rendering.
 pub mod ingestion;
+/// Finite request limits and loopback management settings for the v1 HTTP contract.
+pub mod v1;
 
 pub use web_spell::CorrectionConfig;
 
@@ -269,6 +271,9 @@ pub struct QueryStoreConfig {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct ApiConfig {
+    /// Finite versioned HTTP limits and the local management/store boundary.
+    #[serde(default)]
+    pub v1: v1::V1ApiConfig,
     /// Enable bounded page-zero query relaxation; later pages remain strict.
     #[serde(default = "agent_query_planning_default")]
     pub agent_query_planning: bool,

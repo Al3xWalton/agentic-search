@@ -23,3 +23,10 @@ stackoverflow = 0.0
 
 [widgets]
 thesaurus_paths = ["data/english-wordnet-2022-subset.ttl"]
+
+# Independent v1 HTTP budgets; management is a distinct loopback HTTP listener.
+[v1]
+management_http_host = "127.0.0.1:3012"
+suppression_store_path = "data/v1/suppression.json"
+request_timeout_ms = 60000
+max_concurrent_requests = 32
