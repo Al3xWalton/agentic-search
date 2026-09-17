@@ -25,6 +25,8 @@ use futures::{future::BoxFuture, FutureExt};
 use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+/// Management-only durable document suppression.
+pub mod documents;
 /// Immutable attributed HTTP types and their rejecting constructors/decoders.
 pub mod dto;
 /// Closed errors and private safe-response marking.
@@ -60,6 +62,8 @@ pub trait Observer: Send + Sync + 'static {
     fn backend_enter(&self) {}
     /// Observes source handler entry after bodyless validation.
     fn source_enter(&self) {}
+    /// Observes a validated delete entering the serialized store gate.
+    fn delete_enter(&self) {}
     /// Allows a fixture to pause after retrieval, before the assembly read gate.
     fn before_assembly(&self) -> BoxFuture<'_, ()> {
         Box::pin(async {})
@@ -74,31 +78,78 @@ impl Observer for NoObserver {}
 
 /// Shared backend, immutable validated policy and suppression gate.
 pub struct V1State {
+    /// Validated-query adapter, shared with the legacy internal searcher.
     pub(super) backend: Arc<dyn SearchBackend>,
+    /// Immutable policy copied only from the validated ingestion policy.
     pub(super) policy: ServingPolicy,
+    /// One durable local owner shared by both listeners.
     pub(super) store: Arc<suppression::SuppressionStore>,
+    /// Bounded lifecycle instrumentation; absent in ordinary production operation.
     pub(super) observer: Arc<dyn Observer>,
     config: V1ApiConfig,
+}
+
+/// Startup-owned policy and durable store, loaded before binding any HTTP listener.
+pub struct V1Resources {
+    policy: ServingPolicy,
+    store: Arc<suppression::SuppressionStore>,
+}
+
+fn validated_policy(config: &ApiConfig) -> anyhow::Result<ServingPolicy> {
+    config
+        .v1
+        .validate(&[config.host, config.prometheus_host, config.management_host])?;
+    let policy = match config.crawler_policy_config_path.as_deref() {
+        Some(path) => IngestionPolicy::load(path)?,
+        None => crate::crawler::policy::template()?,
+    };
+    Ok(policy.get().exclusions.serving.clone())
+}
+
+impl V1Resources {
+    /// Performs blocking startup validation and opens the lifetime store lock.
+    /// Call through spawn_blocking in an async entrypoint; any failure prevents serving.
+    pub fn load(config: &ApiConfig) -> anyhow::Result<Self> {
+        let policy = validated_policy(config)?;
+        let store = Arc::new(suppression::SuppressionStore::open(
+            &config.v1.suppression_store_path,
+        )?);
+        Ok(Self { policy, store })
+    }
+
+    /// Uses an already opened store with the same validated startup policy and configuration.
+    /// This enables filesystem instrumentation without replacing persistence or policy checks.
+    pub fn with_store(
+        config: &ApiConfig,
+        store: Arc<suppression::SuppressionStore>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            policy: validated_policy(config)?,
+            store,
+        })
+    }
 }
 
 impl V1State {
     /// Loads the configured conservative policy before any HTTP listener can be constructed.
     /// Rejects invalid budgets, socket conflicts and missing/invalid policy files.
     pub fn initialize(config: &ApiConfig, backend: Arc<dyn SearchBackend>) -> anyhow::Result<Self> {
-        config
-            .v1
-            .validate(&[config.host, config.prometheus_host, config.management_host])?;
-        let policy = match config.crawler_policy_config_path.as_deref() {
-            Some(path) => IngestionPolicy::load(path)?,
-            None => crate::crawler::policy::template()?,
-        };
-        Ok(Self {
+        let resources = V1Resources::load(config)?;
+        Ok(Self::from_resources(config, backend, &resources))
+    }
+    /// Shares startup resources across the API and management builders without reopening the lock.
+    pub fn from_resources(
+        config: &ApiConfig,
+        backend: Arc<dyn SearchBackend>,
+        resources: &V1Resources,
+    ) -> Self {
+        Self {
             backend,
-            policy: policy.get().exclusions.serving.clone(),
-            store: Arc::new(suppression::SuppressionStore::empty()),
+            policy: resources.policy.clone(),
+            store: resources.store.clone(),
             observer: Arc::new(NoObserver),
             config: config.v1.clone(),
-        })
+        }
     }
     /// Attaches bounded instrumentation without changing validation or backend implementation.
     pub fn with_observer(mut self, observer: Arc<dyn Observer>) -> Self {
@@ -116,8 +167,10 @@ struct ListenerLimits {
     semaphore: Arc<Semaphore>,
     timeout: Duration,
 }
+/// Capped request bytes collected before any route-specific decoding.
 #[derive(Clone)]
 pub(super) struct CappedBody(pub(super) Bytes);
+/// Shared admission lease retained by a started durable transaction across requester cancellation.
 #[derive(Clone)]
 pub(super) struct AdmissionLease(pub(super) Arc<OwnedSemaphorePermit>);
 
@@ -128,6 +181,20 @@ pub fn api_router(state: Arc<V1State>) -> Router {
         .route("/source", get(source::route))
         .with_state(state.clone());
     finish_v1_router(routes, &state.config)
+}
+
+/// Builds the prefix-relative management surface with its own complete middleware and semaphore.
+pub fn management_router(state: Arc<V1State>) -> Router {
+    let routes = Router::new()
+        .route("/documents/:id", axum::routing::delete(documents::route))
+        .route("/source", get(source::route))
+        .with_state(state.clone());
+    finish_v1_router(routes, &state.config)
+}
+
+/// Mounts only the finished management subtree on its separate HTTP listener.
+pub fn compose_management(state: Arc<V1State>) -> Router {
+    mount(Router::new(), management_router(state))
 }
 
 /// Mounts the finished v1 subtree without replacing any legacy route or fallback.
@@ -145,6 +212,9 @@ fn mount(outer: Router, finished: Router) -> Router {
 
 /// Applies the production contract to routes and their fallback, including fixture routes.
 /// The supplied config must pass startup validation; this builder owns a separate semaphore.
+///
+/// # Panics
+/// Panics if the configuration has invalid limits, an empty store path or a non-loopback address.
 pub fn finish_v1_router(routes: Router, config: &V1ApiConfig) -> Router {
     let validated_limit = config
         .validate(&[])
@@ -153,6 +223,7 @@ pub fn finish_v1_router(routes: Router, config: &V1ApiConfig) -> Router {
         semaphore: Arc::new(Semaphore::new(validated_limit)),
         timeout: Duration::from_millis(config.request_timeout_ms),
     };
+    // `.layer` wraps outermost-last; read this chain bottom-up for request order.
     routes
         .fallback(|| async { V1Error::failure(V1Failure::NotFound) })
         .layer(middleware::from_fn(body_cap))
@@ -211,8 +282,10 @@ async fn body_cap(request: Request, next: Next) -> Response {
 async fn bounded_request(request: Request) -> Result<Request, V1Error> {
     if request
         .headers()
-        .get("content-encoding")
-        .is_some_and(|v| !v.as_bytes().eq_ignore_ascii_case(b"identity"))
+        .get_all("content-encoding")
+        .iter()
+        .enumerate()
+        .any(|(index, value)| index != 0 || !value.as_bytes().eq_ignore_ascii_case(b"identity"))
     {
         return Err(V1Error::failure(V1Failure::UnsupportedMediaType));
     }
@@ -226,13 +299,17 @@ async fn bounded_request(request: Request) -> Result<Request, V1Error> {
         return Err(InputError::RequestTooLarge.into());
     }
     let (mut parts, body) = request.into_parts();
+    // The cap is the only client-violable bound here. A broken stream cannot be decoded;
+    // report it as too large without exposing transport details.
     let bytes = to_bytes(body, bounds::MAX_BODY_BYTES)
         .await
         .map_err(|_| InputError::RequestTooLarge)?;
     if parts.uri.query().is_some() {
         return Err(InputError::InvalidRequest.into());
     }
-    if (parts.uri.path() == "/source" || parts.method == Method::DELETE) && !bytes.is_empty() {
+    let bodyless = (parts.method == Method::GET && parts.uri.path() == "/source")
+        || (parts.method == Method::DELETE && parts.uri.path().starts_with("/documents/"));
+    if bodyless && !bytes.is_empty() {
         return Err(InputError::InvalidRequest.into());
     }
     if parts.method == Method::HEAD {

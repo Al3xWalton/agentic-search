@@ -39,10 +39,8 @@ fn context(request: &V1SearchRequest, policy: &ServingPolicy) -> ServingContext 
     let uk_measures = match request.country {
         Country::Uk => policy.uk_or_unknown_measures,
         Country::Unknown => policy.uk_or_unknown_measures,
-        Country::NonUk => match policy.non_uk_policy.as_str() {
-            "same-as-uk" => true,
-            _ => true,
-        },
+        // Startup validation accepts only same-as-uk, so the stored policy requires UK measures.
+        Country::NonUk => true,
     };
     let is_child = match request.adult_verified {
         None => policy.missing_adult_is_child,
@@ -134,6 +132,10 @@ impl FromRequest<Arc<V1State>> for ValidatedSearchRequest {
 /// Returns attributed text results, preserving order and the upstream pre-suppression page hint.
 #[utoipa::path(post, path = "/v1/search", request_body = V1SearchRequest, responses((status = 200, description = "Attributed text results; suppression can shorten a page", body = V1SearchResponse)), tag = "v1")]
 pub async fn route(State(state): State<Arc<V1State>>, request: ValidatedSearchRequest) -> Response {
+    // Avoid paid backend work when the store is already unable to serve.
+    if state.store.unavailable().await {
+        return V1Error::failure(V1Failure::SuppressionUnavailable).into_response();
+    }
     state.observer.backend_enter();
     let result = match state.backend.search(request.query).await {
         Ok(SearchResult::Websites(result)) => result,
@@ -142,11 +144,13 @@ pub async fn route(State(state): State<Arc<V1State>>, request: ValidatedSearchRe
     };
     state.observer.before_assembly().await;
     let gate = state.store.state.read().await;
+    // This live gate check is the linearization point, after potentially concurrent retrieval.
     if gate.unavailable {
         return V1Error::failure(V1Failure::SuppressionUnavailable).into_response();
     }
     let mut results = Vec::with_capacity(result.webpages.len());
     for page in result.webpages {
+        // This hash is the suppression key; the DTO independently enforces its own identity.
         let (_, id) = match canonical_identity(&page.url) {
             Ok(value) => value,
             Err(error) => return error.into_response(),

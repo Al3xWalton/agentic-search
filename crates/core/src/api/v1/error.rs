@@ -88,13 +88,9 @@ impl V1Error {
 
     /// Preserves the typed search-service failure identity and returns 503.
     pub fn service(error: QueryServiceError) -> Self {
-        let code = match error {
-            QueryServiceError::NoShards => QueryServiceError::NoShards,
-            other => other,
-        };
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
-            code: V1ErrorCode::Service(code),
+            code: V1ErrorCode::Service(error),
             message: error.to_string(),
         }
     }
@@ -173,6 +169,7 @@ impl IntoResponse for V1Error {
     }
 }
 
+/// Serializes the complete owned response before releasing the serving gate.
 pub(super) fn success(value: &impl serde::Serialize) -> Response {
     match serde_json::to_vec(value) {
         Ok(bytes) => {
@@ -184,6 +181,7 @@ pub(super) fn success(value: &impl serde::Serialize) -> Response {
     }
 }
 
+/// Replaces unowned responses with safe closed errors, retaining only a method Allow header.
 pub(super) fn normalize(response: Response) -> Response {
     if response.extensions().get::<OwnedResponse>().is_some() {
         return response;
