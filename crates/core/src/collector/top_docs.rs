@@ -14,6 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>
 
+//! Selects and merges candidates under the same score and identity order at every level.
+//! Score-only heap ties depend on insertion layout, while the API feeds shard blocks
+//! in a per-launch order. A reversed identity key makes `pop_max` choose
+//! the smallest stored URL hash/address among equal scores before any candidate cut.
+//! NaNs share the lowest score priority. The penalty loop compares that same score
+//! class for stability so NaN candidates terminate without changing raw score bits.
+//! Similarity penalties and the separate simhash-duplicate tail retain their semantics.
+
 use std::collections::HashMap;
 
 use bloom::combine_u64s;
@@ -34,7 +42,7 @@ use crate::{
     simhash,
 };
 
-use super::{Doc, Hashes, MainCollector, MaxDocsConsidered};
+use super::{score_cmp, Doc, Hashes, MainCollector, MaxDocsConsidered};
 
 pub struct TopDocs {
     top_n: usize,
@@ -223,13 +231,15 @@ impl<T: Doc> PartialOrd for ScoredDoc<T> {
 
 impl<T: Doc> PartialEq for ScoredDoc<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.adjusted_score == other.adjusted_score
+        self.cmp(other).is_eq()
     }
 }
 
 impl<T: Doc> Ord for ScoredDoc<T> {
+    /// Gives a max heap the highest score followed by the smallest carried identity.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.adjusted_score.total_cmp(&other.adjusted_score)
+        score_cmp(self.adjusted_score, other.adjusted_score)
+            .then_with(|| other.doc.tie_key().cmp(&self.doc.tie_key()))
     }
 }
 
@@ -317,7 +327,7 @@ impl<T: Doc> BucketCollector<T> {
             let current_score = best_doc.adjusted_score;
             self.count.adjust_score(&mut *best_doc);
 
-            if best_doc.adjusted_score == current_score {
+            if score_cmp(best_doc.adjusted_score, current_score).is_eq() {
                 break;
             }
         }
@@ -371,6 +381,10 @@ pub struct SegmentDoc {
 }
 
 impl Doc for SegmentDoc {
+    fn address(&self) -> DocAddress {
+        DocAddress::new(self.segment, self.id, self.shard_id)
+    }
+
     fn score(&self) -> f64 {
         self.score.total
     }
@@ -492,6 +506,272 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
+
+    fn ordered_doc(
+        url: u128,
+        site: u128,
+        address: DocAddress,
+        ordinal: u128,
+        score: f64,
+        simhash: u64,
+    ) -> SegmentDoc {
+        SegmentDoc {
+            hashes: Hashes {
+                url: url.into(),
+                site: site.into(),
+                title: (1000 + ordinal).into(),
+                url_without_tld: (2000 + ordinal).into(),
+                simhash,
+            },
+            segment: address.segment,
+            id: address.doc_id,
+            shard_id: address.shard_id,
+            score: Score { total: score },
+        }
+    }
+
+    fn tie_fixture() -> Vec<SegmentDoc> {
+        [
+            (10, 100, 1, 0, 0),
+            (20, 100, 2, 0, 0),
+            (30, 200, 3, 1, 0),
+            (40, 300, 4, 0, 1234),
+            (40, 400, 4, 1, 1234),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (url, site, id, shard, simhash))| {
+            ordered_doc(
+                url,
+                site,
+                DocAddress::new(0, id, ShardId::Backbone(shard)),
+                i as u128 + 1,
+                1.0,
+                simhash,
+            )
+        })
+        .collect()
+    }
+
+    #[test]
+    fn collector_permutations_have_total_order() {
+        let docs = tie_fixture();
+        for permutation in docs.iter().cloned().permutations(docs.len()) {
+            for top_n in [3, 5] {
+                let mut collector = BucketCollector::new(top_n, CollectorConfig::default());
+                for doc in &permutation {
+                    collector.insert(doc.clone());
+                }
+                let actual = collector
+                    .into_sorted_vec(true)
+                    .into_iter()
+                    .map(|doc| (doc.score.total, doc.address()))
+                    .collect::<Vec<_>>();
+                let expected = [0, 2, 3, 1, 4]
+                    .into_iter()
+                    .take(top_n)
+                    .map(|i| (1.0, docs[i].address()))
+                    .collect::<Vec<_>>();
+                assert_eq!(actual, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn same_site_tie_regression_is_pinned() {
+        let docs = &tie_fixture()[..3];
+        // After A1, A2 has priority 1 / 1.1; the other site's B must precede it.
+        for permutation in docs.iter().cloned().permutations(docs.len()) {
+            for top_n in [2, 3] {
+                let mut collector = BucketCollector::new(top_n, CollectorConfig::default());
+                for doc in &permutation {
+                    collector.insert(doc.clone());
+                }
+                let actual = collector
+                    .into_sorted_vec(true)
+                    .into_iter()
+                    .map(|doc| (doc.score.total, doc.address()))
+                    .collect::<Vec<_>>();
+                let expected = [0, 2, 1]
+                    .into_iter()
+                    .take(top_n)
+                    .map(|i| (1.0, docs[i].address()))
+                    .collect::<Vec<_>>();
+                assert_eq!(actual, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn nan_scores_rank_last_without_panicking() {
+        for nan in [
+            f64::from_bits(0x7ff8_0000_0000_0001),
+            f64::from_bits(0xfff8_0000_0000_0002),
+        ] {
+            let docs = [nan, 1.0, f64::NEG_INFINITY]
+                .into_iter()
+                .enumerate()
+                .map(|(i, score)| {
+                    ordered_doc(
+                        i as u128 + 10,
+                        i as u128 + 100,
+                        DocAddress::new(0, i as u32, ShardId::Backbone(0)),
+                        i as u128,
+                        score,
+                        0,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let expected = [1, 2, 0].map(|i| (docs[i].address(), docs[i].score.total.to_bits()));
+            for permutation in docs.iter().cloned().permutations(3) {
+                let mut collector = BucketCollector::new(3, CollectorConfig::default());
+                for doc in permutation {
+                    collector.insert(doc);
+                }
+                let actual = collector
+                    .into_sorted_vec(false)
+                    .into_iter()
+                    .map(|doc| (doc.address(), doc.score.total.to_bits()))
+                    .collect::<Vec<_>>();
+                assert_eq!(actual, expected);
+            }
+            let mut collector = BucketCollector::new(1, CollectorConfig::default());
+            collector.insert(docs[0].clone());
+            let singleton = collector.into_sorted_vec(true);
+            assert_eq!(singleton.len(), 1);
+            assert_eq!(singleton[0].score.total.to_bits(), nan.to_bits());
+        }
+    }
+
+    #[test]
+    fn nan_penalty_update_terminates() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        #[derive(Clone)]
+        struct BoundedDoc {
+            doc: SegmentDoc,
+            reads: Arc<AtomicUsize>,
+        }
+        impl Doc for BoundedDoc {
+            fn score(&self) -> f64 {
+                assert!(
+                    self.reads.fetch_add(1, Ordering::SeqCst) < 64,
+                    "penalty update did not stabilize"
+                );
+                self.doc.score.total
+            }
+            fn hashes(&self) -> Hashes {
+                self.doc.hashes
+            }
+            fn address(&self) -> DocAddress {
+                self.doc.address()
+            }
+        }
+        let docs = [
+            1.0,
+            f64::from_bits(0x7ff8_0000_0000_0001),
+            f64::from_bits(0xfff8_0000_0000_0002),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, score)| {
+            ordered_doc(
+                i as u128 + 10,
+                i as u128 + 100,
+                DocAddress::new(0, i as u32, ShardId::Backbone(0)),
+                i as u128,
+                score,
+                0,
+            )
+        })
+        .collect::<Vec<_>>();
+        for permutation in docs.iter().cloned().permutations(3) {
+            let reads = Arc::new(AtomicUsize::new(0));
+            let mut collector = BucketCollector::new(3, CollectorConfig::default());
+            for doc in permutation {
+                collector.insert(BoundedDoc {
+                    doc,
+                    reads: reads.clone(),
+                });
+            }
+            let actual = collector
+                .into_sorted_vec(true)
+                .into_iter()
+                .map(|doc| (doc.address(), doc.doc.score.total.to_bits()))
+                .collect::<Vec<_>>();
+            let expected = docs
+                .iter()
+                .map(|doc| (doc.address(), doc.score.total.to_bits()))
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn scored_doc_order_and_equality_are_consistent() {
+        use std::cmp::Ordering;
+        let scores = [
+            f64::NEG_INFINITY,
+            -1.0,
+            -0.0,
+            0.0,
+            1.0,
+            f64::INFINITY,
+            f64::from_bits(0x7ff8_0000_0000_0001),
+            f64::from_bits(0x7ff8_0000_0000_0002),
+            f64::from_bits(0xfff8_0000_0000_0001),
+            f64::from_bits(0xfff8_0000_0000_0002),
+        ];
+        let keys = [
+            (10, DocAddress::new(0, 1, ShardId::Live(2))),
+            (10, DocAddress::new(0, 1, ShardId::Backbone(0))),
+            (10, DocAddress::new(0, 1, ShardId::Backbone(1))),
+            (10, DocAddress::new(0, 2, ShardId::Live(0))),
+            (10, DocAddress::new(1, 0, ShardId::Live(0))),
+            (20, DocAddress::new(0, 0, ShardId::Live(0))),
+        ];
+        let values = scores
+            .into_iter()
+            .flat_map(|score| {
+                keys.into_iter().flat_map(move |(url, address)| {
+                    let value = ScoredDoc::from(ordered_doc(url, 100, address, 1, score, 0));
+                    [value.clone(), value]
+                })
+            })
+            .collect::<Vec<_>>();
+        for a in &values {
+            assert_eq!(a, a);
+            for b in &values {
+                let ab = a.cmp(b);
+                assert_eq!(a == b, ab == Ordering::Equal);
+                assert_eq!(a.partial_cmp(b), Some(ab));
+                assert_eq!(ab, b.cmp(a).reverse());
+                if a.doc.address() != b.doc.address() {
+                    assert_ne!(ab, Ordering::Equal);
+                }
+                for c in &values {
+                    if ab.is_le() && b.cmp(c).is_le() {
+                        assert!(a.cmp(c).is_le());
+                    }
+                }
+            }
+        }
+        let make = |score, key: usize| {
+            ScoredDoc::from(ordered_doc(keys[key].0, 100, keys[key].1, 1, score, 0))
+        };
+        for i in 1..keys.len() {
+            assert!(make(1.0, i - 1) > make(1.0, i));
+        }
+        assert!(make(0.0, 0) > make(-0.0, 0));
+        assert_ne!(make(0.0, 0), make(-0.0, 0));
+        for nan in &scores[6..] {
+            assert_eq!(make(*nan, 0), make(scores[6], 0));
+            assert!(make(f64::NEG_INFINITY, 0) > make(*nan, 0));
+        }
+    }
 
     fn test(top_n: usize, docs: &[(Hashes, DocId, f64)], expected: &[(f64, DocId)]) {
         let mut collector = BucketCollector::new(top_n, CollectorConfig::default());

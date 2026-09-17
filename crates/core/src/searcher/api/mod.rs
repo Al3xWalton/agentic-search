@@ -93,6 +93,10 @@ impl RankableWebpage for ScoredWebpagePointer {
 }
 
 impl collector::Doc for ScoredWebpagePointer {
+    fn address(&self) -> crate::inverted_index::DocAddress {
+        self.website.pointer().address
+    }
+
     fn score(&self) -> f64 {
         RankableWebpage::score(self)
     }
@@ -826,6 +830,124 @@ impl Default for Config {
             widgets: Default::default(),
             collector: Default::default(),
             spell_check: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        collector::{approx_count::Count, Doc, Hashes},
+        index::Index,
+        inverted_index::{DocAddress, ShardId, WebpagePointer},
+        ranking::{initial::Score, pipeline::LocalRecallRankingWebpage},
+        searcher::{
+            distributed::InitialSearchResultShard, InitialWebsiteResult, LocalSearchClient,
+            LocalSearcher,
+        },
+    };
+    use tokio::sync::RwLock;
+
+    fn tied_blocks(
+        count: u32,
+        reverse_blocks: bool,
+        reverse_members: [bool; 2],
+    ) -> Vec<InitialSearchResultShard> {
+        let mut blocks = (0..2)
+            .map(|shard| {
+                let websites = (1..=count)
+                    .filter(|id| (id - 1) % 2 == shard)
+                    .map(|id| {
+                        let key = u128::from(id) * 10;
+                        LocalRecallRankingWebpage::new_testing(
+                            WebpagePointer {
+                                score: Score { total: 1.0 },
+                                address: DocAddress::new(
+                                    0,
+                                    id,
+                                    ShardId::Backbone(u64::from(shard)),
+                                ),
+                                hashes: Hashes {
+                                    url: key.into(),
+                                    site: (10000 + key).into(),
+                                    title: (20000 + key).into(),
+                                    url_without_tld: (30000 + key).into(),
+                                    simhash: 0,
+                                },
+                            },
+                            EnumMap::new(),
+                            1.0,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                InitialSearchResultShard {
+                    rendered_query: "synthetic tied merge".into(),
+                    shard: ShardId::Backbone(u64::from(shard)),
+                    local_result: InitialWebsiteResult {
+                        num_websites: Count::Exact(websites.len() as u64),
+                        websites,
+                    },
+                }
+            })
+            .collect::<Vec<_>>();
+        for (block, reverse) in blocks.iter_mut().zip(reverse_members) {
+            if reverse {
+                block.local_result.websites.reverse();
+            }
+        }
+        if reverse_blocks {
+            blocks.reverse();
+        }
+        blocks
+    }
+
+    #[tokio::test]
+    async fn merge_tied_shard_blocks_has_total_order() {
+        let directory = crate::gen_temp_dir().unwrap();
+        let mut index = Index::open(&directory).unwrap();
+        index.set_shard_id(ShardId::Backbone(0));
+        let local = LocalSearcher::builder(Arc::new(RwLock::new(index))).build();
+        let mut config = Config::default();
+        config.widgets.calculator_fetch_currencies_exchange = false;
+        config.widgets.thesaurus_paths.clear();
+        let api: ApiSearcher<LocalSearchClient, webgraph::Webgraph> =
+            ApiSearcher::new(LocalSearchClient::from(local), None, Bangs::empty(), config).await;
+        let query = SearchQuery {
+            num_results: 6,
+            ..Default::default()
+        };
+        let expected = (1..=6)
+            .map(|id| DocAddress::new(0, id, ShardId::Backbone(u64::from((id - 1) % 2))))
+            .collect::<Vec<_>>();
+        for reverse_blocks in [false, true] {
+            for reverse_left in [false, true] {
+                for reverse_right in [false, true] {
+                    let (result, has_more) = api
+                        .combine_results(
+                            &query,
+                            tied_blocks(6, reverse_blocks, [reverse_left, reverse_right]),
+                        )
+                        .await;
+                    assert_eq!(
+                        result.iter().map(Doc::address).collect::<Vec<_>>(),
+                        expected
+                    );
+                    assert!(!has_more);
+                    assert!(result.iter().all(|p| p.shard == p.address().shard_id));
+                }
+            }
+            let (result, has_more) = api
+                .combine_results(&query, tied_blocks(302, reverse_blocks, [false, false]))
+                .await;
+            let expected = (1..=300)
+                .map(|id| DocAddress::new(0, id, ShardId::Backbone(u64::from((id - 1) % 2))))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                result.iter().map(Doc::address).collect::<Vec<_>>(),
+                expected
+            );
+            assert!(has_more);
         }
     }
 }

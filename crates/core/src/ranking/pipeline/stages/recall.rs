@@ -89,6 +89,10 @@ impl RecallRankingWebpage {
 }
 
 impl collector::Doc for RecallRankingWebpage {
+    fn address(&self) -> crate::inverted_index::DocAddress {
+        self.local.pointer().address
+    }
+
     fn score(&self) -> f64 {
         self.local.score()
     }
@@ -291,6 +295,10 @@ impl RankableWebpage for LocalRecallRankingWebpage {
 }
 
 impl collector::Doc for LocalRecallRankingWebpage {
+    fn address(&self) -> crate::inverted_index::DocAddress {
+        self.pointer.address
+    }
+
     fn score(&self) -> f64 {
         RankableWebpage::score(self)
     }
