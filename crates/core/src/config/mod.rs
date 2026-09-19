@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+/// Finite private report storage, serving rules and reserved publication settings.
+pub mod compliance;
 pub mod defaults;
 /// Validated ingestion configuration shared by crawling, retention and policy rendering.
 pub mod ingestion;
@@ -274,6 +276,9 @@ pub struct ApiConfig {
     /// Finite versioned HTTP limits and the local management/store boundary.
     #[serde(default)]
     pub v1: v1::V1ApiConfig,
+    /// Private journal and independent serving protection; local mode is not deployment approval.
+    #[serde(default)]
+    pub compliance: compliance::ComplianceConfig,
     /// Enable bounded page-zero query relaxation; later pages remain strict.
     #[serde(default = "agent_query_planning_default")]
     pub agent_query_planning: bool,

@@ -25,12 +25,22 @@ use futures::{future::BoxFuture, FutureExt};
 use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+/// Typed conversions and injectable startup seams for the independent compliance owners.
+pub mod compliance_adapter;
 /// Management-only durable document suppression.
 pub mod documents;
 /// Immutable attributed HTTP types and their rejecting constructors/decoders.
 pub mod dto;
 /// Closed errors and private safe-response marking.
 pub mod error;
+/// Authenticated management operations, finished inside the inherited transport envelope.
+pub mod moderation;
+/// Strict management requests, notices and private response types.
+pub mod moderation_dto;
+/// Strict public reporting request and response types.
+pub mod report_dto;
+/// Public intake, reporting index and minimal status-capability handlers.
+pub mod reports;
 /// Request validation, country context and final result assembly.
 pub mod search;
 /// Versioned source metadata operation.
@@ -72,6 +82,16 @@ pub trait Observer: Send + Sync + 'static {
     fn serving_context(&self, _id: &suppression::DocumentId, _context: &search::ServingContext) {}
     /// Observes attributed construction only for unsuppressed candidates.
     fn attribution_construct(&self, _id: &suppression::DocumentId) {}
+    /// Observes one authentication boundary, before any administration decoding or lookup.
+    fn authentication_attempt(&self) {}
+    /// Observes actual fixed-buffer verifier argument lengths without their values.
+    fn authentication_verifier(&self, _expected_bytes: usize, _presented_bytes: usize) {}
+    /// Observes an actual validated-id ticket lookup, without its capability.
+    fn compliance_lookup(&self) {}
+    /// Observes an actual journal append, without any row content.
+    fn compliance_journal_write(&self) {}
+    /// Observes the translated immutable context immediately before the compliance serving gate.
+    fn compliance_context(&self, _context: &crate::compliance::rules::RuleContext) {}
 }
 struct NoObserver;
 impl Observer for NoObserver {}
@@ -86,6 +106,16 @@ pub struct V1State {
     pub(super) store: Arc<suppression::SuppressionStore>,
     /// Bounded lifecycle instrumentation; absent in ordinary production operation.
     pub(super) observer: Arc<dyn Observer>,
+    /// Shared case and independent serving-rule owners.
+    pub(super) compliance: Arc<crate::compliance::tickets::ComplianceStore>,
+    /// Startup-loaded bearer verifier.
+    pub(super) compliance_auth: Arc<crate::compliance::auth::Authenticator>,
+    /// Finite observation bridge shared with the case and authentication owners.
+    compliance_observer: Arc<compliance_adapter::ObservationBridge>,
+    /// Validated immutable compliance configuration.
+    pub(super) compliance_config: crate::config::compliance::ValidatedComplianceConfig,
+    /// Retains the resource bundle associated by the process-wide weak registry.
+    _compliance_resources: Arc<compliance_adapter::Resources>,
     config: V1ApiConfig,
 }
 
@@ -93,6 +123,7 @@ pub struct V1State {
 pub struct V1Resources {
     policy: ServingPolicy,
     store: Arc<suppression::SuppressionStore>,
+    compliance: Arc<compliance_adapter::Resources>,
 }
 
 fn validated_policy(config: &ApiConfig) -> anyhow::Result<ServingPolicy> {
@@ -114,7 +145,13 @@ impl V1Resources {
         let store = Arc::new(suppression::SuppressionStore::open(
             &config.v1.suppression_store_path,
         )?);
-        Ok(Self { policy, store })
+        let compliance =
+            compliance_adapter::Resources::for_store(config, &store, Default::default())?;
+        Ok(Self {
+            policy,
+            store,
+            compliance,
+        })
     }
 
     /// Uses an already opened store with the same validated startup policy and configuration.
@@ -123,9 +160,28 @@ impl V1Resources {
         config: &ApiConfig,
         store: Arc<suppression::SuppressionStore>,
     ) -> anyhow::Result<Self> {
+        let compliance =
+            compliance_adapter::Resources::for_store(config, &store, Default::default())?;
         Ok(Self {
             policy: validated_policy(config)?,
             store,
+            compliance,
+        })
+    }
+    /// Opens the real owners with explicit clock/entropy/stage seams for deterministic contracts.
+    pub fn with_compliance_seams(
+        config: &ApiConfig,
+        seams: compliance_adapter::ComplianceSeams,
+    ) -> anyhow::Result<Self> {
+        let policy = validated_policy(config)?;
+        let store = Arc::new(suppression::SuppressionStore::open(
+            &config.v1.suppression_store_path,
+        )?);
+        let compliance = compliance_adapter::Resources::for_store(config, &store, seams)?;
+        Ok(Self {
+            policy,
+            store,
+            compliance,
         })
     }
 }
@@ -148,17 +204,27 @@ impl V1State {
             policy: resources.policy.clone(),
             store: resources.store.clone(),
             observer: Arc::new(NoObserver),
+            compliance: resources.compliance.store.clone(),
+            compliance_auth: resources.compliance.auth.clone(),
+            compliance_observer: resources.compliance.bridge.clone(),
+            compliance_config: resources.compliance.config.clone(),
+            _compliance_resources: resources.compliance.clone(),
             config: config.v1.clone(),
         }
     }
     /// Attaches bounded instrumentation without changing validation or backend implementation.
     pub fn with_observer(mut self, observer: Arc<dyn Observer>) -> Self {
+        self.compliance_observer.replace(observer.clone());
         self.observer = observer;
         self
     }
     /// Returns the same serving gate shared by all routers built from this state.
     pub fn store(&self) -> Arc<suppression::SuppressionStore> {
         self.store.clone()
+    }
+    /// Returns the shared case owner for coordinated shutdown and finite lifecycle observations.
+    pub fn compliance(&self) -> Arc<crate::compliance::tickets::ComplianceStore> {
+        self.compliance.clone()
     }
 }
 
@@ -177,6 +243,7 @@ pub(super) struct AdmissionLease(pub(super) Arc<OwnedSemaphorePermit>);
 /// Builds a standalone, prefix-relative public router with its own finite admission budget.
 pub fn api_router(state: Arc<V1State>) -> Router {
     let routes = Router::new()
+        .merge(reports::routes())
         .route("/search", post(search::route))
         .route("/source", get(source::route))
         .with_state(state.clone());
@@ -186,6 +253,8 @@ pub fn api_router(state: Arc<V1State>) -> Router {
 /// Builds the prefix-relative management surface with its own complete middleware and semaphore.
 pub fn management_router(state: Arc<V1State>) -> Router {
     let routes = Router::new()
+        .merge(moderation::routes(state.clone()))
+        .route("/reports", get(reports::index))
         .route("/documents/:id", axum::routing::delete(documents::route))
         .route("/source", get(source::route))
         .with_state(state.clone());
@@ -231,8 +300,18 @@ pub fn finish_v1_router(routes: Router, config: &V1ApiConfig) -> Router {
         .layer(middleware::from_fn_with_state(limits, deadline))
         .layer(middleware::from_fn(catch_panic))
         .layer(middleware::from_fn(envelope))
+        .layer(middleware::from_fn(reports_header))
         .layer(middleware::from_fn(super::source_offer::header))
         .layer(middleware::from_fn(version_header))
+}
+
+async fn reports_header(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        "reports-and-requests",
+        HeaderValue::from_static("/v1/reports"),
+    );
+    response
 }
 
 async fn version_header(request: Request, next: Next) -> Response {
@@ -307,7 +386,10 @@ async fn bounded_request(request: Request) -> Result<Request, V1Error> {
     if parts.uri.query().is_some() {
         return Err(InputError::InvalidRequest.into());
     }
-    let bodyless = (parts.method == Method::GET && parts.uri.path() == "/source")
+    let bodyless = (parts.method == Method::GET
+        && (parts.uri.path() == "/source"
+            || parts.uri.path() == "/reports"
+            || parts.uri.path().starts_with("/reports/status/")))
         || (parts.method == Method::DELETE && parts.uri.path().starts_with("/documents/"));
     if bodyless && !bytes.is_empty() {
         return Err(InputError::InvalidRequest.into());

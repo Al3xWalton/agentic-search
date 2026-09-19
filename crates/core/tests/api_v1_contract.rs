@@ -1954,7 +1954,42 @@ mod contracts {
 
     #[tokio::test]
     async fn uk_unknown_and_adult_defaults_reach_the_suppression_seam() {
+        use stract::compliance::rules::{RuleContext, RuleCountry};
+        struct BothGates {
+            legacy: Arc<Probe>,
+            contexts: Mutex<Vec<RuleContext>>,
+        }
+        impl Observer for BothGates {
+            fn json_decode(&self) {
+                self.legacy.json_decode();
+            }
+            fn backend_enter(&self) {
+                self.legacy.backend_enter();
+            }
+            fn delete_enter(&self) {
+                self.legacy.delete_enter();
+            }
+            fn serving_context(&self, id: &DocumentId, context: &ServingContext) {
+                self.legacy.serving_context(id, context);
+            }
+            fn attribution_construct(&self, id: &DocumentId) {
+                self.legacy.attribution_construct(id);
+            }
+            fn compliance_context(&self, context: &RuleContext) {
+                self.contexts.lock().unwrap().push(*context);
+            }
+        }
         let (state, probe) = fixture();
+        let both = Arc::new(BothGates {
+            legacy: probe.clone(),
+            contexts: Mutex::new(Vec::new()),
+        });
+        let state = Arc::new(
+            Arc::try_unwrap(state)
+                .ok()
+                .unwrap()
+                .with_observer(both.clone()),
+        );
         let removed = id("https://example.com/");
         ack(&delete(state.clone(), &removed).await, &removed);
         let app = public(state);
@@ -1994,6 +2029,18 @@ mod contracts {
                     is_child: adult != Some(json!(true)),
                 };
                 assert_eq!(probe.contexts.lock().unwrap().last().unwrap().1, expected);
+                assert_eq!(
+                    *both.contexts.lock().unwrap().last().unwrap(),
+                    RuleContext {
+                        country: match expected.country {
+                            Country::Uk => RuleCountry::Uk,
+                            Country::NonUk => RuleCountry::NonUk,
+                            Country::Unknown => RuleCountry::Unknown,
+                        },
+                        is_child: expected.is_child,
+                        uk_measures: expected.uk_measures,
+                    }
+                );
                 contract(&response);
                 assert!(!response.value["results"].as_array().unwrap().is_empty());
                 assert_eq!(response.status, 200);

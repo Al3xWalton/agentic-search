@@ -2,16 +2,14 @@
 //! Identifiers are public URL hashes, independent of content, ranking, process and shard ordinals.
 
 use super::{error::V1Error, search::ServingContext};
+use crate::compliance::disk::{checked_open, lock_exclusive, private_parent};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     collections::BTreeSet,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
-    os::unix::{
-        fs::{MetadataExt, OpenOptionsExt},
-        io::AsRawFd,
-    },
-    path::{Component, Path, PathBuf},
+    os::unix::fs::OpenOptionsExt,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -100,7 +98,8 @@ pub fn canonical_identity(raw: &str) -> Result<(String, DocumentId), V1Error> {
 pub struct SuppressionStore {
     /// Final assembly/write gate; never held while retrieving backend results.
     pub(super) state: Arc<RwLock<ServingState>>,
-    disk: Arc<Disk>,
+    /// Read-only startup path metadata for the sibling-resource builder.
+    pub(super) disk: Arc<Disk>,
     tasks: Mutex<JoinSet<()>>,
 }
 
@@ -262,8 +261,10 @@ impl StoreHooks for NoHooks {
     }
 }
 
-struct Disk {
-    path: PathBuf,
+/// Persistence owner; only its already-validated path is visible to the parent resource builder.
+pub(super) struct Disk {
+    /// Actual opened path, which can differ from configuration in an injected-store caller.
+    pub(super) path: PathBuf,
     directory: File,
     _lock: File,
     hooks: Arc<dyn StoreHooks>,
@@ -273,88 +274,13 @@ fn unavailable() -> V1Error {
     V1Error::failure(super::error::V1Failure::SuppressionUnavailable)
 }
 
-fn owner() -> u32 {
-    // # Safety
-    // geteuid takes no pointers and reads the effective identity of this process.
-    unsafe { libc::geteuid() }
-}
-
-fn private_parent(path: &Path) -> io::Result<PathBuf> {
-    let path = if path.is_absolute() {
-        path.to_owned()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::other("store has no parent"))?;
-    let mut walked = PathBuf::new();
-    for component in parent.components() {
-        if !matches!(component, Component::RootDir | Component::Normal(_)) {
-            return Err(io::Error::other("store path must use normal components"));
-        }
-        walked.push(component);
-        match fs::symlink_metadata(&walked) {
-            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
-            Ok(_) => return Err(io::Error::other("unsafe store parent")),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                use std::os::unix::fs::DirBuilderExt;
-                fs::DirBuilder::new().mode(0o700).create(&walked)?;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    let metadata = fs::metadata(parent)?;
-    if metadata.uid() != owner() || metadata.mode() & 0o077 != 0 {
-        return Err(io::Error::other(
-            "store directory must be private and owned",
-        ));
-    }
-    Ok(path)
-}
-
-fn check_file(metadata: &fs::Metadata) -> io::Result<()> {
-    if !metadata.is_file()
-        || metadata.nlink() != 1
-        || metadata.uid() != owner()
-        || metadata.mode() & 0o077 != 0
-    {
-        return Err(io::Error::other(
-            "store file must be regular, private, singly linked and owned",
-        ));
-    }
-    Ok(())
-}
-
-fn checked_open(path: &Path, create: bool) -> io::Result<File> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => check_file(&metadata)?,
-        Err(error) if error.kind() == io::ErrorKind::NotFound && create => {}
-        Err(error) => return Err(error),
-    }
-    let file = OpenOptions::new()
-        .read(true)
-        .write(create)
-        .create(create)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(path)?;
-    check_file(&file.metadata()?)?;
-    Ok(file)
-}
-
 impl Disk {
     fn open(path: &Path, hooks: Arc<dyn StoreHooks>) -> io::Result<Self> {
         let path = private_parent(path)?;
         let mut lock_path = path.as_os_str().to_owned();
         lock_path.push(".lock");
         let lock = checked_open(Path::new(&lock_path), true)?;
-        // # Safety
-        // The borrowed descriptor belongs to a live File and is retained for the store lifetime.
-        let status = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        if status != 0 {
-            return Err(io::Error::last_os_error());
-        }
+        lock_exclusive(&lock)?;
         let directory = File::open(path.parent().expect("validated parent"))?;
         Ok(Self {
             path,
