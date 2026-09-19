@@ -30,3 +30,24 @@ management_http_host = "127.0.0.1:3012"
 suppression_store_path = "data/v1/suppression.json"
 request_timeout_ms = 60000
 max_concurrent_requests = 32
+
+# Private reporting journal and independent serving rules. Local mode is not public-operation approval.
+# Omitted store_dir derives a compliance sibling from v1.suppression_store_path.
+# No admin_token_file means every compliance management operation is unauthorised.
+# A configured listed_hashes_file must be a private, validated hash-only file; updates require restart.
+[compliance]
+deployment_mode = "local"
+intimate_margin_seconds = 172800
+retention_months = 36
+max_tickets = 10000
+max_ticket_events = 256
+max_journal_bytes = 268435456
+max_payload_bytes = 268435456
+max_rules = 100000
+max_rules_bytes = 16777216
+max_records = 10000
+max_record_bytes = 1048576
+max_records_bytes = 268435456
+statement_version = "619.1"
+reading_age = 12
+unfounded_policy_version = "619.1"

@@ -51,6 +51,8 @@ mod bincode_utils;
 mod block_on;
 pub mod canon_index;
 mod collector;
+/// Durable reporting and independent reversible serving protection.
+pub mod compliance;
 pub mod config;
 pub mod crawler;
 mod dated_url;

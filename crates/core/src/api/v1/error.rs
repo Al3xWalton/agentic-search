@@ -44,6 +44,18 @@ pub enum V1Failure {
     SuppressionUnavailable,
     /// The complete local request deadline expired.
     RequestTimeout,
+    /// The configured management bearer did not authorise the request.
+    Unauthorised,
+    /// The closed ticket lifecycle forbids this event.
+    InvalidTransition,
+    /// Closure and calendar retention have not made the payload eligible for purge.
+    RetentionNotDue,
+    /// The journal or required personal payloads cannot safely serve compliance operations.
+    ComplianceUnavailable,
+    /// A complete transaction would exceed a healthy store's finite capacity.
+    ComplianceCapacity,
+    /// The independent serving-rule state cannot safely serve search.
+    RulesUnavailable,
 }
 
 /// Safe error details with a closed code and its fixed message.
@@ -109,6 +121,12 @@ impl V1Error {
             Overloaded => (503, "The service is busy"),
             SuppressionUnavailable => (503, "The suppression store is unavailable"),
             RequestTimeout => (504, "The request timed out"),
+            Unauthorised => (401, "The request is not authorised"),
+            InvalidTransition => (409, "The ticket cannot make that transition"),
+            RetentionNotDue => (409, "The payload is not eligible for purge"),
+            ComplianceUnavailable => (503, "The compliance service is unavailable"),
+            ComplianceCapacity => (503, "The compliance store is full"),
+            RulesUnavailable => (503, "The serving rules are unavailable"),
         };
         Self {
             status: StatusCode::from_u16(status).expect("fixed valid status"),

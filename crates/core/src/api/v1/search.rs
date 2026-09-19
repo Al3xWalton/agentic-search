@@ -136,6 +136,10 @@ pub async fn route(State(state): State<Arc<V1State>>, request: ValidatedSearchRe
     if state.store.unavailable().await {
         return V1Error::failure(V1Failure::SuppressionUnavailable).into_response();
     }
+    if state.compliance.rules().unavailable().await {
+        return V1Error::failure(V1Failure::RulesUnavailable).into_response();
+    }
+    let query_tokens = crate::compliance::rules::query_tokens(&request.query.query);
     state.observer.backend_enter();
     let result = match state.backend.search(request.query).await {
         Ok(SearchResult::Websites(result)) => result,
@@ -148,15 +152,45 @@ pub async fn route(State(state): State<Arc<V1State>>, request: ValidatedSearchRe
     if gate.unavailable {
         return V1Error::failure(V1Failure::SuppressionUnavailable).into_response();
     }
+    let rules = state.compliance.rules().read().await;
+    if rules.unavailable() {
+        return V1Error::failure(V1Failure::RulesUnavailable).into_response();
+    }
+    let rule_context = crate::compliance::rules::RuleContext {
+        country: match request.context.country {
+            Country::Uk => crate::compliance::rules::RuleCountry::Uk,
+            Country::NonUk => crate::compliance::rules::RuleCountry::NonUk,
+            Country::Unknown => crate::compliance::rules::RuleCountry::Unknown,
+        },
+        is_child: request.context.is_child,
+        uk_measures: request.context.uk_measures,
+    };
+    let now = state.compliance.rules().serving_now();
+    let mut hosts = crate::compliance::listed::HostCache::default();
     let mut results = Vec::with_capacity(result.webpages.len());
     for page in result.webpages {
         // This hash is the suppression key; the DTO independently enforces its own identity.
-        let (_, id) = match canonical_identity(&page.url) {
+        let (canonical_url, id) = match canonical_identity(&page.url) {
             Ok(value) => value,
             Err(error) => return error.into_response(),
         };
         state.observer.serving_context(&id, &request.context);
         if !gate.allows_document(&id, &request.context) {
+            continue;
+        }
+        let document = match crate::compliance::model::DocumentKey::parse(id.as_str()) {
+            Ok(document) => document,
+            Err(_) => return V1Error::invalid_result().into_response(),
+        };
+        state.observer.compliance_context(&rule_context);
+        if !rules.allows(
+            &document,
+            &canonical_url,
+            &query_tokens,
+            &rule_context,
+            now,
+            &mut hosts,
+        ) {
             continue;
         }
         state.observer.attribution_construct(&id);
