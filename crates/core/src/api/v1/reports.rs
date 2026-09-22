@@ -21,6 +21,20 @@ use axum::{
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 
+/// Written policy shared by complaint descriptions, API documentation and the public statement.
+pub(crate) const MANIFESTLY_UNFOUNDED_CLAUSE: &str = concat!(
+    "A complaint may be treated as manifestly unfounded only when it repeats a concluded ",
+    "complaint without new information. A reviewer must identify the earlier complaint ",
+    "and explain why no new information changes the decision. Disagreement alone is not enough."
+);
+
+const REPORT_DESCRIPTION: &str = concat!(
+    "You can report even if you do not use AVA. Required object. ",
+    "Form and email availability is pending deployment."
+);
+static COMPLAINT_DESCRIPTION: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| format!("{REPORT_DESCRIPTION} {MANIFESTLY_UNFOUNDED_CLAUSE}"));
+
 pub(super) fn routes() -> Router<Arc<V1State>> {
     Router::new()
         .route("/reports", get(index))
@@ -284,9 +298,10 @@ fn metadata(route: Route) -> V1ReportRouteDescription {
 
 fn report_description(route: Route) -> &'static str {
     match route {
-        Route::SiteComplaint | Route::DataProtectionComplaint | Route::OnlineSafetyComplaint =>
-            "You can report even if you do not use AVA. Required object. Form and email availability is pending deployment. A complaint may be treated as manifestly unfounded only when it repeats a concluded complaint without new information. A reviewer must identify the earlier complaint and explain why no new information changes the decision. Disagreement alone is not enough.",
-        _ => "You can report even if you do not use AVA. Required object. Form and email availability is pending deployment.",
+        Route::SiteComplaint | Route::DataProtectionComplaint | Route::OnlineSafetyComplaint => {
+            &COMPLAINT_DESCRIPTION
+        }
+        _ => REPORT_DESCRIPTION,
     }
 }
 

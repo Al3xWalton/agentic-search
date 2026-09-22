@@ -607,9 +607,9 @@ fn apply_delta(snapshot: &mut RulesSnapshot, delta: &RuleDelta) -> Result<()> {
 
 struct RulesDisk {
     path: PathBuf,
-    _owner: File,
     compliance_hooks: Arc<dyn ComplianceHooks>,
     hooks: Arc<dyn RulesHooks>,
+    _owner: disk::OwnerLock,
 }
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 impl RulesDisk {
@@ -620,14 +620,15 @@ impl RulesDisk {
     ) -> io::Result<Self> {
         let owner = open_rules(
             &root.join("owner.lock"),
-            OpenMode::OwnerLock,
+            OpenMode::OwnerFile,
             compliance_hooks.as_ref(),
         )?;
+        let owner = disk::lock_exclusive(owner)?;
         let disk = Self {
             path: root.join("snapshot.json"),
-            _owner: owner,
             compliance_hooks,
             hooks,
+            _owner: owner,
         };
         disk.sweep_owned_temps()?;
         Ok(disk)
@@ -643,7 +644,10 @@ impl RulesDisk {
         for entry in fs::read_dir(root)? {
             let entry = entry?;
             let name = entry.file_name();
-            if !name.to_str().is_some_and(owned_rules_temp_name) {
+            if !name
+                .to_str()
+                .is_some_and(|name| disk::owned_temp_name(name, &["snapshot"]))
+            {
                 continue;
             }
             let path = entry.path();
@@ -696,21 +700,6 @@ impl RulesDisk {
         }
         result
     }
-}
-
-fn owned_rules_temp_name(name: &str) -> bool {
-    // Grammar identifies staging candidates; only the held lifetime owner lock
-    // proves that even a different pid's candidate cannot belong to a live writer.
-    let parts = name.split('.').collect::<Vec<_>>();
-    if parts.len() != 4 || parts[0] != "snapshot" || parts[3] != "tmp" {
-        return false;
-    }
-    parts[1]
-        .parse::<u32>()
-        .is_ok_and(|pid| pid > 0 && pid.to_string() == parts[1])
-        && parts[2]
-            .parse::<u64>()
-            .is_ok_and(|counter| counter.to_string() == parts[2])
 }
 
 fn open_rules(path: &Path, mode: OpenMode, hooks: &dyn ComplianceHooks) -> io::Result<File> {

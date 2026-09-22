@@ -14,9 +14,9 @@ pub const DATA_RIGHTS_MONTHS: u32 = 1;
 pub const EXTENSION_MONTHS: u32 = 2;
 /// Data-protection complaint acknowledgement period in seconds, not calendar months.
 pub const COMPLAINT_ACK_SECONDS: i64 = 2592000;
-/// Reserved annual review freshness period in seconds.
+/// Annual assessment and measures freshness period in elapsed seconds.
 pub const REVIEW_FRESHNESS_SECONDS: i64 = 31536000;
-/// Reserved child-risk assessment period in calendar months.
+/// Child-risk assessment period measured from the original access conclusion.
 pub const CHILD_RISK_MONTHS: u32 = 3;
 /// Minimum calendar retention months after closure.
 pub const MIN_RETENTION_MONTHS: u32 = 36;
@@ -39,6 +39,29 @@ pub fn add_months(at: i64, months: u32) -> Result<i64> {
         .checked_add_months(Months::new(months))
         .map(|date| date.timestamp())
         .ok_or(Error::InvalidInput)
+}
+
+/// Keeps a review fresh through equality, refusing an unrepresentable or future review date.
+pub fn review_fresh(last_reviewed_at: i64, now: i64) -> Result<bool> {
+    instant(now)?;
+    if last_reviewed_at > now {
+        return Err(Error::InvalidInput);
+    }
+    Ok(now <= add_seconds(last_reviewed_at, REVIEW_FRESHNESS_SECONDS)?)
+}
+
+/// Returns the original access conclusion plus three calendar months with month-end clamping.
+pub fn child_risk_due(concluded_at: i64) -> Result<i64> {
+    add_months(concluded_at, CHILD_RISK_MONTHS)
+}
+
+/// Marks a missing child-risk assessment overdue only after the due instant.
+pub fn child_risk_overdue(concluded_at: i64, now: i64) -> Result<bool> {
+    instant(now)?;
+    if concluded_at > now {
+        return Err(Error::InvalidInput);
+    }
+    Ok(now > child_risk_due(concluded_at)?)
 }
 
 /// Returns the absolute outer intimate-image deadline from immutable receipt.

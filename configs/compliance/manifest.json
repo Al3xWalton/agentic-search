@@ -1,0 +1,21 @@
+{
+  "body": {
+    "accountable_person": "[FOUNDER REQUIRED: named accountable person]",
+    "approval_status": "draft",
+    "approved_at": null,
+    "approver": "sample — not an approval",
+    "caa": "sample.caa:1",
+    "cra": null,
+    "governance_body": "[FOUNDER REQUIRED: governance body]",
+    "icra": "sample.icra:1",
+    "measures": "sample.measures:1",
+    "service": "AVA Search",
+    "statement_version": "619.1"
+  },
+  "completed_at": 1789689600,
+  "format_version": 1,
+  "id": "sample.manifest",
+  "kind": "manifest",
+  "supersedes": null,
+  "version": 1
+}

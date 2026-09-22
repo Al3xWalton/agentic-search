@@ -45,6 +45,8 @@ pub mod reports;
 pub mod search;
 /// Versioned source metadata operation.
 pub mod source;
+/// API-only JSON publication of the immutable startup record view.
+pub mod statement;
 /// Canonical identifiers and shared serving state.
 pub mod suppression;
 
@@ -98,6 +100,8 @@ impl Observer for NoObserver {}
 
 /// Shared backend, immutable validated policy and suppression gate.
 pub struct V1State {
+    /// Cached rendered publication or fixed unavailable outcome, applied only at startup.
+    pub(super) publication: crate::compliance::Result<Arc<statement::V1StatementResponse>>,
     /// Validated-query adapter, shared with the legacy internal searcher.
     pub(super) backend: Arc<dyn SearchBackend>,
     /// Immutable policy copied only from the validated ingestion policy.
@@ -201,6 +205,7 @@ impl V1State {
     ) -> Self {
         Self {
             backend,
+            publication: resources.compliance.publication.clone(),
             policy: resources.policy.clone(),
             store: resources.store.clone(),
             observer: Arc::new(NoObserver),
@@ -245,6 +250,7 @@ pub fn api_router(state: Arc<V1State>) -> Router {
     let routes = Router::new()
         .merge(reports::routes())
         .route("/search", post(search::route))
+        .route("/statement", get(statement::route))
         .route("/source", get(source::route))
         .with_state(state.clone());
     finish_v1_router(routes, &state.config)
@@ -388,6 +394,7 @@ async fn bounded_request(request: Request) -> Result<Request, V1Error> {
     }
     let bodyless = (parts.method == Method::GET
         && (parts.uri.path() == "/source"
+            || parts.uri.path() == "/statement"
             || parts.uri.path() == "/reports"
             || parts.uri.path().starts_with("/reports/status/")))
         || (parts.method == Method::DELETE && parts.uri.path().starts_with("/documents/"));

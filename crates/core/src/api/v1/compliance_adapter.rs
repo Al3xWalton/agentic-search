@@ -82,6 +82,8 @@ impl Default for ComplianceSeams {
 }
 
 pub(super) struct Resources {
+    /// Rendered startup response, retained independently of ticket availability.
+    pub(super) publication: compliance::Result<Arc<super::statement::V1StatementResponse>>,
     pub(super) store: Arc<ComplianceStore>,
     pub(super) auth: Arc<Authenticator>,
     pub(super) bridge: Arc<ObservationBridge>,
@@ -143,6 +145,15 @@ impl Resources {
     }
 
     fn load(config: ValidatedComplianceConfig, seams: ComplianceSeams) -> anyhow::Result<Self> {
+        let publication = load_publication(&config, &seams);
+        compliance::records::validate_hosted(&config, &publication, seams.clock.utc().timestamp())?;
+        let publication = publication.map(|view| {
+            Arc::new(super::statement::V1StatementResponse {
+                version: super::dto::V1Version::V1,
+                statement_version: config.settings().statement_version.clone(),
+                markdown: compliance::statement::render(&config, &view),
+            })
+        });
         let loaded = Authenticator::load(
             config.settings().admin_token_file.as_deref(),
             seams.hooks.as_ref(),
@@ -165,12 +176,20 @@ impl Resources {
             writes_disabled,
         )?;
         Ok(Self {
+            publication,
             store: Arc::new(store),
             auth: Arc::new(auth),
             bridge,
             config,
         })
     }
+}
+
+fn load_publication(
+    config: &ValidatedComplianceConfig,
+    seams: &ComplianceSeams,
+) -> compliance::Result<compliance::records::RecordView> {
+    compliance::records::read_view(config, seams.clock.as_ref(), seams.hooks.as_ref())
 }
 
 impl From<compliance::Error> for V1Error {

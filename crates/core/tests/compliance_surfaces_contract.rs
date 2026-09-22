@@ -1756,8 +1756,11 @@ mod contracts {
                     &fixture,
                     &closed,
                     "decision",
-                    json!({"decision":{"kind":"refused",
-                "reasons":"Synthetic refusal","delivery":communication()}}),
+                    json!({"decision":{
+                        "kind":"refused",
+                        "reasons":"Synthetic refusal",
+                        "delivery":communication()
+                    }}),
                 )
                 .await,
             );
@@ -1784,8 +1787,7 @@ mod contracts {
                         true,
                         "POST",
                         "/v1/compliance/queue",
-                        json!({"actor":"reader",
-                    "view":"purge_due"}),
+                        json!({"actor":"reader", "view":"purge_due"}),
                         true,
                     )
                     .await;
@@ -2046,6 +2048,10 @@ mod contracts {
             ] {
                 let mut changed = default.clone();
                 changed[field] = json!(value);
+                // Keep the independent per-file cap compatible while testing aggregate bounds.
+                if field == "max_records_bytes" {
+                    changed["max_record_bytes"] = json!(4096);
+                }
                 let config: ComplianceConfig = serde_json::from_value(changed).unwrap();
                 assert_eq!(
                     config.validate(&suppression).is_ok(),
@@ -2072,8 +2078,13 @@ mod contracts {
                 .validate(&suppression)
                 .is_err());
         }
+        let mut hosted = default.clone();
+        hosted["deployment_mode"] = json!("hosted");
+        assert!(serde_json::from_value::<ComplianceConfig>(hosted)
+            .unwrap()
+            .validate(&suppression)
+            .is_ok());
         for (field, value) in [
-            ("deployment_mode", json!("hosted")),
             ("statement_version", json!("other-version")),
             ("store_dir", json!(suppression)),
             ("records_dir", json!(fixture.config.rules_dir())),
@@ -5451,6 +5462,7 @@ mod contracts {
         let expected = [
             ("/v1/search", "post", "api"),
             ("/v1/source", "get", "api-and-management"),
+            ("/v1/statement", "get", "api"),
             ("/v1/documents/{id}", "delete", "management"),
             ("/v1/reports", "get", "api-and-management"),
             ("/v1/reports/status/{ticket_id}", "get", "api"),
@@ -5533,8 +5545,8 @@ mod contracts {
             }
         }
         assert_eq!(observed, expected);
-        assert_eq!(observed.len(), 24);
-        assert_eq!(document["paths"].as_object().unwrap().len(), 24);
+        assert_eq!(observed.len(), 25);
+        assert_eq!(document["paths"].as_object().unwrap().len(), 25);
         let mut protected = 0;
         for (path, method, listener) in expected {
             let operation = &document["paths"][path][method];

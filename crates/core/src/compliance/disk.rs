@@ -41,16 +41,35 @@ pub enum ComplianceStage {
     BeforePurgeDelete,
     /// A verified personal revision has been deleted.
     AfterPurgeDelete,
-    /// Reserved record-stage boundary, unused by Part C.
+    /// The complete immutable pending record and its parent have been synced.
     AfterRecordStageSync,
-    /// Reserved record durability boundary, unused by Part C.
+    /// The final record has been created, before its complete write.
+    DuringRecordWrite,
+    /// The complete final record and parent have been synced and verified.
     AfterRecordSync,
+    /// A byte-equal recovered final has been synced through its retained file descriptor.
+    AfterRecoveredRecordFileSync,
+    /// The recovered final's parent directory has been synced after its file.
+    AfterRecoveredRecordParentSync,
+    /// A verified torn suffix has been quarantined and its truncation synced.
+    AfterTailTruncate,
+}
+
+/// Closed storage families that can retain unclaimed crash artefacts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuarantineStore {
+    /// Ticket journal metadata history.
+    Journal,
+    /// Independent immutable record index.
+    Records,
 }
 
 /// Bounded synchronous instrumentation inside actual blocking storage work.
 pub trait ComplianceHooks: Send + Sync + 'static {
     /// Observes or fails a real stage. A blocking fixture must eventually release its wait.
     fn at(&self, stage: ComplianceStage) -> io::Result<()>;
+    /// Reports preserved unclaimed artefacts once per successful scan, without private metadata.
+    fn unclaimed_quarantines(&self, _store: QuarantineStore, _count: u64) {}
 }
 
 /// Production hook implementation with no side effects or personal-data access.
@@ -87,8 +106,47 @@ pub(crate) enum OpenMode {
     CreateNew,
     /// Appends without truncation to an existing safe journal.
     Append,
-    /// Opens or creates a lifetime lock and acquires it nonblockingly.
-    OwnerLock,
+    /// Opens or creates a hardened lock file without acquiring ownership.
+    OwnerFile,
+}
+
+/// Recognizes canonical staging names; deletion still requires the family's exclusive owner lock.
+pub(crate) fn owned_temp_name(name: &str, families: &[&str]) -> bool {
+    let parts = name.split('.').collect::<Vec<_>>();
+    if parts.len() != 4 || !families.contains(&parts[0]) || parts[3] != "tmp" {
+        return false;
+    }
+    parts[1]
+        .parse::<u32>()
+        .is_ok_and(|pid| pid > 0 && pid.to_string() == parts[1])
+        && parts[2]
+            .parse::<u64>()
+            .is_ok_and(|counter| counter.to_string() == parts[2])
+}
+
+#[derive(serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct Checkpoint {
+    format_version: u64,
+    sequence: u64,
+    hash: String,
+    byte_length: u64,
+}
+
+/// Accepts equal or advanced validated checkpoints without requiring a live writer to pause.
+/// Callers validate canonical bytes and hashes before this comparison. An advanced head cannot
+/// invalidate the captured immutable prefix; equal sequences must retain the identical tuple.
+pub(crate) fn checkpoint_stable(before: &[u8], after: &[u8]) -> bool {
+    let (Ok(before), Ok(after)) = (
+        serde_json::from_slice::<Checkpoint>(before),
+        serde_json::from_slice::<Checkpoint>(after),
+    ) else {
+        return false;
+    };
+    before.format_version == 1
+        && after.format_version == 1
+        && (before == after
+            || (after.sequence > before.sequence && after.byte_length > before.byte_length))
 }
 
 fn owner() -> u32 {
@@ -190,15 +248,26 @@ pub(crate) fn checked_open(path: &Path, create: bool) -> io::Result<File> {
     Ok(file)
 }
 
-/// Acquires the original nonblocking exclusive flock; the caller retains the File for its lifetime.
-pub(crate) fn lock_exclusive(lock: &File) -> io::Result<()> {
+/// Holds acquired ownership independently of a forked child's inherited file description.
+/// Explicit unlock releases ownership even while a child retains the descriptor before exec.
+pub(crate) struct OwnerLock(File);
+
+impl Drop for OwnerLock {
+    fn drop(&mut self) {
+        // Closing alone leaves the shared open-file-description lock held by a pre-exec child.
+        let _ = self.0.unlock();
+    }
+}
+
+/// Acquires the original nonblocking exclusive flock and retains only successful ownership.
+pub(crate) fn lock_exclusive(lock: File) -> io::Result<OwnerLock> {
     // # Safety
     // The borrowed descriptor belongs to a live File and is retained for the store lifetime.
     let status = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     if status != 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(())
+    Ok(OwnerLock(lock))
 }
 
 /// Validates absolute normal path components without creating anything or following symlinks.
@@ -266,15 +335,15 @@ fn open_impl(
         Ok(meta) => check_file(&meta)?,
         Err(err)
             if err.kind() == io::ErrorKind::NotFound
-                && matches!(mode, OpenMode::CreateNew | OpenMode::OwnerLock) => {}
+                && matches!(mode, OpenMode::CreateNew | OpenMode::OwnerFile) => {}
         Err(err) => return Err(err),
     }
     hooks.at(ComplianceStage::BeforeOpen)?;
     let file = OpenOptions::new()
         .read(true)
-        .write(matches!(mode, OpenMode::CreateNew | OpenMode::OwnerLock))
+        .write(matches!(mode, OpenMode::CreateNew | OpenMode::OwnerFile))
         .create_new(mode == OpenMode::CreateNew)
-        .create(mode == OpenMode::OwnerLock)
+        .create(mode == OpenMode::OwnerFile)
         .append(mode == OpenMode::Append)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
@@ -283,9 +352,6 @@ fn open_impl(
         progress.mark_started();
     }
     check_file(&file.metadata()?)?;
-    if mode == OpenMode::OwnerLock {
-        lock_exclusive(&file)?;
-    }
     Ok(file)
 }
 

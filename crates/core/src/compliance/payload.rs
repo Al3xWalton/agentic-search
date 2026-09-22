@@ -228,7 +228,7 @@ impl PayloadStore {
 
     /// Validates and serializes a complete revision with fresh salt, without touching the filesystem.
     /// Direct-owner boundary-control entry point. The caller must hold the journal owner lock
-    /// for the complete operation (S09).
+    /// for the complete operation so revisions cannot race journal recovery.
     pub fn prepare(
         &self,
         ticket: &TicketId,
@@ -274,7 +274,7 @@ impl PayloadStore {
     /// Persists one prepared immutable revision through the same hardened tracked writer.
     /// Transaction owners use the tracked variant to retain progress across their complete plan.
     /// Direct-owner boundary-control entry point. The caller must hold the journal owner lock
-    /// for the complete operation (S09).
+    /// for the complete operation so revisions cannot race journal recovery.
     pub fn write(&self, prepared: &PreparedPayload) -> Result<()> {
         self.write_tracked(prepared, &mut disk::WriteProgress::default())
     }

@@ -48,6 +48,11 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Manage private compliance records, reviews, metrics and public policy output.
+    Compliance {
+        #[command(subcommand)]
+        command: stract::compliance::cli::Command,
+    },
     /// Evaluate an existing loopback search service using bounded local inputs.
     Eval {
         #[clap(subcommand)]
@@ -338,6 +343,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
+        Commands::Compliance { command } => command.run()?,
         Commands::Eval { command } => {
             tokio::runtime::Runtime::new()?.block_on(command.run())?;
         }

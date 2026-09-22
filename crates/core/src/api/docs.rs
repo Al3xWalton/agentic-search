@@ -151,6 +151,7 @@ impl OpenApi for ApiDoc {
     paths(
         super::v1::search::route,
         super::v1::source::route,
+        super::v1::statement::route,
         super::v1::documents::route,
         super::v1::reports::index,
         super::v1::reports::status,
@@ -182,6 +183,7 @@ impl OpenApi for ApiDoc {
         super::v1::dto::Country,
         super::v1::dto::V1Version,
         super::v1::dto::V1SourceResponse,
+        super::v1::statement::V1StatementResponse,
         super::v1::dto::V1DeleteResponse,
         super::v1::error::V1ErrorResponse,
         super::v1::error::V1ErrorDetail,
@@ -194,7 +196,7 @@ struct V1ApiDoc;
 pub(super) fn v1_openapi() -> utoipa::openapi::OpenApi {
     let mut value =
         serde_json::to_value(V1ApiDoc::openapi()).expect("static OpenAPI serialization");
-    value["info"]["description"] = serde_json::json!("Versioned text retrieval with required URL/domain/title attribution. HTTP(S) URLs use url 2.5.4 serialization, remove fragments, preserve query order and trailing slashes, and receive lowercase SHA-256 identifiers. Bodies are limited to 65536 bytes on every method and fallback, without trusting Content-Length; content encoding must be identity. No query component is accepted. Source, reports index, status and DELETE accept only empty bodies. Each listener admits at most 32 requests without queuing (configurable 1..32); the whole-request timeout is 60000 ms (configurable 1..60000). HEAD is rejected with 405 and an empty wire body, retaining all three contract headers; OPTIONS is a JSON 405. Malformed pre-router HTTP and broken connections cannot be enveloped. Country defaults to unknown; UK and unknown receive stored UK measures, non-UK uses stored same-as-uk. Missing/null adult_verified means child; true is only a caller assertion. Final assembly applies legacy global suppressions, reversible global and whole-name query rules, deadline-activated intimate-image rules, and listed URL/host hashes in every context. A name rule requires all normalized tokens of any one evidenced name; it does not match partial names or combine different names. Query tokenization precedes retrieval; live serving guards remain held through serialization. No classifier or age-assurance claim. Search pages are 0..99, sizes 1..100 (default 20); query limits are 4096 UTF-8 bytes, 32 atoms, 1024 scalars per atom, 32 phrase words, 8 operators and 8 repetitions. Bangs are unsupported. has_more_results is the upstream pre-suppression hint; pages can be short or empty without refill. Every operation lists the uniform twelve statuses; 401 and 409 are returned only by /v1/compliance operations.");
+    value["info"]["description"] = serde_json::json!("Versioned text retrieval with required URL/domain/title attribution. HTTP(S) URLs use url 2.5.4 serialization, remove fragments, preserve query order and trailing slashes, and receive lowercase SHA-256 identifiers. Bodies are limited to 65536 bytes on every method and fallback, without trusting Content-Length; content encoding must be identity. No query component is accepted. Source, reports index, status, statement and DELETE accept only empty bodies. Each listener admits at most 32 requests without queuing (configurable 1..32); the whole-request timeout is 60000 ms (configurable 1..60000). HEAD is rejected with 405 and an empty wire body, retaining all three contract headers; OPTIONS is a JSON 405. Malformed pre-router HTTP and broken connections cannot be enveloped. Country defaults to unknown; UK and unknown receive stored UK measures, non-UK uses stored same-as-uk. Missing/null adult_verified means child; true is only a caller assertion. Final assembly applies legacy global suppressions, reversible global and whole-name query rules, deadline-activated intimate-image rules, and listed URL/host hashes in every context. A name rule requires all normalized tokens of any one evidenced name; it does not match partial names or combine different names. Query tokenization precedes retrieval; live serving guards remain held through serialization. No classifier or age-assurance claim. Search pages are 0..99, sizes 1..100 (default 20); query limits are 4096 UTF-8 bytes, 32 atoms, 1024 scalars per atom, 32 phrase words, 8 operators and 8 repetitions. Bangs are unsupported. has_more_results is the upstream pre-suppression hint; pages can be short or empty without refill. Every operation lists the uniform twelve statuses; 401 and 409 are returned only by /v1/compliance operations.");
     let paths = value["paths"].as_object_mut().expect("static paths");
     for (path, item) in paths {
         for (method, operation) in item.as_object_mut().expect("static path item") {
@@ -245,7 +247,10 @@ fn v1_management_docs(operation: &mut serde_json::Value) {
 }
 
 fn v1_admin_docs(operation: &mut serde_json::Value) {
-    operation["description"] = serde_json::json!("Authenticated management listener only. Exactly one Bearer credential of 64 lowercase hexadecimal characters is required before id parsing, body decoding or ticket lookup. Actor is a bounded operator alias claim, not personal authentication. Delivery is an operator attestation, not proof of receipt; no message is sent. Started transactions retain admission capacity across timeout or disconnect. A complaint may be treated as manifestly unfounded only when it repeats a concluded complaint without new information. A reviewer must identify the earlier complaint and explain why no new information changes the decision. Disagreement alone is not enough.");
+    operation["description"] = serde_json::json!(format!(
+        "Authenticated management listener only. Exactly one Bearer credential of 64 lowercase hexadecimal characters is required before id parsing, body decoding or ticket lookup. Actor is a bounded operator alias claim, not personal authentication. Delivery is an operator attestation, not proof of receipt; no message is sent. Started transactions retain admission capacity across timeout or disconnect. {}",
+        crate::api::v1::reports::MANIFESTLY_UNFOUNDED_CLAUSE,
+    ));
     operation["security"] = serde_json::json!([{"V1ComplianceBearer":[]}]);
     operation["servers"] = serde_json::json!([{"url":"{management_base}","description":"Separate trusted loopback management HTTP listener","variables":{"management_base":{"default":"http://127.0.0.1:3012"}}}]);
 }
@@ -405,10 +410,11 @@ mod tests {
         v1_schema_details(&doc);
         let aggregate = serde_json::to_value(ApiDoc::openapi()).unwrap();
         assert_eq!(doc["info"]["version"], "v1");
-        assert_eq!(doc["paths"].as_object().unwrap().len(), 24);
+        assert_eq!(doc["paths"].as_object().unwrap().len(), 25);
         for (path, method, listener) in [
             ("/v1/search", "post", "api"),
             ("/v1/source", "get", "api-and-management"),
+            ("/v1/statement", "get", "api"),
             ("/v1/documents/{id}", "delete", "management"),
         ] {
             assert!(aggregate["paths"][path][method].is_object());
@@ -434,6 +440,7 @@ mod tests {
             "V1Country",
             "V1Version",
             "V1SourceResponse",
+            "V1StatementResponse",
             "V1ErrorResponse",
             "V1ErrorDetail",
             "V1ErrorCode",
@@ -495,6 +502,10 @@ mod tests {
                     "revision",
                     "revision_source",
                 ],
+            ),
+            (
+                "V1StatementResponse",
+                vec!["version", "statement_version", "markdown"],
             ),
             ("V1DeleteResponse", vec!["version", "id", "suppressed"]),
             ("V1ErrorResponse", vec!["version", "error"]),

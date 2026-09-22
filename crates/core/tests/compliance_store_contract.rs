@@ -1394,11 +1394,12 @@ mod contracts {
     }
 
     fn progress_body(enquiries: String, update: String) -> serde_json::Value {
-        json!({"actor":"reviewer",
+        json!({
+            "actor":"reviewer",
             "enquiries":enquiries,
             "update":update,
-            "delivery":{"channel":"manual_api",
-            "reference":"synthetic-ref"}})
+            "delivery":{"channel":"manual_api", "reference":"synthetic-ref"}
+        })
     }
 
     async fn capacity_progress(
@@ -2642,7 +2643,23 @@ mod contracts {
     }
 
     #[test]
+    fn journal_owner_unlocks_while_a_child_waits_to_exec() {
+        journal_owner_unlock();
+    }
+
+    #[test]
+    fn rules_owner_unlocks_while_a_child_waits_to_exec() {
+        rules_owner_unlock();
+    }
+
+    #[test]
+    fn suppression_owner_unlocks_while_a_child_waits_to_exec() {
+        suppression_owner_unlock();
+    }
+
+    #[test]
     fn journal_recovers_a_torn_tail_beyond_the_checkpoint_only() {
+        journal_quarantine_claims();
         interrupted_quarantine_control(true);
         interrupted_quarantine_control(false);
         owned_temp_cases("head");
@@ -2675,6 +2692,9 @@ mod contracts {
             .as_u64()
             .unwrap();
         let stale_rules = root.join(format!("snapshot.{}.0.tmp", std::process::id()));
+        let candidates = (0..256)
+            .map(|counter| root.join(format!("snapshot.{}.{counter}.tmp", std::process::id())))
+            .collect::<Vec<_>>();
         let other_pid = root.join("snapshot.4294967295.7.tmp");
         let sentinels = [
             "keep.tmp",
@@ -2687,7 +2707,7 @@ mod contracts {
         ];
         let fixture = fixture.reopen_after(
             |_| {
-                for path in [&stale_rules, &other_pid] {
+                for path in candidates.iter().chain([&other_pid]) {
                     private_temp(path, b"partial staging bytes");
                 }
                 for name in sentinels {
@@ -2697,6 +2717,12 @@ mod contracts {
             |_| {},
         );
         assert!(!stale_rules.exists(), "owned rules temp survived open");
+        for path in &candidates {
+            assert!(
+                !path.exists(),
+                "owned rules collision candidate survived open"
+            );
+        }
         assert!(!other_pid.exists());
         for name in sentinels {
             assert_eq!(fs::read(root.join(name)).unwrap(), name.as_bytes());
@@ -2705,10 +2731,12 @@ mod contracts {
         runtime.block_on(admit_after_rules_sweep(&fixture, generation));
         let fixture = fixture.reopen();
         assert!(!stale_rules.exists());
+        assert!(candidates.iter().all(|path| !path.exists()));
         assert!(!other_pid.exists());
         runtime.block_on(assert_swept_rule_serves(&fixture));
         runtime.block_on(fixture.state.compliance().shutdown());
         owned_temp_cases("snapshot");
+        collision_persistence_control();
     }
 
     fn full_store_draws_no_entropy() {
@@ -2768,6 +2796,47 @@ mod contracts {
             .await;
             fixture.state.compliance().shutdown().await;
         });
+    }
+
+    fn collision_persistence_control() {
+        use stract::compliance::model::IntakeKind;
+        let fixture = DomainFixture::new();
+        let store = fixture.store();
+        runtime().block_on(store.shutdown());
+        drop(store);
+        let root = fixture.config.rules_dir();
+        let snapshot = read_json(&root.join("snapshot.json"));
+        let generation = snapshot["generation"].as_u64().unwrap();
+        let candidates = (0..256)
+            .map(|counter| root.join(format!("snapshot.{}.{counter}.tmp", std::process::id())))
+            .collect::<Vec<_>>();
+        for path in &candidates {
+            private_temp(path, b"partial collision candidate");
+        }
+        let opened = fixture.try_store();
+        assert!(candidates.iter().all(|path| !path.exists()));
+        assert_eq!(read_json(&root.join("snapshot.json")), snapshot);
+        assert!(opened.is_ok(), "collision control owner refused");
+        let store = opened.unwrap();
+        let result = runtime().block_on(store.admit(
+            intake(IntakeKind::IntimateImages {
+                intimate_image_content: true,
+                subject_or_authorised: true,
+                good_faith: true,
+            }),
+            Arc::new(()),
+        ));
+        let after = read_json(&root.join("snapshot.json"));
+        assert_eq!(after["generation"], generation + 1);
+        assert!(after["rules"].is_array());
+        assert_eq!(after["rules"].as_array().unwrap().len(), 1);
+        assert!(
+            result.is_ok(),
+            "rules persistence refused after collision sweep"
+        );
+        let admitted = result.unwrap();
+        assert_eq!(admitted.ticket.state.as_str(), "queued");
+        runtime().block_on(store.shutdown());
     }
 
     async fn lifetime_capacity_survives_purge(
@@ -3019,10 +3088,11 @@ mod contracts {
     }
 
     fn owned_temp_cases(family: &str) {
-        for fault in ["symlink", "mode", "hardlink"] {
+        for fault in ["symlink", "mode", "hardlink", "directory", "fifo"] {
             unsafe_owned_temp_is_refused(family, fault);
         }
         owned_temp_lock_control(family);
+        owned_temp_grammar_control(family);
     }
 
     fn temp_root<'a>(fixture: &'a DomainFixture, family: &str) -> &'a std::path::Path {
@@ -3034,6 +3104,14 @@ mod contracts {
     }
 
     fn open_temp_owner(fixture: &DomainFixture, family: &str) -> stract::compliance::Result<()> {
+        open_temp_owner_with_hooks(fixture, family, Arc::new(NoHooks))
+    }
+
+    fn open_temp_owner_with_hooks(
+        fixture: &DomainFixture,
+        family: &str,
+        hooks: Arc<dyn stract::compliance::disk::ComplianceHooks>,
+    ) -> stract::compliance::Result<()> {
         use stract::compliance::{
             listed::ListedMatcher,
             rules::{NoRulesHooks, RulesStore},
@@ -3043,12 +3121,12 @@ mod contracts {
                 &fixture.config,
                 fixture.clock.clone(),
                 ListedMatcher::load(&fixture.config, &NoHooks)?,
-                Arc::new(NoHooks),
+                hooks,
                 Arc::new(NoRulesHooks),
             )
             .map(|_| ())
         } else {
-            Journal::open(&fixture.config, fixture.clock.clone(), Arc::new(NoHooks)).map(|_| ())
+            Journal::open(&fixture.config, fixture.clock.clone(), hooks).map(|_| ())
         }
     }
 
@@ -3117,14 +3195,93 @@ mod contracts {
                 private_temp(&candidate, b"hardlinked staging");
                 fs::hard_link(&candidate, root.join("second-link")).unwrap();
             }
+            "directory" => {
+                fs::create_dir(&candidate).unwrap();
+                fs::set_permissions(&candidate, fs::Permissions::from_mode(0o700)).unwrap();
+            }
+            "fifo" => private_fifo(&candidate),
             _ => panic!("unknown synthetic fault"),
         }
         // This inventory uses lstat/read_link, never the symlink-rejecting tree helper.
-        // It pins entries, inode/link/mode, sentinel contents and every canonical file.
+        // Mode includes the inode type; nonregular leaves are never read, including FIFOs.
         let before = temp_facts(fixture.config.store_dir());
-        let result = open_temp_owner(&fixture, family);
+        let counts = Arc::new(FileCounts::default());
+        let result = open_temp_owner_with_hooks(&fixture, family, counts.clone());
+        use std::sync::atomic::Ordering::SeqCst;
+        assert_eq!(
+            counts.opens.load(SeqCst),
+            1,
+            "unsafe temp reached open: {family}/{fault}"
+        );
+        assert_eq!(counts.decodes.load(SeqCst), 0);
+        assert_eq!(counts.writes.load(SeqCst), 0);
         assert_eq!(temp_facts(fixture.config.store_dir()), before);
         assert_temp_refusal(result, family);
+    }
+
+    fn private_fifo(path: &std::path::Path) {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // # Safety
+        // CString provides a live NUL-terminated path; mkfifo creates no open descriptor.
+        let result = unsafe { libc::mkfifo(path.as_ptr(), 0o600) };
+        assert_eq!(result, 0, "synthetic FIFO creation failed");
+    }
+
+    fn owned_temp_grammar_control(family: &str) {
+        use std::os::unix::ffi::OsStringExt;
+        let fixture = DomainFixture::new();
+        let store = fixture.store();
+        runtime().block_on(store.shutdown());
+        drop(store);
+        let root = temp_root(&fixture, family);
+        let sentinels = [
+            format!("{family}.0.0.tmp"),
+            format!("{family}.01.0.tmp"),
+            format!("{family}.+1.0.tmp"),
+            format!("{family}.-1.0.tmp"),
+            format!("{family}.4294967296.0.tmp"),
+            format!("{family}.1.00.tmp"),
+            format!("{family}.1.+1.tmp"),
+            format!("{family}.1.-1.tmp"),
+            format!("{family}.1.18446744073709551616.tmp"),
+            format!("{family}.1.0.tmp.extra"),
+            format!("other-{family}.1.0.tmp"),
+            format!("{family}.1.0.part"),
+        ];
+        for name in &sentinels {
+            private_temp(&root.join(name), name.as_bytes());
+        }
+        let name = std::ffi::OsString::from_vec([family.as_bytes(), b".1.0.tmp", &[0xff]].concat());
+        assert!(name.to_str().is_none());
+        let non_utf8 = root.join(name);
+        let non_utf8_created = create_non_utf8_temp(&non_utf8);
+        let positive = root.join(format!("{family}.4294967295.18446744073709551615.tmp"));
+        private_temp(&positive, b"canonical maximum counter");
+        let result = open_temp_owner(&fixture, family);
+        assert!(!positive.exists(), "canonical maximum temp survived open");
+        for name in &sentinels {
+            assert_eq!(fs::read(root.join(name)).unwrap(), name.as_bytes());
+        }
+        if non_utf8_created {
+            assert_eq!(fs::read(non_utf8).unwrap(), b"non-UTF-8 sentinel");
+        }
+        assert!(result.is_ok(), "valid temporary grammar control refused");
+    }
+
+    fn create_non_utf8_temp(path: &std::path::Path) -> bool {
+        match fs::write(path, b"non-UTF-8 sentinel") {
+            Ok(()) => {
+                fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+                true
+            }
+            Err(error) => {
+                // Some filesystems require Unicode filenames before the store can inspect them.
+                assert_eq!(error.raw_os_error(), Some(libc::EILSEQ));
+                println!("filesystem refused the non-UTF-8 sentinel with EILSEQ");
+                false
+            }
+        }
     }
 
     fn owned_temp_lock_control(family: &str) {
@@ -3162,8 +3319,17 @@ mod contracts {
     async fn admit_after_rules_sweep(fixture: &HttpFixture, generation: u64) {
         let response = fixture.raw(false, intimate_request()).await;
         let snapshot = read_json(&fixture.domain.config.rules_dir().join("snapshot.json"));
-        assert_eq!(snapshot["generation"], generation + 1);
-        assert_eq!(snapshot["rules"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            snapshot["generation"],
+            generation + 1,
+            "rules persistence did not advance"
+        );
+        let persisted = snapshot["rules"].as_array();
+        assert!(
+            persisted.is_some(),
+            "rules persistence result has no rules array"
+        );
+        assert_eq!(persisted.unwrap().len(), 1);
         contract_headers(&response);
         assert!(response.value["ticket_id"].is_string());
         assert_eq!(response.status, 200);

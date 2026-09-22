@@ -266,8 +266,8 @@ pub(super) struct Disk {
     /// Actual opened path, which can differ from configuration in an injected-store caller.
     pub(super) path: PathBuf,
     directory: File,
-    _lock: File,
     hooks: Arc<dyn StoreHooks>,
+    _lock: crate::compliance::disk::OwnerLock,
 }
 
 fn unavailable() -> V1Error {
@@ -280,7 +280,7 @@ impl Disk {
         let mut lock_path = path.as_os_str().to_owned();
         lock_path.push(".lock");
         let lock = checked_open(Path::new(&lock_path), true)?;
-        lock_exclusive(&lock)?;
+        let lock = lock_exclusive(lock)?;
         let directory = File::open(path.parent().expect("validated parent"))?;
         Ok(Self {
             path,
