@@ -343,7 +343,12 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Commands::Compliance { command } => command.run()?,
+        Commands::Compliance { command } => {
+            if let Err(error) = command.run() {
+                eprintln!("Error: {error}");
+                std::process::exit(1);
+            }
+        }
         Commands::Eval { command } => {
             tokio::runtime::Runtime::new()?.block_on(command.run())?;
         }

@@ -1153,13 +1153,23 @@ fn cli_args(config: &Path, words: &[&str], paths: &[(&str, &Path)]) -> Vec<std::
     arguments
 }
 
-fn real_cli(config: &Path, words: &[&str], paths: &[(&str, &Path)]) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_stract"))
+fn real_cli_command(
+    config: &Path,
+    words: &[&str],
+    paths: &[(&str, &Path)],
+) -> std::process::Command {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_stract"));
+    command
         .arg("compliance")
         .args(cli_args(config, words, paths))
         .stdin(std::process::Stdio::null())
-        .output()
-        .unwrap()
+        .env("RUST_BACKTRACE", "1")
+        .env("RUST_LIB_BACKTRACE", "1");
+    command
+}
+
+fn real_cli(config: &Path, words: &[&str], paths: &[(&str, &Path)]) -> std::process::Output {
+    real_cli_command(config, words, paths).output().unwrap()
 }
 
 fn cli_success(output: std::process::Output) -> Value {
@@ -1482,6 +1492,12 @@ fn cli_errors(fixture: &RecordsFixture, config: &Path) {
     cli_refused(output, Error::InvalidInput);
     fs::remove_file(&input).unwrap();
     let output = real_cli(config, &["records", "validate"], &[("--input", &input)]);
+    assert_eq!(facts(fixture.domain.config.store_dir()), before);
+    cli_refused(output, Error::Unavailable);
+    let output = real_cli_command(config, &["records", "validate"], &[("--input", &input)])
+        .env("RUST_BACKTRACE", "full")
+        .output()
+        .unwrap();
     assert_eq!(facts(fixture.domain.config.store_dir()), before);
     cli_refused(output, Error::Unavailable);
     for words in [
