@@ -274,9 +274,8 @@ fn context<'a>(args: &ConfigArgs, seams: &'a Seams) -> Result<Context<'a>> {
 
 impl Command {
     /// Runs the same injected implementation; main alone prints a returned fixed domain error.
-    pub fn run(self) -> anyhow::Result<()> {
+    pub fn run(self) -> Result<()> {
         self.run_with(&Seams::default(), &mut io::stdout().lock())
-            .map_err(Into::into)
     }
 
     /// Writes exactly one success JSON value and LF. Errors are returned, leaving stderr to main.
