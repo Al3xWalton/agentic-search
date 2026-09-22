@@ -6,6 +6,463 @@
 
 #![deny(missing_docs)]
 
+/// Retains a child paused before exec and releases and reaps it even during parent unwinding.
+pub struct PausedChild {
+    channel: Option<std::os::unix::net::UnixStream>,
+    worker: Option<std::thread::JoinHandle<std::io::Result<std::process::ExitStatus>>>,
+}
+impl PausedChild {
+    /// Waits for the child's explicit ready byte, without sleeps or process-global state.
+    pub fn start() -> std::io::Result<Self> {
+        use std::{
+            io::Read,
+            os::{fd::AsRawFd, unix::process::CommandExt},
+            process::{Command, Stdio},
+        };
+        let (parent, child) = std::os::unix::net::UnixStream::pair()?;
+        let raw = child.as_raw_fd();
+        let worker = std::thread::spawn(move || {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_stract"));
+            command
+                .arg("--help")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            // # Safety
+            // Only async-signal-safe I/O accesses the live inherited descriptor before exec.
+            unsafe {
+                command.pre_exec(move || {
+                    let ready = [1u8];
+                    if libc::write(raw, ready.as_ptr().cast(), 1) != 1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    let mut release = [0u8];
+                    if libc::read(raw, release.as_mut_ptr().cast(), 1) != 1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let result = command.spawn();
+            drop(child);
+            result?.wait()
+        });
+        let mut paused = Self {
+            channel: Some(parent),
+            worker: Some(worker),
+        };
+        paused.channel.as_mut().unwrap().read_exact(&mut [0u8])?;
+        Ok(paused)
+    }
+
+    /// Releases the child and joins its sole owning thread before observations are asserted.
+    pub fn finish(mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.release();
+        self.worker
+            .take()
+            .unwrap()
+            .join()
+            .map_err(|_| std::io::Error::other("child owner panicked"))?
+    }
+
+    fn release(&mut self) {
+        use std::io::Write;
+        if let Some(mut channel) = self.channel.take() {
+            let _ = channel.write_all(&[1u8]);
+        }
+    }
+}
+impl Drop for PausedChild {
+    fn drop(&mut self) {
+        self.release();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn owner_facts(root: &Path) -> std::collections::BTreeMap<PathBuf, (u32, Vec<u8>)> {
+    use std::os::unix::fs::MetadataExt;
+    let mut result = std::collections::BTreeMap::new();
+    let metadata = fs::symlink_metadata(root).unwrap();
+    assert!(!metadata.file_type().is_symlink());
+    let bytes = if metadata.is_file() {
+        fs::read(root).unwrap()
+    } else {
+        Vec::new()
+    };
+    result.insert(root.to_owned(), (metadata.mode(), bytes));
+    if metadata.is_dir() {
+        for entry in fs::read_dir(root).unwrap() {
+            result.extend(owner_facts(&entry.unwrap().path()));
+        }
+    }
+    result
+}
+
+fn owner_unlock_case<T, E: std::fmt::Debug + PartialEq>(
+    kind: &str,
+    root: &Path,
+    counts: &FileCounts,
+    open: impl Fn() -> Result<T, E>,
+    expected: E,
+) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let initial = open();
+    assert!(initial.is_ok(), "{kind}: valid initial owner refused");
+    let owner = initial.unwrap();
+    let before = owner_facts(root);
+    let writes = (counts.writes.load(SeqCst), counts.rules[2].load(SeqCst));
+    let child = PausedChild::start().unwrap();
+    let first = open().map(|_| ());
+    let second = open().map(|_| ());
+    drop(owner);
+    let reopened = open();
+    let status = child.finish();
+    assert_eq!(
+        owner_facts(root),
+        before,
+        "{kind}: owner probes changed files"
+    );
+    assert_eq!(
+        (counts.writes.load(SeqCst), counts.rules[2].load(SeqCst)),
+        writes,
+        "{kind}: owner probes performed writes"
+    );
+    assert_eq!(
+        first.as_ref().err(),
+        Some(&expected),
+        "{kind}: first contention"
+    );
+    assert_eq!(
+        second.as_ref().err(),
+        Some(&expected),
+        "{kind}: failed acquire unlocked owner"
+    );
+    assert!(
+        reopened.is_ok(),
+        "child inherited a dropped {kind} owner's lock"
+    );
+    assert!(
+        status.is_ok_and(|status| status.success()),
+        "{kind}: child failed"
+    );
+    drop(reopened);
+}
+
+/// Proves a journal's live ownership and immediate release despite an inherited descriptor.
+pub fn journal_owner_unlock() {
+    let fixture = DomainFixture::new();
+    let counts = Arc::new(FileCounts::default());
+    owner_unlock_case(
+        "journal",
+        fixture.config.store_dir(),
+        &counts,
+        || Journal::open(&fixture.config, fixture.clock.clone(), counts.clone()),
+        stract::compliance::Error::Unavailable,
+    );
+}
+
+/// Proves serving rules retain genuine contention and release their inherited owner promptly.
+pub fn rules_owner_unlock() {
+    use stract::compliance::{listed::ListedMatcher, rules::RulesStore, Error};
+    let fixture = DomainFixture::new();
+    let counts = Arc::new(FileCounts::default());
+    owner_unlock_case(
+        "rules",
+        fixture.config.store_dir(),
+        &counts,
+        || {
+            RulesStore::open(
+                &fixture.config,
+                fixture.clock.clone(),
+                ListedMatcher::empty(),
+                counts.clone(),
+                counts.clone(),
+            )
+        },
+        Error::RulesUnavailable,
+    );
+}
+
+/// Proves the original suppression owner's lock lifetime without changing its HTTP translation.
+pub fn suppression_owner_unlock() {
+    use stract::api::v1::suppression::SuppressionStore;
+    let fixture = DomainFixture::new();
+    let root = fixture.config.store_dir().parent().unwrap();
+    let path = root.join("suppression.json");
+    let counts = Arc::new(FileCounts::default());
+    owner_unlock_case(
+        "suppression",
+        root,
+        &counts,
+        || SuppressionStore::open_with_hooks(&path, counts.clone()).map_err(|e| e.kind()),
+        std::io::ErrorKind::WouldBlock,
+    );
+}
+
+impl stract::api::v1::suppression::StoreHooks for FileCounts {
+    fn at(&self, stage: stract::api::v1::suppression::StoreStage) -> std::io::Result<()> {
+        use stract::api::v1::suppression::StoreStage as S;
+        let index = match stage {
+            S::Decode => 0,
+            S::Open => 1,
+            S::Write => 2,
+            S::SyncFile => 3,
+            S::Rename => 4,
+            S::SyncDirectory => 5,
+        };
+        self.rules[index].fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+/// Counts only finite recovery observations and can interrupt one real durable boundary.
+#[derive(Default)]
+pub struct QuarantineProbe {
+    /// Captured persistence stages, in invocation order.
+    pub stages: std::sync::Mutex<Vec<stract::compliance::disk::ComplianceStage>>,
+    /// Counts reported by completed ownership scans.
+    pub reports: std::sync::Mutex<Vec<(stract::compliance::disk::QuarantineStore, u64)>>,
+    /// Optional single interruption, consumed when its stage is reached.
+    pub fail: std::sync::Mutex<Option<stract::compliance::disk::ComplianceStage>>,
+}
+impl stract::compliance::disk::ComplianceHooks for QuarantineProbe {
+    fn at(&self, stage: stract::compliance::disk::ComplianceStage) -> std::io::Result<()> {
+        self.stages.lock().unwrap().push(stage);
+        let mut fail = self.fail.lock().unwrap();
+        if fail.as_ref() == Some(&stage) {
+            *fail = None;
+            return Err(std::io::Error::other("synthetic quarantine interruption"));
+        }
+        Ok(())
+    }
+    fn unclaimed_quarantines(&self, store: stract::compliance::disk::QuarantineStore, count: u64) {
+        self.reports.lock().unwrap().push((store, count));
+    }
+}
+
+/// Plants an untrusted root artefact without granting it recovery authority.
+pub fn plant_quarantine(root: &Path, name: &str, shape: &str, bytes: &[u8]) -> PathBuf {
+    use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
+    let name = if shape == "malformed" {
+        "quarantine-malformed"
+    } else {
+        name
+    };
+    let path = root.join(name);
+    match shape {
+        "directory" => {
+            fs::create_dir(&path).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        "symlink" => std::os::unix::fs::symlink("absent-synthetic-target", &path).unwrap(),
+        "fifo" => {
+            let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+            // # Safety
+            // The CString is live and terminated; mkfifo receives only a path and mode.
+            assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        }
+        _ => {
+            let contents = if shape == "oversized" {
+                vec![b'x'; 8193]
+            } else {
+                bytes.to_vec()
+            };
+            fs::write(&path, contents).unwrap();
+            let mode = if shape == "public-mode" { 0o644 } else { 0o600 };
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+        }
+    }
+    path
+}
+
+/// Refuses to promote an unobserved filesystem artefact into verified journal history.
+pub fn journal_quarantine_claims() {
+    journal_observed_tail_cases();
+    for populated in [false, true] {
+        for shape in [
+            "private",
+            "malformed",
+            "symlink",
+            "public-mode",
+            "directory",
+            "fifo",
+            "oversized",
+        ] {
+            journal_unclaimed_case(populated, shape);
+        }
+    }
+}
+
+fn journal_unclaimed_case(populated: bool, shape: &str) {
+    use std::os::unix::fs::MetadataExt;
+    use stract::compliance::disk::{ComplianceStage, QuarantineStore};
+    let fixture = DomainFixture::new();
+    let mut journal = fixture.journal();
+    if populated {
+        fixture.list_row(&mut journal);
+    }
+    let sequence = journal.sequence();
+    drop(journal);
+    let bytes = b"synthetic unobserved journal tail";
+    let probe = Arc::new(QuarantineProbe::default());
+    drop(Journal::open(&fixture.config, fixture.clock.clone(), probe.clone()).unwrap());
+    let opens = probe
+        .stages
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|stage| **stage == ComplianceStage::BeforeOpen)
+        .count();
+    let path = plant_quarantine(
+        fixture.config.journal_dir(),
+        &format!("quarantine-{sequence:020}-{}.bin", digest(bytes)),
+        shape,
+        bytes,
+    );
+    let meta = fs::symlink_metadata(&path).unwrap();
+    let identity = (meta.ino(), meta.mode(), meta.len());
+    let events = fs::read(fixture.path("events.jsonl")).unwrap();
+    let head = fs::read(fixture.path("head.json")).unwrap();
+    for _ in 0..2 {
+        probe.stages.lock().unwrap().clear();
+        probe.reports.lock().unwrap().clear();
+        let result = Journal::open(&fixture.config, fixture.clock.clone(), probe.clone());
+        assert_eq!(
+            fs::read(fixture.path("events.jsonl")).unwrap(),
+            events,
+            "unclaimed journal quarantine acquired recovery authority"
+        );
+        assert_eq!(fs::read(fixture.path("head.json")).unwrap(), head);
+        let meta = fs::symlink_metadata(&path).unwrap();
+        assert_eq!((meta.ino(), meta.mode(), meta.len()), identity);
+        if meta.is_file() && shape != "oversized" {
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+        assert_eq!(
+            *probe.reports.lock().unwrap(),
+            vec![(QuarantineStore::Journal, 1)]
+        );
+        let stages = probe.stages.lock().unwrap();
+        assert_eq!(
+            stages
+                .iter()
+                .filter(|stage| **stage == ComplianceStage::BeforeOpen)
+                .count(),
+            opens,
+            "{shape}: unclaimed journal artefact opened"
+        );
+        assert!(!stages.contains(&ComplianceStage::AfterJournalSync));
+        assert_eq!(
+            result.as_ref().map(|_| ()).map_err(|error| *error),
+            Ok(()),
+            "{shape}"
+        );
+        drop(result);
+    }
+}
+
+fn journal_observed_tail_cases() {
+    use std::os::unix::fs::MetadataExt;
+    use stract::compliance::{
+        disk::{ComplianceStage, QuarantineStore},
+        journal::EventName,
+        Error,
+    };
+    for (interrupt, suffix) in [
+        (None, false),
+        (Some(ComplianceStage::AfterTailTruncate), false),
+        (Some(ComplianceStage::AfterTailTruncate), true),
+        (Some(ComplianceStage::AfterJournalSync), false),
+    ] {
+        let fixture = DomainFixture::new();
+        let mut journal = fixture.journal();
+        fixture.list_row(&mut journal);
+        let head = fs::read(fixture.path("head.json")).unwrap();
+        if suffix {
+            fixture.list_row(&mut journal);
+        }
+        let sequence = journal.sequence();
+        drop(journal);
+        if suffix {
+            fs::write(fixture.path("head.json"), &head).unwrap();
+        }
+        let prefix = fs::read(fixture.path("events.jsonl")).unwrap();
+        let tail = b"{synthetic observed torn journal";
+        fs::write(
+            fixture.path("events.jsonl"),
+            [&prefix[..], &tail[..]].concat(),
+        )
+        .unwrap();
+        let path = fixture.path(&format!("quarantine-{sequence:020}-{}.bin", digest(tail)));
+        let probe = Arc::new(QuarantineProbe::default());
+        *probe.fail.lock().unwrap() = interrupt;
+        let first = Journal::open(&fixture.config, fixture.clock.clone(), probe.clone());
+        let quarantined = fs::read(&path);
+        assert!(
+            quarantined.is_ok(),
+            "observed journal tail was not quarantined"
+        );
+        assert_eq!(quarantined.unwrap(), tail);
+        assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
+        assert!(fs::read(fixture.path("events.jsonl"))
+            .unwrap()
+            .starts_with(&prefix));
+        assert_eq!(
+            first.as_ref().map(|_| ()).map_err(|error| *error),
+            if interrupt.is_some() {
+                Err(Error::Unavailable)
+            } else {
+                Ok(())
+            }
+        );
+        drop(first);
+        probe.reports.lock().unwrap().clear();
+        let result = Journal::open(&fixture.config, fixture.clock.clone(), probe.clone());
+        let events = fs::read(fixture.path("events.jsonl")).unwrap();
+        let rows = events
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        let recovered = rows
+            .iter()
+            .filter(|row| row["event"] == "tail_recovered")
+            .collect::<Vec<_>>();
+        let gap = interrupt == Some(ComplianceStage::AfterTailTruncate);
+        assert_eq!(
+            recovered.len(),
+            usize::from(!gap),
+            "observed journal tail lacks exactly one recovery row"
+        );
+        if gap && !suffix {
+            assert_eq!(fs::read(fixture.path("head.json")).unwrap(), head);
+        }
+        if let Some(row) = recovered.first() {
+            assert_eq!(row["quarantined_bytes"], tail.len());
+            assert_eq!(row["quarantine_hash"], digest(tail));
+        }
+        assert_eq!(
+            *probe.reports.lock().unwrap(),
+            vec![(QuarantineStore::Journal, u64::from(gap))]
+        );
+        assert_eq!(result.as_ref().map(|_| ()).map_err(|error| *error), Ok(()));
+        drop(result);
+        let head = fs::read(fixture.path("head.json")).unwrap();
+        let again = fixture.journal();
+        assert_eq!(fs::read(fixture.path("events.jsonl")).unwrap(), events);
+        assert_eq!(fs::read(fixture.path("head.json")).unwrap(), head);
+        assert_eq!(
+            again
+                .rows()
+                .iter()
+                .filter(|row| row.event == EventName::TailRecovered)
+                .count(),
+            usize::from(!gap)
+        );
+    }
+}
+
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::{
@@ -748,7 +1205,8 @@ pub fn configure_list(config: &mut stract::config::ApiConfig, urls: &[String], h
     config.compliance.listed_hashes_file = Some(path);
 }
 
-fn search_result() -> stract::searcher::SearchResult {
+/// Returns the same finite synthetic search fixture for record-backed resource probes.
+pub fn search_result() -> stract::searcher::SearchResult {
     let urls = [
         format!("https://{}.example.test/item", "synthetic"),
         format!("https://{}.example.test/item", "unrelated"),
@@ -757,17 +1215,13 @@ fn search_result() -> stract::searcher::SearchResult {
     let pages = urls
         .iter()
         .map(|url| {
-            serde_json::json!({"title":"Synthetic result","url":url,
-        "site":"example.test",
-            "domain":"example.test",
-            "prettyUrl":url,
-            "snippet":{"date":null,
-            "text":{"fragments":[]}},
-        "richSnippet":null,
-            "rankingSignals":null,
-            "structuredData":null,
-            "likelyHasAds":false,
-            "likelyHasPaywall":false})
+            serde_json::json!({
+                "title":"Synthetic result", "url":url,
+                "site":"example.test", "domain":"example.test", "prettyUrl":url,
+                "snippet":{"date":null, "text":{"fragments":[]}},
+                "richSnippet":null, "rankingSignals":null, "structuredData":null,
+                "likelyHasAds":false, "likelyHasPaywall":false
+            })
         })
         .collect::<Vec<_>>();
     stract::searcher::SearchResult::Websites(

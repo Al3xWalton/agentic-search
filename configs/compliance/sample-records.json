@@ -1,0 +1,835 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "body": {
+        "access": null,
+        "additional_characteristics": [],
+        "approval_status": "draft",
+        "approved_at": null,
+        "approver": "sample — not an approval",
+        "author": "[FOUNDER REQUIRED: assessment author]",
+        "children": null,
+        "date_completed": 1789689600,
+        "evidence": [
+          {
+            "description": "[FOUNDER REQUIRED: genuine evidence]",
+            "id": "pending.evidence",
+            "source": "[FOUNDER REQUIRED: evidence source or reference]"
+          }
+        ],
+        "existing_controls": [
+          {
+            "description": "Typed reporting, authenticated review and reversible serving rules exist.",
+            "effect": "[FOUNDER REQUIRED: assess effectiveness and limits]"
+          }
+        ],
+        "governance_reference": "pending.governance",
+        "governance_reporting": "no",
+        "keep_up_to_date_policy": "[FOUNDER REQUIRED: approved review policy and responsible operator]",
+        "last_reviewed_at": 1789689600,
+        "other_illegal_reasoning": "[FOUNDER REQUIRED: assess other illegal content risks]",
+        "other_illegal_risks": [],
+        "priority_catalog_version": "pending",
+        "priority_risks": [
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P01",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P02",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P03",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P04",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P05",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P06",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P07",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P08",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P09",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P10",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P11",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P12",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P13",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P14",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P15",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P16",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P17",
+            "level": "low"
+          }
+        ],
+        "questionnaire_outcomes": [
+          {
+            "answer": "[FOUNDER REQUIRED: complete the risk questionnaire]",
+            "id": "pending.questionnaire"
+          }
+        ],
+        "reasoning": "sample — not an approval. Substantive risk assessment remains outstanding.",
+        "responsible_person": "[FOUNDER REQUIRED: named accountable person]",
+        "review_triggers": [],
+        "review_update_dates": [
+          1789689600
+        ],
+        "risk_factors": [
+          "[FOUNDER REQUIRED: assess service risk factors]"
+        ],
+        "risk_profiles_consulted": "no",
+        "service": "AVA Search"
+      },
+      "completed_at": 1789689600,
+      "format_version": 1,
+      "id": "sample.icra",
+      "kind": "icra",
+      "supersedes": null,
+      "version": 1
+    },
+    {
+      "body": {
+        "access": {
+          "concluded_at": 1789689600,
+          "conclusion": "not_likely",
+          "evidence_ids": [
+            "pending.evidence"
+          ],
+          "steps": "Children's access is unassessed. This draft value is not a determination. sample — not an approval."
+        },
+        "additional_characteristics": [],
+        "approval_status": "draft",
+        "approved_at": null,
+        "approver": "sample — not an approval",
+        "author": "[FOUNDER REQUIRED: assessment author]",
+        "children": null,
+        "date_completed": 1789689600,
+        "evidence": [
+          {
+            "description": "[FOUNDER REQUIRED: genuine evidence]",
+            "id": "pending.evidence",
+            "source": "[FOUNDER REQUIRED: evidence source or reference]"
+          }
+        ],
+        "existing_controls": [
+          {
+            "description": "Typed reporting, authenticated review and reversible serving rules exist.",
+            "effect": "[FOUNDER REQUIRED: assess effectiveness and limits]"
+          }
+        ],
+        "governance_reference": "pending.governance",
+        "governance_reporting": "no",
+        "keep_up_to_date_policy": "[FOUNDER REQUIRED: approved review policy and responsible operator]",
+        "last_reviewed_at": 1789689600,
+        "other_illegal_reasoning": "[FOUNDER REQUIRED: assess other illegal content risks]",
+        "other_illegal_risks": [],
+        "priority_catalog_version": "pending",
+        "priority_risks": [
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P01",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P02",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P03",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P04",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P05",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P06",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P07",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P08",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P09",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P10",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P11",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P12",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P13",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P14",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P15",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P16",
+            "level": "low"
+          },
+          {
+            "evidence_ids": [
+              "pending.evidence"
+            ],
+            "explanation": "[FOUNDER REQUIRED: assess this priority kind; draft level is not a finding]",
+            "kind": "P17",
+            "level": "low"
+          }
+        ],
+        "questionnaire_outcomes": [
+          {
+            "answer": "[FOUNDER REQUIRED: complete the risk questionnaire]",
+            "id": "pending.questionnaire"
+          }
+        ],
+        "reasoning": "sample — not an approval. Substantive risk assessment remains outstanding.",
+        "responsible_person": "[FOUNDER REQUIRED: named accountable person]",
+        "review_triggers": [],
+        "review_update_dates": [
+          1789689600
+        ],
+        "risk_factors": [
+          "[FOUNDER REQUIRED: assess service risk factors]"
+        ],
+        "risk_profiles_consulted": "no",
+        "service": "AVA Search"
+      },
+      "completed_at": 1789689600,
+      "format_version": 1,
+      "id": "sample.caa",
+      "kind": "caa",
+      "supersedes": null,
+      "version": 1
+    },
+    {
+      "body": {
+        "approval_status": "draft",
+        "approver": "sample — not an approval",
+        "date_effective": 1789689600,
+        "last_reviewed_at": 1789689600,
+        "rows": [
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS A2"
+              ]
+            },
+            "code": "ICS A2",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS C1.2"
+              ]
+            },
+            "code": "ICS C1.2",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS C1.4"
+              ]
+            },
+            "code": "ICS C1.4",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "voluntary_pending_legal_review",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS C3"
+              ]
+            },
+            "code": "ICS C3",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS C7.6"
+              ]
+            },
+            "code": "ICS C7.6",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS D1"
+              ]
+            },
+            "code": "ICS D1",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS D2"
+              ]
+            },
+            "code": "ICS D2",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "voluntary_pending_legal_review",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS D3"
+              ]
+            },
+            "code": "ICS D3",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "voluntary_pending_legal_review",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS D4"
+              ]
+            },
+            "code": "ICS D4",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "voluntary_pending_legal_review",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS D5"
+              ]
+            },
+            "code": "ICS D5",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS D8"
+              ]
+            },
+            "code": "ICS D8",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS D9"
+              ]
+            },
+            "code": "ICS D9",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS D12"
+              ]
+            },
+            "code": "ICS D12",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS G1"
+              ]
+            },
+            "code": "ICS G1",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "ICS G3"
+              ]
+            },
+            "code": "ICS G3",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS A2"
+              ]
+            },
+            "code": "PCS A2",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS C1"
+              ]
+            },
+            "code": "PCS C1",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D1"
+              ]
+            },
+            "code": "PCS D1",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D2"
+              ]
+            },
+            "code": "PCS D2",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "voluntary_pending_legal_review",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D4"
+              ]
+            },
+            "code": "PCS D4",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "voluntary_pending_legal_review",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D5"
+              ]
+            },
+            "code": "PCS D5",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "voluntary_pending_legal_review",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D6"
+              ]
+            },
+            "code": "PCS D6",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D7"
+              ]
+            },
+            "code": "PCS D7",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D9"
+              ]
+            },
+            "code": "PCS D9",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D10"
+              ]
+            },
+            "code": "PCS D10",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS D14"
+              ]
+            },
+            "code": "PCS D14",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS G1"
+              ]
+            },
+            "code": "PCS G1",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          },
+          {
+            "adoption": "required",
+            "alternative": {
+              "compliance_reasoning": "[FOUNDER REQUIRED: explain substantive compliance]",
+              "freedom_of_expression_and_privacy": "[FOUNDER REQUIRED: assess expression and privacy]",
+              "measure": "[FOUNDER REQUIRED: record the actual measure or reasoned alternative]",
+              "not_taken": [
+                "PCS G3"
+              ]
+            },
+            "code": "PCS G3",
+            "date_effective": 1789689600,
+            "description": "Draft applicability and sufficiency assessment pending; sample — not an approval.",
+            "disposition": "alternative"
+          }
+        ],
+        "service": "AVA Search"
+      },
+      "completed_at": 1789689600,
+      "format_version": 1,
+      "id": "sample.measures",
+      "kind": "measures",
+      "supersedes": null,
+      "version": 1
+    }
+  ]
+}

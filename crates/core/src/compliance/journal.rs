@@ -4,11 +4,14 @@
 
 #![deny(missing_docs)]
 
+/// Read-only snapshots of a verified committed prefix, safe alongside the journal owner.
+pub mod view;
+
 use super::{
     auth,
     bounds::{self, BoundKey, TextClass},
     clock,
-    disk::{self, ComplianceHooks, ComplianceStage, OpenMode},
+    disk::{self, ComplianceHooks, ComplianceStage, OpenMode, QuarantineStore},
     listed::ListedMetadata,
     model::{
         sha256, DecisionKind, DocumentKey, Ground, Hex64, RequesterType, Route, TicketId,
@@ -87,7 +90,7 @@ pub enum EventName {
 macro_rules! row_fields {
     ($($(#[$doc:meta])* $field:ident: $type:ty),* $(,)?) => {
         /// Exact scalar chain row. Field declaration order is its canonical on-disk order.
-        /// The final two recovery fields implement amendment A13 and are zero/empty otherwise.
+        /// The final two fields describe quarantined torn bytes and are zero/empty otherwise.
         #[derive(Clone, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct JournalRow {
@@ -428,12 +431,18 @@ struct VerifiedBytes<'a> {
 /// One private journal owner, intended for blocking startup and serialized transaction work.
 pub struct Journal {
     root: PathBuf,
-    _owner: File,
     head: Head,
     rows: Vec<JournalRow>,
     config: ValidatedComplianceConfig,
     hooks: Arc<dyn ComplianceHooks>,
     clock: Arc<dyn Clock>,
+    recovered_tail: Option<ObservedTail>,
+    _owner: disk::OwnerLock,
+}
+
+struct ObservedTail {
+    bytes: Vec<u8>,
+    base_sequence: u64,
 }
 impl Journal {
     /// Opens and verifies all committed bytes; valid crash suffixes are adopted and torn ones quarantined.
@@ -458,14 +467,14 @@ impl Journal {
         let fresh = !root.exists();
         let owner = open_journal(
             &root.join("owner.lock"),
-            OpenMode::OwnerLock,
+            OpenMode::OwnerFile,
             hooks.as_ref(),
             None,
         )
         .map_err(|_| Error::Unavailable)?;
+        let owner = disk::lock_exclusive(owner).map_err(|_| Error::Unavailable)?;
         let mut journal = Self {
             root,
-            _owner: owner,
             head: Head {
                 format_version: 1,
                 sequence: 0,
@@ -476,6 +485,8 @@ impl Journal {
             config: config.clone(),
             hooks,
             clock,
+            recovered_tail: None,
+            _owner: owner,
         };
         journal.sweep_owned_temps()?;
         if fresh {
@@ -622,13 +633,26 @@ impl Journal {
             byte_length: complete_length,
         };
         if let Some(tail) = tail {
-            self.quarantine_tail(tail)?;
+            let tail = ObservedTail {
+                bytes: tail.to_vec(),
+                base_sequence: self.head.sequence,
+            };
+            self.quarantine_tail(&tail)?;
+            self.recovered_tail = Some(tail);
         }
         Ok(())
     }
 
     pub(crate) fn finish_recovery(&mut self) -> Result<()> {
-        self.recover_quarantines()?;
+        if let Some(tail) = self.recovered_tail.take() {
+            let mut row = JournalRow::empty(EventName::TailRecovered, self.clock.utc().timestamp());
+            row.actor = "system.recovery".into();
+            row.quarantined_bytes = tail.bytes.len() as u64;
+            row.quarantine_hash = sha256(&[&tail.bytes]);
+            let row = self.prepare_rows(vec![row])?.remove(0);
+            self.append(row)?;
+        }
+        self.scan_quarantines()?;
         self.write_head(&self.head)
     }
 
@@ -740,11 +764,12 @@ impl Journal {
             .map_err(|_| Error::Unavailable)
     }
 
-    fn quarantine_tail(&self, bytes: &[u8]) -> Result<()> {
+    fn quarantine_tail(&self, tail: &ObservedTail) -> Result<()> {
+        let bytes = tail.bytes.as_slice();
         let hash = sha256(&[bytes]);
         let path = self
             .root
-            .join(format!("quarantine-{:020}-{hash}.bin", self.head.sequence));
+            .join(format!("quarantine-{:020}-{hash}.bin", tail.base_sequence));
         match open_journal(&path, OpenMode::Read, self.hooks.as_ref(), None) {
             Ok(file) => {
                 let existing = disk::read_bounded(file, BoundKey::JournalRow.spec().max)
@@ -767,7 +792,10 @@ impl Journal {
         .map_err(|_| Error::Unavailable)?;
         file.set_len(self.head.byte_length)
             .map_err(|_| Error::Unavailable)?;
-        file.sync_all().map_err(|_| Error::Unavailable)
+        file.sync_all().map_err(|_| Error::Unavailable)?;
+        self.hooks
+            .at(ComplianceStage::AfterTailTruncate)
+            .map_err(|_| Error::Unavailable)
     }
 
     fn replace_quarantine(&self, path: &Path, bytes: &[u8]) -> Result<()> {
@@ -800,7 +828,10 @@ impl Journal {
         for entry in entries {
             let entry = entry.map_err(|_| Error::Unavailable)?;
             let name = entry.file_name();
-            if !name.to_str().is_some_and(owned_temp_name) {
+            if !name
+                .to_str()
+                .is_some_and(|name| disk::owned_temp_name(name, &["head", "recovery"]))
+            {
                 continue;
             }
             let path = entry.path();
@@ -816,70 +847,47 @@ impl Journal {
         Ok(())
     }
 
-    fn recover_quarantines(&mut self) -> Result<()> {
-        let mut paths = fs::read_dir(&self.root)
-            .map_err(|_| Error::Unavailable)?
-            .map(|entry| entry.map(|entry| entry.path()))
-            .collect::<io::Result<Vec<_>>>()
-            .map_err(|_| Error::Unavailable)?;
-        paths.sort();
-        for path in paths {
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or(Error::Unavailable)?;
-            if !name.starts_with("quarantine-") {
+    fn scan_quarantines(&self) -> Result<()> {
+        let mut count = 0;
+        for entry in fs::read_dir(&self.root).map_err(|_| Error::Unavailable)? {
+            let entry = entry.map_err(|_| Error::Unavailable)?;
+            let name = entry.file_name();
+            if !name.as_encoded_bytes().starts_with(b"quarantine-") {
                 continue;
             }
-            let file = open_journal(&path, OpenMode::Read, self.hooks.as_ref(), None)
+            let Some(row) = self.accounted_quarantine(&name) else {
+                count += 1;
+                continue;
+            };
+            let file = open_journal(&entry.path(), OpenMode::Read, self.hooks.as_ref(), None)
                 .map_err(|_| Error::Unavailable)?;
             let bytes = disk::read_bounded(file, BoundKey::JournalRow.spec().max)
                 .map_err(|_| Error::Unavailable)?;
-            let hash = sha256(&[&bytes]);
-            let rest = name.strip_prefix("quarantine-").unwrap();
-            let (sequence, suffix) = rest.split_once('-').ok_or(Error::Unavailable)?;
-            if sequence.len() != 20
-                || !sequence.bytes().all(|byte| byte.is_ascii_digit())
-                || suffix != format!("{hash}.bin")
+            if bytes.len() as u64 != row.quarantined_bytes
+                || sha256(&[&bytes]) != row.quarantine_hash
             {
                 return Err(Error::Unavailable);
             }
-            let sequence: u64 = sequence.parse().map_err(|_| Error::Unavailable)?;
-            if sequence > self.head.sequence {
-                return Err(Error::Unavailable);
-            }
-            if self.rows.iter().any(|row| {
-                row.event == EventName::TailRecovered
-                    && row.sequence > sequence
-                    && row.quarantine_hash == hash
-                    && row.quarantined_bytes == bytes.len() as u64
-            }) {
-                continue;
-            }
-            let mut row = JournalRow::empty(EventName::TailRecovered, self.clock.utc().timestamp());
-            row.actor = "system.recovery".into();
-            row.quarantined_bytes = bytes.len() as u64;
-            row.quarantine_hash = hash;
-            let row = self.prepare_rows(vec![row])?.remove(0);
-            self.append(row)?;
         }
+        self.hooks
+            .unclaimed_quarantines(QuarantineStore::Journal, count);
         Ok(())
     }
-}
 
-fn owned_temp_name(name: &str) -> bool {
-    // Canonical names identify candidates, including another pid's leftovers;
-    // deletion is authorized only while the lifetime owner lock excludes writers.
-    let parts = name.split('.').collect::<Vec<_>>();
-    if parts.len() != 4 || !matches!(parts[0], "head" | "recovery") || parts[3] != "tmp" {
-        return false;
+    fn accounted_quarantine(&self, name: &std::ffi::OsStr) -> Option<&JournalRow> {
+        let name = name.to_str()?;
+        let rest = name.strip_prefix("quarantine-")?;
+        let (base, suffix) = rest.split_once('-')?;
+        let sequence = base.parse::<u64>().ok()?;
+        // Recovery publication waits for payload and action reconciliation, which can append
+        // intervening rows after the captured base and before this recovery row.
+        self.rows.iter().find(|row| {
+            row.event == EventName::TailRecovered
+                && row.sequence > sequence
+                && format!("{sequence:020}") == base
+                && suffix == format!("{}.bin", row.quarantine_hash)
+        })
     }
-    parts[1]
-        .parse::<u32>()
-        .is_ok_and(|pid| pid > 0 && pid.to_string() == parts[1])
-        && parts[2]
-            .parse::<u64>()
-            .is_ok_and(|counter| counter.to_string() == parts[2])
 }
 
 fn verify_link(row: &JournalRow, sequence: u64, previous: &str) -> Result<()> {

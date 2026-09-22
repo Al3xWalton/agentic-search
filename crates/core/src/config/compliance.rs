@@ -22,7 +22,7 @@ pub enum DeploymentMode {
     /// Enables the local reporting mechanisms with outstanding operational gates.
     #[default]
     Local,
-    /// Refused until approved records and publication validation exist.
+    /// Requires absolute private storage paths and approved records before service startup.
     Hosted,
 }
 
@@ -51,11 +51,11 @@ impl Default for StatementChange {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ComplianceConfig {
-    /// Defaults to local; hosted is refused before approved-record validation exists.
+    /// Defaults to local; hosted requires absolute paths and approved records before serving.
     pub deployment_mode: DeploymentMode,
     /// Optional private root, defaulting to a compliance sibling of the suppression file.
     pub store_dir: Option<PathBuf>,
-    /// Optional private record directory; defaults below the journal's ownership axis.
+    /// Optional private record directory, defaulting to a sibling of the journal directory.
     pub records_dir: Option<PathBuf>,
     /// Optional startup bearer file; absence authorizes nobody.
     pub admin_token_file: Option<PathBuf>,
@@ -77,11 +77,11 @@ pub struct ComplianceConfig {
     pub max_rules: u64,
     /// Complete serialized serving snapshot bytes, including LF.
     pub max_rules_bytes: u64,
-    /// Reserved limit for all immutable record versions.
+    /// Lifetime limit for all immutable record versions, including superseded records.
     pub max_records: u64,
-    /// Reserved complete per-record byte limit.
+    /// Complete private wrapper byte limit, including salt, commitment and final LF.
     pub max_record_bytes: u64,
-    /// Reserved aggregate record byte limit.
+    /// Aggregate record, index, staging and quarantine byte limit.
     pub max_records_bytes: u64,
     /// Bounded active public statement slug, matching the final changelog entry.
     pub statement_version: String,
@@ -177,19 +177,33 @@ impl ValidatedComplianceConfig {
     pub fn rules_dir(&self) -> &Path {
         &self.rules
     }
-    /// Returns the reserved records directory on the journal availability axis.
+    /// Returns the independent record directory, never inside the journal's ownership tree.
     pub fn records_dir(&self) -> &Path {
         &self.records
+    }
+    /// Returns the record writer's sibling lock without creating or acquiring it.
+    pub fn records_lock(&self) -> PathBuf {
+        sibling_lock(&self.records)
     }
 }
 
 impl ComplianceConfig {
     /// Validates all settings and path identities before opening files; performs no writes.
-    /// Hosted intent fails closed because this endpoint has no approved-record validator.
+    /// Hosted storage paths are independent of the working directory; approval is a startup gate.
     pub fn validate(&self, suppression: &Path) -> Result<ValidatedComplianceConfig> {
         self.validate_ranges()?;
         self.validate_text()?;
-        if self.deployment_mode == DeploymentMode::Hosted {
+        let paths_absolute = suppression.is_absolute()
+            && [
+                &self.store_dir,
+                &self.records_dir,
+                &self.admin_token_file,
+                &self.listed_hashes_file,
+            ]
+            .into_iter()
+            .flatten()
+            .all(|path| path.is_absolute());
+        if self.deployment_mode == DeploymentMode::Hosted && !paths_absolute {
             return Err(Error::InvalidInput);
         }
         let suppression = absolute(suppression)?;
@@ -205,7 +219,7 @@ impl ComplianceConfig {
             &self
                 .records_dir
                 .clone()
-                .unwrap_or_else(|| journal.join("records")),
+                .unwrap_or_else(|| store.join("records")),
         )?;
         let mut separate = vec![suppression, rules.clone(), journal.clone()];
         for file in [&self.admin_token_file, &self.listed_hashes_file]
@@ -219,13 +233,8 @@ impl ComplianceConfig {
             separate.push(file);
         }
         validate_separation(&separate)?;
-        if overlaps(&records, &rules)
-            || overlaps(&records, &separate[0])
-            || records == journal
-            || records.starts_with(journal.join("payloads"))
-            || journal.starts_with(&records)
-            || overlaps(&store, &separate[0])
-        {
+        validate_record_paths(&records, &separate)?;
+        if overlaps(&store, &separate[0]) {
             return Err(Error::InvalidInput);
         }
         Ok(ValidatedComplianceConfig {
@@ -258,6 +267,14 @@ impl ComplianceConfig {
             ),
         ] {
             key.validate(value)?;
+        }
+        let minimum = crate::compliance::records::record_reservation_bytes(
+            crate::compliance::record_index::initial_record_bytes()?,
+            self.max_record_bytes,
+        )
+        .map_err(|_| Error::InvalidInput)?;
+        if minimum > self.max_records_bytes {
+            return Err(Error::InvalidInput);
         }
         Ok(())
     }
@@ -346,6 +363,27 @@ fn absolute(path: &Path) -> Result<PathBuf> {
     disk::normalized(path).map_err(|_| Error::InvalidInput)
 }
 
+fn sibling_lock(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".lock");
+    PathBuf::from(name)
+}
+
+fn validate_record_paths(records: &Path, other: &[PathBuf]) -> Result<()> {
+    let lock = absolute(&sibling_lock(records))?;
+    if overlaps(records, &lock) {
+        return Err(Error::InvalidInput);
+    }
+    for path in other {
+        for candidate in [path.clone(), sibling_lock(path)] {
+            if overlaps(records, &candidate) || overlaps(&lock, &candidate) {
+                return Err(Error::InvalidInput);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn overlaps(left: &Path, right: &Path) -> bool {
     left.starts_with(right)
         || right.starts_with(left)
@@ -387,7 +425,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_resolve_isolated_roots_and_refuse_hosted() {
+    fn defaults_resolve_isolated_roots_and_validate_hosted_structure() {
         let settings = ComplianceConfig::default();
         assert_eq!(settings.intimate_margin_seconds, 172800);
         assert_eq!(settings.retention_months, 36);
@@ -399,7 +437,7 @@ mod tests {
         assert!(validated.rules_dir().ends_with("isolated/compliance/rules"));
         assert!(validated
             .records_dir()
-            .ends_with("isolated/compliance/journal/records"));
+            .ends_with("isolated/compliance/records"));
         let hosted = ComplianceConfig {
             deployment_mode: DeploymentMode::Hosted,
             ..settings
@@ -407,5 +445,9 @@ mod tests {
         assert!(hosted
             .validate(Path::new("isolated/suppression.json"))
             .is_err());
+        let absolute = std::env::current_dir()
+            .unwrap()
+            .join("isolated/suppression.json");
+        assert!(hosted.validate(&absolute).is_ok());
     }
 }
