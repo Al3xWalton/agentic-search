@@ -821,7 +821,7 @@ mod contracts {
         let schemas = document["components"]["schemas"].as_object().unwrap();
         assert!(schemas.keys().all(|key| key.starts_with("V1")));
         references(&document, schemas);
-        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 44);
+        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 47);
         literal_operations(&document);
         literal_queue_schemas(schemas);
         for name in [
@@ -5464,6 +5464,7 @@ mod contracts {
             ("/v1/source", "get", "api-and-management"),
             ("/v1/statement", "get", "api"),
             ("/v1/documents/{id}", "delete", "management"),
+            ("/v1/documents/{id}", "put", "management"),
             ("/v1/reports", "get", "api-and-management"),
             ("/v1/reports/status/{ticket_id}", "get", "api"),
             ("/v1/reports/illegal-content", "post", "api"),
@@ -5545,13 +5546,15 @@ mod contracts {
             }
         }
         assert_eq!(observed, expected);
-        assert_eq!(observed.len(), 25);
+        assert_eq!(observed.len(), 26);
         assert_eq!(document["paths"].as_object().unwrap().len(), 25);
         let mut protected = 0;
         for (path, method, listener) in expected {
             let operation = &document["paths"][path][method];
             literal_operation_responses(operation);
-            if method == "post" && listener == "management" {
+            if (method == "post" && listener == "management")
+                || (method == "put" && path == "/v1/documents/{id}")
+            {
                 protected += 1;
                 assert_eq!(operation["security"], json!([{"V1ComplianceBearer":[]}]));
             } else {
@@ -5563,7 +5566,7 @@ mod contracts {
                 assert_eq!(document["servers"][0]["url"], "{api_base}");
             }
         }
-        assert_eq!(protected, 11);
+        assert_eq!(protected, 12);
     }
 
     fn literal_operation_responses(operation: &Value) {
@@ -5648,6 +5651,11 @@ suppression_unavailable request_timeout"
         assert_eq!(old.len(), 38);
         assert_eq!(new.len(), 6);
         assert!(old.is_disjoint(&new));
+        let ingest = "not_admitted ingest_unavailable ingest_capacity"
+            .split_whitespace()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(ingest.len(), 3);
+        assert!(ingest.is_disjoint(&old) && ingest.is_disjoint(&new));
         let document = serde_json::to_value(stract::api::v1::openapi()).unwrap();
         let codes = document["components"]["schemas"]["V1ErrorCode"]["enum"]
             .as_array()
@@ -5656,8 +5664,8 @@ suppression_unavailable request_timeout"
             .iter()
             .map(|value| value.as_str().unwrap())
             .collect::<BTreeSet<_>>();
-        assert_eq!(codes.len(), 44);
-        assert_eq!(observed.len(), 44);
-        assert_eq!(observed, old.union(&new).copied().collect());
+        assert_eq!(codes.len(), 47);
+        assert_eq!(observed.len(), 47);
+        assert_eq!(observed, old.union(&new).copied().chain(ingest).collect());
     }
 }

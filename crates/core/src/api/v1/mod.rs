@@ -1,6 +1,7 @@
 //! Implements the bounded agent HTTP contract as an independently finished router subtree.
-//! Request order is headers, envelope normalization, unwind catch, deadline, admission, body cap,
-//! then route extraction and assembly. Nesting keeps its fallback separate from legacy routes.
+//! Request order is headers, envelope normalization, unwind catch and deadline, then management
+//! ingest precheck, admission and body cap before route extraction and assembly.
+//! Nesting keeps its fallback separate from legacy routes.
 
 use crate::{
     config::{
@@ -33,6 +34,12 @@ pub mod documents;
 pub mod dto;
 /// Closed errors and private safe-response marking.
 pub mod error;
+/// Authenticated document admission and the audited live-index payload.
+pub mod ingest;
+/// Strict ingest requests, derived receipts and closed admission reasons.
+pub mod ingest_dto;
+/// Durable metadata ownership, delivery state and retention maintenance.
+pub mod ingest_register;
 /// Authenticated management operations, finished inside the inherited transport envelope.
 pub mod moderation;
 /// Strict management requests, notices and private response types.
@@ -49,6 +56,46 @@ pub mod source;
 pub mod statement;
 /// Canonical identifiers and shared serving state.
 pub mod suppression;
+
+pub use ingest::AuditedIngestPage;
+
+/// Explicit live-index WAL receipt; visibility still waits for the normal index commit schedule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IngestAcknowledgement {
+    /// The selected replica accepted the message and met the requested replication condition.
+    Acknowledged,
+}
+
+/// Closed backend failure; transport and application details never enter HTTP output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IngestBackendFailure {
+    /// Receipt cannot be established, including partial or ambiguous delivery.
+    Unavailable,
+}
+
+/// One bounded send of a fully audited page to the existing live-index service.
+pub trait IngestBackend: Send + Sync + 'static {
+    /// Returns only explicit receipt or a closed failure, without committing the live index.
+    fn ingest(
+        &self,
+        page: AuditedIngestPage,
+    ) -> BoxFuture<'_, Result<IngestAcknowledgement, IngestBackendFailure>>;
+}
+
+impl<F, Fut> IngestBackend for F
+where
+    F: Fn(AuditedIngestPage) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<IngestAcknowledgement, IngestBackendFailure>>
+        + Send
+        + 'static,
+{
+    fn ingest(
+        &self,
+        page: AuditedIngestPage,
+    ) -> BoxFuture<'_, Result<IngestAcknowledgement, IngestBackendFailure>> {
+        Box::pin(self(page))
+    }
+}
 
 /// Narrow adapter for the unchanged internal search result; validation happens before this call.
 pub trait SearchBackend: Send + Sync + 'static {
@@ -68,6 +115,20 @@ where
 
 /// Optional bounded observation seam; default production behavior performs no instrumentation.
 pub trait Observer: Send + Sync + 'static {
+    /// Observes one acquired listener permit without exposing request information.
+    fn admission_acquired(&self) {}
+    /// Observes authenticated ingest handler entry, before raw identifier parsing.
+    fn ingest_enter(&self) {}
+    /// Observes the actual indexer/publisher audit boundary.
+    fn ingest_audit(&self) {}
+    /// Observes the entry lookup under the serialized register writer.
+    fn ingest_register_read(&self) {}
+    /// Observes an actual snapshot replacement attempt, excluding acknowledged replays.
+    fn ingest_register_write(&self) {}
+    /// Observes the backend invocation after durable recorded metadata.
+    fn ingest_backend_enter(&self) {}
+    /// Observes one expiry-maintenance consideration, whether or not it writes.
+    fn ingest_sweep(&self) {}
     /// Observes entry to JSON decoding, after admission and bounded body collection.
     fn json_decode(&self) {}
     /// Observes the backend boundary after request validation.
@@ -104,6 +165,10 @@ pub struct V1State {
     pub(super) publication: crate::compliance::Result<Arc<statement::V1StatementResponse>>,
     /// Validated-query adapter, shared with the legacy internal searcher.
     pub(super) backend: Arc<dyn SearchBackend>,
+    /// Receipt-only live-index adapter; defaults to closed unavailability.
+    pub(super) ingest_backend: Arc<dyn IngestBackend>,
+    /// Shared durable metadata owner; it contains no raw content or derived title.
+    pub(super) ingest_register: Arc<ingest_register::IngestRegister>,
     /// Immutable policy copied only from the validated ingestion policy.
     pub(super) policy: ServingPolicy,
     /// One durable local owner shared by both listeners.
@@ -128,6 +193,7 @@ pub struct V1Resources {
     policy: ServingPolicy,
     store: Arc<suppression::SuppressionStore>,
     compliance: Arc<compliance_adapter::Resources>,
+    ingest: Arc<ingest_register::IngestRegister>,
 }
 
 fn validated_policy(config: &ApiConfig) -> anyhow::Result<ServingPolicy> {
@@ -151,10 +217,12 @@ impl V1Resources {
         )?);
         let compliance =
             compliance_adapter::Resources::for_store(config, &store, Default::default())?;
+        let ingest = ingest_register::for_store(config, &store, None)?;
         Ok(Self {
             policy,
             store,
             compliance,
+            ingest,
         })
     }
 
@@ -166,10 +234,12 @@ impl V1Resources {
     ) -> anyhow::Result<Self> {
         let compliance =
             compliance_adapter::Resources::for_store(config, &store, Default::default())?;
+        let ingest = ingest_register::for_store(config, &store, None)?;
         Ok(Self {
             policy: validated_policy(config)?,
             store,
             compliance,
+            ingest,
         })
     }
     /// Opens the real owners with explicit clock/entropy/stage seams for deterministic contracts.
@@ -182,10 +252,34 @@ impl V1Resources {
             &config.v1.suppression_store_path,
         )?);
         let compliance = compliance_adapter::Resources::for_store(config, &store, seams)?;
+        let ingest = ingest_register::for_store(config, &store, None)?;
         Ok(Self {
             policy,
             store,
             compliance,
+            ingest,
+        })
+    }
+
+    /// Opens production owners with explicit compliance and ingest clock/I/O observations.
+    /// This blocking startup constructor preserves every production validator and owner lock.
+    pub fn with_ingest_seams(
+        config: &ApiConfig,
+        compliance_seams: compliance_adapter::ComplianceSeams,
+        ingest_seams: ingest_register::IngestSeams,
+    ) -> anyhow::Result<Self> {
+        let policy = validated_policy(config)?;
+        let store = Arc::new(suppression::SuppressionStore::open(
+            &config.v1.suppression_store_path,
+        )?);
+        let compliance =
+            compliance_adapter::Resources::for_store(config, &store, compliance_seams)?;
+        let ingest = ingest_register::for_store(config, &store, Some(ingest_seams))?;
+        Ok(Self {
+            policy,
+            store,
+            compliance,
+            ingest,
         })
     }
 }
@@ -205,6 +299,10 @@ impl V1State {
     ) -> Self {
         Self {
             backend,
+            ingest_backend: Arc::new(|_: AuditedIngestPage| async {
+                Err(IngestBackendFailure::Unavailable)
+            }),
+            ingest_register: resources.ingest.clone(),
             publication: resources.compliance.publication.clone(),
             policy: resources.policy.clone(),
             store: resources.store.clone(),
@@ -220,6 +318,7 @@ impl V1State {
     /// Attaches bounded instrumentation without changing validation or backend implementation.
     pub fn with_observer(mut self, observer: Arc<dyn Observer>) -> Self {
         self.compliance_observer.replace(observer.clone());
+        self.ingest_register.observe_with(observer.clone());
         self.observer = observer;
         self
     }
@@ -231,10 +330,22 @@ impl V1State {
     pub fn compliance(&self) -> Arc<crate::compliance::tickets::ComplianceStore> {
         self.compliance.clone()
     }
+
+    /// Attaches a live-index adapter without changing resource initialization or admission.
+    pub fn with_ingest_backend(mut self, backend: Arc<dyn IngestBackend>) -> Self {
+        self.ingest_backend = backend;
+        self
+    }
+
+    /// Returns the shared ingest owner for controlled inspection, maintenance and shutdown.
+    pub fn ingest_register(&self) -> Arc<ingest_register::IngestRegister> {
+        self.ingest_register.clone()
+    }
 }
 
 #[derive(Clone)]
 struct ListenerLimits {
+    observer: Option<Arc<dyn Observer>>,
     semaphore: Arc<Semaphore>,
     timeout: Duration,
 }
@@ -263,8 +374,14 @@ pub fn management_router(state: Arc<V1State>) -> Router {
         .route("/reports", get(reports::index))
         .route("/documents/:id", axum::routing::delete(documents::route))
         .route("/source", get(source::route))
+        .merge(ingest::routes(state.clone()))
         .with_state(state.clone());
-    finish_v1_router(routes, &state.config)
+    finish_with_ingest_cap(
+        routes,
+        &state.config,
+        state.config.ingest_max_body_bytes,
+        Some(state.clone()),
+    )
 }
 
 /// Mounts only the finished management subtree on its separate HTTP listener.
@@ -291,18 +408,34 @@ fn mount(outer: Router, finished: Router) -> Router {
 /// # Panics
 /// Panics if the configuration has invalid limits, an empty store path or a non-loopback address.
 pub fn finish_v1_router(routes: Router, config: &V1ApiConfig) -> Router {
+    finish_with_ingest_cap(routes, config, bounds::MAX_BODY_BYTES, None)
+}
+
+/// Finishes the listener envelope with management ingest authentication before admission.
+fn finish_with_ingest_cap(
+    routes: Router,
+    config: &V1ApiConfig,
+    ingest_cap: usize,
+    ingest_state: Option<Arc<V1State>>,
+) -> Router {
     let validated_limit = config
         .validate(&[])
         .expect("validated v1 listener configuration");
     let limits = ListenerLimits {
+        observer: ingest_state.as_ref().map(|state| state.observer.clone()),
         semaphore: Arc::new(Semaphore::new(validated_limit)),
         timeout: Duration::from_millis(config.request_timeout_ms),
     };
     // `.layer` wraps outermost-last; read this chain bottom-up for request order.
-    routes
+    let routes = routes
         .fallback(|| async { V1Error::failure(V1Failure::NotFound) })
-        .layer(middleware::from_fn(body_cap))
-        .layer(middleware::from_fn_with_state(limits.clone(), admit))
+        .layer(middleware::from_fn_with_state(ingest_cap, body_cap))
+        .layer(middleware::from_fn_with_state(limits.clone(), admit));
+    let routes = match ingest_state {
+        Some(state) => routes.layer(middleware::from_fn_with_state(state, ingest::precheck)),
+        None => routes,
+    };
+    routes
         .layer(middleware::from_fn_with_state(limits, deadline))
         .layer(middleware::from_fn(catch_panic))
         .layer(middleware::from_fn(envelope))
@@ -349,6 +482,9 @@ async fn admit(State(limits): State<ListenerLimits>, mut request: Request, next:
     let Ok(permit) = limits.semaphore.try_acquire_owned() else {
         return V1Error::failure(V1Failure::Overloaded).into_response();
     };
+    if let Some(observer) = &limits.observer {
+        observer.admission_acquired();
+    }
     let lease = Arc::new(permit);
     request
         .extensions_mut()
@@ -358,13 +494,13 @@ async fn admit(State(limits): State<ListenerLimits>, mut request: Request, next:
     drop(lease);
     response
 }
-async fn body_cap(request: Request, next: Next) -> Response {
-    match bounded_request(request).await {
+async fn body_cap(State(ingest_cap): State<usize>, request: Request, next: Next) -> Response {
+    match bounded_request(request, ingest_cap).await {
         Ok(request) => next.run(request).await,
         Err(error) => error.into_response(),
     }
 }
-async fn bounded_request(request: Request) -> Result<Request, V1Error> {
+async fn bounded_request(request: Request, ingest_cap: usize) -> Result<Request, V1Error> {
     if request
         .headers()
         .get_all("content-encoding")
@@ -374,19 +510,25 @@ async fn bounded_request(request: Request) -> Result<Request, V1Error> {
     {
         return Err(V1Error::failure(V1Failure::UnsupportedMediaType));
     }
+    let limit =
+        if request.method() == Method::PUT && request.uri().path().starts_with("/documents/") {
+            ingest_cap
+        } else {
+            bounds::MAX_BODY_BYTES
+        };
     if request
         .headers()
         .get("content-length")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
-        .is_some_and(|size| size > bounds::MAX_BODY_BYTES as u64)
+        .is_some_and(|size| size > limit as u64)
     {
         return Err(InputError::RequestTooLarge.into());
     }
     let (mut parts, body) = request.into_parts();
     // The cap is the only client-violable bound here. A broken stream cannot be decoded;
     // report it as too large without exposing transport details.
-    let bytes = to_bytes(body, bounds::MAX_BODY_BYTES)
+    let bytes = to_bytes(body, limit)
         .await
         .map_err(|_| InputError::RequestTooLarge)?;
     if parts.uri.query().is_some() {

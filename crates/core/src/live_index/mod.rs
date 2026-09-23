@@ -24,9 +24,11 @@ mod index_manager;
 
 pub use self::crawler::Crawler;
 
-const TTL: Duration = Duration::from_secs(60 * 60 * 24 * 60); // 60 days
+/// Segment retention age: a live-index segment is pruned once its creation time is older than this.
+pub(crate) const TTL: Duration = Duration::from_secs(60 * 60 * 24 * 60); // 60 days
 const PRUNE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60); // 6 hours
 const COMPACT_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hours
-const AUTO_COMMIT_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
+/// How often the live index commits its write-ahead log into searchable segments.
+pub(crate) const AUTO_COMMIT_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 const EVENT_LOOP_INTERVAL: Duration = Duration::from_secs(5);
 const BATCH_SIZE: usize = 512;

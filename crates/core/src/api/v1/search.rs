@@ -168,6 +168,7 @@ pub async fn route(State(state): State<Arc<V1State>>, request: ValidatedSearchRe
     let now = state.compliance.rules().serving_now();
     let mut hosts = crate::compliance::listed::HostCache::default();
     let mut results = Vec::with_capacity(result.webpages.len());
+    let mut seen = std::collections::BTreeSet::<super::suppression::DocumentId>::new();
     for page in result.webpages {
         // This hash is the suppression key; the DTO independently enforces its own identity.
         let (canonical_url, id) = match canonical_identity(&page.url) {
@@ -191,6 +192,9 @@ pub async fn route(State(state): State<Arc<V1State>>, request: ValidatedSearchRe
             now,
             &mut hosts,
         ) {
+            continue;
+        }
+        if !seen.insert(id.clone()) {
             continue;
         }
         state.observer.attribution_construct(&id);

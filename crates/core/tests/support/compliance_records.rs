@@ -1927,6 +1927,7 @@ fn documented_operations() -> std::collections::BTreeSet<(&'static str, &'static
         ("/v1/source", "get", "api-and-management"),
         ("/v1/statement", "get", "api"),
         ("/v1/documents/{id}", "delete", "management"),
+        ("/v1/documents/{id}", "put", "management"),
         ("/v1/reports", "get", "api-and-management"),
         ("/v1/reports/status/{ticket_id}", "get", "api"),
         ("/v1/reports/illegal-content", "post", "api"),
@@ -2029,7 +2030,7 @@ fn statement_openapi() {
         }
     }
     assert_eq!(observed, documented_operations());
-    assert_eq!(observed.len(), 25);
+    assert_eq!(observed.len(), 26);
     assert_eq!(doc["paths"].as_object().unwrap().len(), 25);
     let schema = &doc["components"]["schemas"];
     assert!(schema.is_object());
@@ -2066,13 +2067,13 @@ fn statement_codes(schema: &Value) {
         "invalid_document_id not_found no_bang_target method_not_allowed unsupported_media_type ",
         "internal_error invalid_result overloaded suppression_unavailable request_timeout ",
         "unauthorised invalid_transition retention_not_due compliance_unavailable ",
-        "compliance_capacity rules_unavailable"
+        "compliance_capacity rules_unavailable not_admitted ingest_unavailable ingest_capacity"
     )
     .split_whitespace()
     .collect::<std::collections::BTreeSet<_>>();
     assert!(schema["V1ErrorCode"]["enum"].is_array());
     let codes = schema["V1ErrorCode"]["enum"].as_array().unwrap();
-    assert_eq!(codes.len(), 44);
+    assert_eq!(codes.len(), 47);
     let actual = codes
         .iter()
         .map(|code| code.as_str().unwrap())
