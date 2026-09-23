@@ -45,6 +45,7 @@ pub mod host_state;
 pub mod identity;
 pub mod ledger;
 pub mod local_sink;
+pub mod measure;
 pub mod network;
 /// Deterministic crawler policy publication capability.
 pub mod policy;
