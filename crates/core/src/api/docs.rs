@@ -173,7 +173,8 @@ impl OpenApi for ApiDoc {
         super::v1::moderation::uphold,
         super::v1::moderation::progress,
         super::v1::moderation::close,
-        super::v1::moderation::purge
+        super::v1::moderation::purge,
+        super::v1::ingest::route
     ),
     components(schemas(
         super::v1::dto::V1SearchRequest,
@@ -187,7 +188,11 @@ impl OpenApi for ApiDoc {
         super::v1::dto::V1DeleteResponse,
         super::v1::error::V1ErrorResponse,
         super::v1::error::V1ErrorDetail,
-        super::v1::error::V1ErrorCode
+        super::v1::error::V1ErrorCode,
+        super::v1::ingest_dto::V1IngestRequest,
+        super::v1::ingest_dto::V1IngestResponse,
+        super::v1::ingest_dto::V1IngestDocument,
+        super::v1::ingest_dto::V1AdmissionReason
     ))
 )]
 struct V1ApiDoc;
@@ -196,11 +201,11 @@ struct V1ApiDoc;
 pub(super) fn v1_openapi() -> utoipa::openapi::OpenApi {
     let mut value =
         serde_json::to_value(V1ApiDoc::openapi()).expect("static OpenAPI serialization");
-    value["info"]["description"] = serde_json::json!("Versioned text retrieval with required URL/domain/title attribution. HTTP(S) URLs use url 2.5.4 serialization, remove fragments, preserve query order and trailing slashes, and receive lowercase SHA-256 identifiers. Bodies are limited to 65536 bytes on every method and fallback, without trusting Content-Length; content encoding must be identity. No query component is accepted. Source, reports index, status, statement and DELETE accept only empty bodies. Each listener admits at most 32 requests without queuing (configurable 1..32); the whole-request timeout is 60000 ms (configurable 1..60000). HEAD is rejected with 405 and an empty wire body, retaining all three contract headers; OPTIONS is a JSON 405. Malformed pre-router HTTP and broken connections cannot be enveloped. Country defaults to unknown; UK and unknown receive stored UK measures, non-UK uses stored same-as-uk. Missing/null adult_verified means child; true is only a caller assertion. Final assembly applies legacy global suppressions, reversible global and whole-name query rules, deadline-activated intimate-image rules, and listed URL/host hashes in every context. A name rule requires all normalized tokens of any one evidenced name; it does not match partial names or combine different names. Query tokenization precedes retrieval; live serving guards remain held through serialization. No classifier or age-assurance claim. Search pages are 0..99, sizes 1..100 (default 20); query limits are 4096 UTF-8 bytes, 32 atoms, 1024 scalars per atom, 32 phrase words, 8 operators and 8 repetitions. Bangs are unsupported. has_more_results is the upstream pre-suppression hint; pages can be short or empty without refill. Every operation lists the uniform twelve statuses; 401 and 409 are returned only by /v1/compliance operations.");
+    value["info"]["description"] = serde_json::json!("Versioned text retrieval with required URL/domain/title attribution. HTTP(S) URLs use url 2.5.4 serialization, remove fragments, preserve query order and trailing slashes, and receive lowercase SHA-256 identifiers. Bodies are limited to 65536 bytes on every method and fallback except management PUT /v1/documents/{id}, whose complete JSON cap defaults to 2097152 bytes (configurable 65536..8388608), without trusting Content-Length; content encoding must be identity. No query component is accepted. Source, reports index, status, statement and DELETE accept only empty bodies. Each listener admits at most 32 requests without queuing (configurable 1..32); the whole-request timeout is 60000 ms (configurable 1..60000). HEAD is rejected with 405 and an empty wire body, retaining all three contract headers; OPTIONS is a JSON 405. Malformed pre-router HTTP and broken connections cannot be enveloped. Country defaults to unknown; UK and unknown receive stored UK measures, non-UK uses stored same-as-uk. Missing/null adult_verified means child; true is only a caller assertion. Final assembly applies legacy global suppressions, reversible global and whole-name query rules, deadline-activated intimate-image rules, and listed URL/host hashes in every context. A name rule requires all normalized tokens of any one evidenced name; it does not match partial names or combine different names. Query tokenization precedes retrieval; live serving guards remain held through serialization. No classifier or age-assurance claim. Search pages are 0..99, sizes 1..100 (default 20); query limits are 4096 UTF-8 bytes, 32 atoms, 1024 scalars per atom, 32 phrase words, 8 operators and 8 repetitions. Bangs are unsupported. has_more_results is the upstream pre-suppression hint; pages can be short or empty without refill. Every operation lists the uniform twelve statuses; 401 and 409 are returned only by /v1/compliance operations. PUT /v1/documents/{id} also returns 401; it is the only authenticated operation outside /v1/compliance.");
     let paths = value["paths"].as_object_mut().expect("static paths");
     for (path, item) in paths {
         for (method, operation) in item.as_object_mut().expect("static path item") {
-            if ["get", "post", "delete"].contains(&method.as_str()) {
+            if ["get", "post", "delete", "put"].contains(&method.as_str()) {
                 operation["x-listener"] = serde_json::json!(match path.as_str() {
                     "/v1/source" | "/v1/reports" => "api-and-management",
                     "/v1/documents/{id}" => "management",
@@ -209,6 +214,8 @@ pub(super) fn v1_openapi() -> utoipa::openapi::OpenApi {
                 });
                 if path == "/v1/documents/{id}" && method == "delete" {
                     v1_management_docs(operation);
+                } else if path == "/v1/documents/{id}" && method == "put" {
+                    v1_ingest_docs(operation);
                 } else if path.starts_with("/v1/compliance/") {
                     v1_admin_docs(operation);
                 }
@@ -231,8 +238,10 @@ pub(super) fn v1_openapi() -> utoipa::openapi::OpenApi {
         serde_json::json!(["AGPL-3.0-only"]);
     value["components"]["schemas"]["V1SearchRequest"]["properties"]["country"] =
         serde_json::json!({"type":"string","enum":["UK","non-UK","unknown"],"default":"unknown"});
-    value["paths"]["/v1/documents/{id}"]["delete"]["parameters"][0]["schema"] =
-        serde_json::json!({"$ref":"#/components/schemas/V1DocumentId"});
+    for method in ["delete", "put"] {
+        value["paths"]["/v1/documents/{id}"][method]["parameters"][0]["schema"] =
+            serde_json::json!({"$ref":"#/components/schemas/V1DocumentId"});
+    }
     serde_json::from_value(value).expect("valid static OpenAPI augmentation")
 }
 
@@ -255,6 +264,17 @@ fn v1_admin_docs(operation: &mut serde_json::Value) {
     operation["servers"] = serde_json::json!([{"url":"{management_base}","description":"Separate trusted loopback management HTTP listener","variables":{"management_base":{"default":"http://127.0.0.1:3012"}}}]);
 }
 
+/// Describes authenticated ingest receipts, transport bounds and eventual index visibility.
+fn v1_ingest_docs(operation: &mut serde_json::Value) {
+    operation["description"] = serde_json::json!("Authenticated management listener only. Exactly one configured Bearer credential is required before raw id parsing or JSON decoding. The complete JSON wire body is capped at 2097152 bytes by default, configurable from 65536 through 8388608 bytes; the public listener retains its 65536-byte cap. The six required fields describe fetched HTML and caller-claimed provenance, not caller-supplied attribution. URL identity must be unchanged by HTML normalization. Indexer admission, physical X-Robots-Tag parsing and current listed/global rules apply even on replay. Unsupported snippet and scheduled-removal restrictions refuse admission. A 200 acknowledges live-index WAL receipt and durable API metadata, not immediate searchability or power-loss-proof live-index storage. Visibility awaits the ten-minute autocommit interval, scheduling/indexing and search-client refresh (60 seconds); no strict visibility SLA is promised. SHA-256 of decoded HTML bytes alone decides content equality. An acknowledged replay returns the same version and accepted_at without writes or RPC. A recorded version re-dispatches once per later admitted PUT, including after restart, and returns 200 only after its durable acknowledgement marker. A failed send may already have appended to one node's WAL. Replacement advances the current metadata version but cannot delete older physical index documents; v1 keeps the first allowed candidate per identifier on each result page, which may contain older content. DELETE remains permanent serving suppression and does not prevent ordinary PUT acknowledgements. Metadata contains no raw HTML, title, snippet or header strings. It expires after the live index's 60-day TTL from received_at, with maintenance at its 600-second commit interval; replay never renews it. Writer/I/O delay, downtime and early replica loss prevent a hard physical lifetime guarantee. Segment compaction can keep an indexed page about a day beyond metadata expiry. Numeric document.version is independent of the enclosing version=v1. No listing, existence flag, undelete or automatic re-ingest is offered.");
+    operation["security"] = serde_json::json!([{"V1ComplianceBearer":[]}]);
+    operation["servers"] = serde_json::json!([{
+        "url":"{management_base}",
+        "description":"Separate trusted loopback management HTTP listener",
+        "variables":{"management_base":{"default":"http://127.0.0.1:3012"}}
+    }]);
+}
+
 fn v1_responses(operation: &mut serde_json::Value) {
     let headers = serde_json::json!({
         "Source-Offer":{"description":"Exactly one embedded Corresponding Source URL","schema":{"type":"string"}},
@@ -268,7 +288,7 @@ fn v1_responses(operation: &mut serde_json::Value) {
         "400", "401", "404", "405", "409", "413", "415", "500", "503", "504", "default",
     ] {
         let description = match status {
-            "400" => "InputError except request_too_large, or invalid_document_id; fixed safe message",
+            "400" => "InputError except request_too_large, invalid_document_id, or not_admitted with one closed reason; fixed safe message",
             "401" => "unauthorised; fixed response before administration extraction or lookup",
             "404" => "not_found or no_bang_target; fixed safe message",
             "405" => "method_not_allowed; HEAD has an empty wire body",
@@ -276,7 +296,7 @@ fn v1_responses(operation: &mut serde_json::Value) {
             "413" => "request_too_large; fixed safe message",
             "415" => "unsupported_media_type; fixed safe message",
             "500" => "internal_error or invalid_result; no internal cause or request text",
-            "503" => "Typed QueryServiceError, overloaded, suppression_unavailable, compliance_unavailable, compliance_capacity or rules_unavailable; fixed safe message",
+            "503" => "Typed QueryServiceError, overloaded, suppression_unavailable, compliance_unavailable, compliance_capacity, rules_unavailable, ingest_unavailable or ingest_capacity; fixed safe message",
             "504" => "request_timeout; a started durable transaction continues while retaining admission",
             _ => "Closed V1ErrorResponse for unexpected failures; no request text or internal cause",
         };
@@ -292,7 +312,9 @@ fn v1_error_schema(document: &mut serde_json::Value) {
         "invalid_request", "request_too_large", "empty_query", "query_too_long", "too_many_terms", "term_too_long", "phrase_too_long", "empty_phrase", "invalid_quotes", "invalid_operator", "invalid_query_syntax", "too_many_operators", "no_searchable_terms", "forbidden_character", "excessive_repetition", "invalid_result_count", "invalid_page", "plan_too_complex", "preferences_too_large",
         "no_shards", "too_many_shards", "budget_exhausted", "protocol_unavailable", "invalid_plan", "schema_mismatch", "shard_failed", "retrieval_failed", "worker_failed",
         "invalid_document_id", "not_found", "no_bang_target", "method_not_allowed", "unsupported_media_type", "internal_error", "invalid_result", "overloaded", "suppression_unavailable", "request_timeout",
-        "unauthorised", "invalid_transition", "retention_not_due", "compliance_unavailable", "compliance_capacity", "rules_unavailable"
+        "unauthorised", "invalid_transition", "retention_not_due", "compliance_unavailable",
+        "compliance_capacity", "rules_unavailable",
+        "not_admitted", "ingest_unavailable", "ingest_capacity"
     ]});
 }
 
@@ -479,6 +501,191 @@ mod tests {
         }
     }
 
+    fn ingest_error_schema(schemas: &serde_json::Value) {
+        use serde_json::json;
+        let detail = &schemas["V1ErrorDetail"];
+        assert_eq!(
+            detail["properties"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["code", "message", "reason"]
+        );
+        assert_eq!(detail["required"], json!(["code", "message"]));
+        assert_eq!(
+            detail["properties"]["reason"]["$ref"],
+            "#/components/schemas/V1AdmissionReason"
+        );
+    }
+
+    #[test]
+    fn ingest_openapi_preserves_the_document_path() {
+        use serde_json::json;
+        let doc = serde_json::to_value(super::super::v1::openapi()).unwrap();
+        let aggregate = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let paths = doc["paths"].as_object().unwrap();
+        assert_eq!(paths.len(), 25);
+        let mut operations = 0;
+        let mut protected = 0;
+        for item in paths.values() {
+            for (method, operation) in item.as_object().unwrap() {
+                if !["get", "post", "put", "delete"].contains(&method.as_str()) {
+                    continue;
+                }
+                operations += 1;
+                protected += usize::from(operation.get("security").is_some());
+                assert_eq!(
+                    operation["responses"]
+                        .as_object()
+                        .unwrap()
+                        .keys()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                    [
+                        "200", "400", "401", "404", "405", "409", "413", "415", "500", "503",
+                        "504", "default"
+                    ]
+                );
+                for response in operation["responses"].as_object().unwrap().values() {
+                    assert_eq!(
+                        response["headers"]
+                            .as_object()
+                            .unwrap()
+                            .keys()
+                            .map(String::as_str)
+                            .collect::<Vec<_>>(),
+                        ["Reports-And-Requests", "Source-Offer", "X-Api-Version"]
+                    );
+                }
+            }
+        }
+        assert_eq!(operations, 26);
+        assert_eq!(protected, 12);
+        let put = &doc["paths"]["/v1/documents/{id}"]["put"];
+        let delete = &doc["paths"]["/v1/documents/{id}"]["delete"];
+        for method in ["put", "delete"] {
+            assert!(aggregate["paths"]["/v1/documents/{id}"][method].is_object());
+            let operation = &doc["paths"]["/v1/documents/{id}"][method];
+            assert_eq!(operation["x-listener"], "management");
+            assert_eq!(
+                operation["parameters"][0]["schema"]["$ref"],
+                "#/components/schemas/V1DocumentId"
+            );
+            assert_eq!(
+                operation["servers"][0]["variables"]["management_base"]["default"],
+                "http://127.0.0.1:3012"
+            );
+        }
+        assert_eq!(put["security"], json!([{"V1ComplianceBearer":[]}]));
+        assert!(delete.get("security").is_none());
+        assert!(delete["description"]
+            .as_str()
+            .unwrap()
+            .contains("DELETE accepts no body"));
+        assert!(put["description"]
+            .as_str()
+            .unwrap()
+            .contains("not immediate searchability"));
+        assert_ne!(put["description"], delete["description"]);
+        let schemas = &doc["components"]["schemas"];
+        ingest_error_schema(schemas);
+        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 47);
+        assert_eq!(
+            schemas["V1AdmissionReason"]["enum"],
+            json!([
+                "invalid_url",
+                "noindex",
+                "empty_title",
+                "header_directive",
+                "excluded"
+            ])
+        );
+        ingest_schema_fields(schemas);
+        ingest_schema_references(&doc, schemas);
+        assert!(
+            serde_json::to_value(BetaApiDoc::openapi()).unwrap()["paths"]
+                .get("/v1/documents/{id}")
+                .is_none()
+        );
+    }
+
+    fn ingest_schema_fields(schemas: &serde_json::Value) {
+        use serde_json::json;
+        for (name, fields) in [
+            (
+                "V1IngestRequest",
+                vec![
+                    "url",
+                    "body",
+                    "fetch_time_ms",
+                    "retrieved_at",
+                    "source",
+                    "x_robots_tag",
+                ],
+            ),
+            ("V1IngestResponse", vec!["version", "document"]),
+            (
+                "V1IngestDocument",
+                vec![
+                    "id",
+                    "version",
+                    "canonical_url",
+                    "domain",
+                    "title",
+                    "accepted_at",
+                ],
+            ),
+        ] {
+            assert_eq!(
+                schemas[name]["properties"].as_object().unwrap().len(),
+                fields.len()
+            );
+            assert_eq!(schemas[name]["required"], json!(fields));
+            assert_eq!(schemas[name]["additionalProperties"], false);
+        }
+        let fields = &schemas["V1IngestRequest"]["properties"];
+        for field in ["url", "body"] {
+            assert!(fields[field].get("maxLength").is_none());
+            assert!(fields[field]["description"]
+                .as_str()
+                .unwrap()
+                .contains("UTF-8 bytes"));
+        }
+        assert_eq!(fields["fetch_time_ms"]["minimum"], 0);
+        assert_eq!(fields["fetch_time_ms"]["maximum"], 86_400_000);
+        assert_eq!(fields["retrieved_at"]["maximum"], 253_402_300_799_i64);
+        assert_eq!(fields["source"]["pattern"], "^[a-z0-9][a-z0-9_.-]{0,63}$");
+        assert_eq!(fields["source"]["maxLength"], 64);
+        assert_eq!(fields["x_robots_tag"]["maxItems"], 32);
+        assert_eq!(
+            schemas["V1IngestDocument"]["properties"]["version"]["minimum"],
+            1
+        );
+    }
+
+    fn ingest_schema_references(value: &serde_json::Value, schemas: &serde_json::Value) {
+        match value {
+            serde_json::Value::Object(object) => {
+                if let Some(reference) = object.get("$ref").and_then(|value| value.as_str()) {
+                    let name = reference.strip_prefix("#/components/schemas/").unwrap();
+                    assert!(name.starts_with("V1"), "non-V1 reference");
+                    assert!(schemas.get(name).is_some(), "dangling reference {name}");
+                }
+                for child in object.values() {
+                    ingest_schema_references(child, schemas);
+                }
+            }
+            serde_json::Value::Array(array) => {
+                for child in array {
+                    ingest_schema_references(child, schemas);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn v1_schema_details(doc: &serde_json::Value) {
         use serde_json::json;
         let schemas = &doc["components"]["schemas"];
@@ -509,7 +716,6 @@ mod tests {
             ),
             ("V1DeleteResponse", vec!["version", "id", "suppressed"]),
             ("V1ErrorResponse", vec!["version", "error"]),
-            ("V1ErrorDetail", vec!["code", "message"]),
         ] {
             assert_eq!(
                 schemas[schema]["properties"].as_object().unwrap().len(),
@@ -545,7 +751,8 @@ mod tests {
         );
         assert_eq!(schemas["V1DocumentId"]["maxLength"], 64);
         assert_eq!(schemas["V1NonEmptyText"]["pattern"], "\\S");
-        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 44);
+        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 47);
+        ingest_error_schema(schemas);
         assert!(schemas
             .as_object()
             .unwrap()

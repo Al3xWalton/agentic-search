@@ -163,7 +163,6 @@ pub async fn router(
         Some(path) => Some(LambdaMART::open(path)?),
         None => None,
     };
-
     let dual_encoder_model = match &config.dual_encoder_model_path {
         Some(path) => Some(DualEncoder::open(path)?),
         None => None,
@@ -258,8 +257,35 @@ pub async fn router(
             similar_hosts,
         })
     };
+    let ingest_backend = ingest_backend(&state).await;
+    let router = attach_v1(config, state, policy_router, v1_resources, ingest_backend);
+    Ok(router)
+}
 
-    Ok(attach_v1(config, state, policy_router, v1_resources))
+async fn ingest_backend(state: &State) -> Arc<dyn v1::IngestBackend> {
+    let client = Arc::new(Mutex::new(
+        crate::distributed::sonic::replication::ReusableShardedClient::<
+            crate::entrypoint::live_index::LiveIndexService,
+        >::new(state._cluster.clone())
+        .await,
+    ));
+    Arc::new(move |page: v1::AuditedIngestPage| {
+        let client = client.clone();
+        async move {
+            let conn = client.lock().await.conn().await;
+            acknowledge_ingest_rpc(
+                conn.send(
+                    crate::entrypoint::live_index::IndexWebpages {
+                        pages: vec![page.into_indexable_webpage()],
+                        consistency_fraction: Some(0.5),
+                    },
+                    &crate::distributed::sonic::replication::RandomShardSelector,
+                    &crate::distributed::sonic::replication::RandomReplicaSelector,
+                )
+                .await,
+            )
+        }
+    })
 }
 
 fn attach_v1(
@@ -267,17 +293,50 @@ fn attach_v1(
     state: Arc<State>,
     policy_router: Router,
     v1_resources: &v1::V1Resources,
+    ingest_backend: Arc<dyn v1::IngestBackend>,
 ) -> (Router, Arc<v1::V1State>) {
     let backend_searcher = state.searcher.clone();
     let backend = Arc::new(move |query: crate::searcher::SearchQuery| {
         let searcher = backend_searcher.clone();
         async move { searcher.search(&query).await }
     });
-    let v1_state = Arc::new(v1::V1State::from_resources(config, backend, v1_resources));
+    let v1_state = Arc::new(
+        v1::V1State::from_resources(config, backend, v1_resources)
+            .with_ingest_backend(ingest_backend),
+    );
     (
         v1::compose_api(build_router(state).merge(policy_router), v1_state.clone()),
         v1_state,
     )
+}
+
+type IngestReplicaReceipt = (
+    SocketAddr,
+    Result<(), crate::entrypoint::live_index::search_server::IndexingError>,
+);
+type IngestShardReceipt =
+    crate::distributed::sonic::Result<(crate::inverted_index::ShardId, Vec<IngestReplicaReceipt>)>;
+type IngestRpcReceipt = crate::distributed::sonic::Result<Vec<IngestShardReceipt>>;
+
+/// Accepts a receipt only when the selected shard and replica acknowledge the application write.
+fn acknowledge_ingest_rpc(
+    response: IngestRpcReceipt,
+) -> Result<v1::IngestAcknowledgement, v1::IngestBackendFailure> {
+    let unavailable = v1::IngestBackendFailure::Unavailable;
+    let shards = response.map_err(|_| unavailable)?;
+    let (_, replicas) = shards
+        .first()
+        .ok_or(unavailable)?
+        .as_ref()
+        .map_err(|_| unavailable)?;
+    if shards.len() != 1 || replicas.len() != 1 {
+        return Err(unavailable);
+    }
+    // Replication refusal can follow a local WAL append; it is still not an acknowledgement.
+    if replicas[0].1.is_err() {
+        return Err(unavailable);
+    }
+    Ok(v1::IngestAcknowledgement::Acknowledged)
 }
 
 /// Enables CORS for development where the API and frontend are on
@@ -521,6 +580,73 @@ mod source_offer_tests {
         assert_eq!(entrypoint.matches("v1::compose_management(").count(), 1);
         assert!(!entrypoint.contains("v1::management_router("));
         assert!(!entrypoint.contains("v1::finish_v1_router("));
+    }
+
+    #[test]
+    fn ingest_production_wiring_and_acknowledgements() {
+        let source = include_str!("mod.rs");
+        let router = function_body(source, "async fn ingest_backend(");
+        assert!(function_body(source, "pub async fn router(")
+            .contains("let ingest_backend = ingest_backend(&state).await;"));
+        assert!(router.contains("ReusableShardedClient::<"));
+        assert!(router.contains("new(state._cluster.clone())"));
+        assert!(router.contains("let conn = client.lock().await.conn().await;"));
+        assert!(router.contains("consistency_fraction: Some(0.5)"));
+        assert!(router.contains("RandomShardSelector"));
+        assert!(router.contains("RandomReplicaSelector"));
+        assert_eq!(router.matches("conn.send(").count(), 1);
+        assert!(!router.contains(".commit("));
+        assert!(
+            function_body(source, "fn attach_v1(").contains(".with_ingest_backend(ingest_backend)")
+        );
+        let entrypoint = include_str!("../entrypoint/api.rs");
+        assert_eq!(entrypoint.matches("v1::compose_management(").count(), 1);
+        assert!(entrypoint.contains("v1_state.ingest_register()"));
+        assert!(entrypoint.contains("ingest_register.start_maintenance().await"));
+        assert!(entrypoint.contains("ingest_register.shutdown().await"));
+        assert_eq!(
+            acknowledge_ingest_rpc(ingest_rpc_fixture(1, 1)),
+            Ok(v1::IngestAcknowledgement::Acknowledged)
+        );
+        for (shards, replicas) in [(2, 1), (1, 2), (0, 1), (1, 0)] {
+            assert_eq!(
+                acknowledge_ingest_rpc(ingest_rpc_fixture(shards, replicas)),
+                Err(v1::IngestBackendFailure::Unavailable),
+                "selected cardinality {shards}/{replicas}"
+            );
+        }
+        let mut application = ingest_rpc_fixture(1, 1).unwrap();
+        application[0].as_mut().unwrap().1[0].1 = Err(
+            crate::entrypoint::live_index::search_server::IndexingError::InsufficientReplication,
+        );
+        assert_eq!(
+            acknowledge_ingest_rpc(Ok(application)),
+            Err(v1::IngestBackendFailure::Unavailable),
+            "application refusal is not a receipt"
+        );
+        let transport = crate::distributed::sonic::Error::ConnectionTimeout;
+        assert_eq!(
+            acknowledge_ingest_rpc(Err(transport)),
+            Err(v1::IngestBackendFailure::Unavailable)
+        );
+        let shard = crate::distributed::sonic::Error::RequestTimeout;
+        assert_eq!(
+            acknowledge_ingest_rpc(Ok(vec![Err(shard)])),
+            Err(v1::IngestBackendFailure::Unavailable)
+        );
+    }
+
+    fn ingest_rpc_fixture(shards: usize, replicas: usize) -> IngestRpcReceipt {
+        Ok((0..shards)
+            .map(|_| {
+                Ok((
+                    crate::inverted_index::ShardId::Backbone(0),
+                    (0..replicas)
+                        .map(|_| (SocketAddr::from(([127, 0, 0, 1], 1)), Ok(())))
+                        .collect(),
+                ))
+            })
+            .collect())
     }
 
     #[tokio::test]

@@ -4,6 +4,9 @@
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::PathBuf};
 
+/// Default complete JSON wire-body limit for authenticated management ingest, in bytes.
+pub const MAX_INGEST_BODY_BYTES: usize = 2_097_152;
+
 /// Configuration for each v1 HTTP listener and its shared suppression store.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -16,6 +19,8 @@ pub struct V1ApiConfig {
     pub request_timeout_ms: u64,
     /// Nonqueued requests per listener; must be Some(1..=32).
     pub max_concurrent_requests: Option<usize>,
+    /// Complete ingest JSON body bytes; accepted range is 65,536..=8,388,608.
+    pub ingest_max_body_bytes: usize,
 }
 
 impl Default for V1ApiConfig {
@@ -25,6 +30,7 @@ impl Default for V1ApiConfig {
             suppression_store_path: "data/v1/suppression.json".into(),
             request_timeout_ms: 60_000,
             max_concurrent_requests: Some(32),
+            ingest_max_body_bytes: MAX_INGEST_BODY_BYTES,
         }
     }
 }
@@ -41,6 +47,10 @@ impl V1ApiConfig {
         anyhow::ensure!(
             (1..=60_000).contains(&self.request_timeout_ms),
             "v1 timeout must be 1..=60000 ms"
+        );
+        anyhow::ensure!(
+            (65_536..=8_388_608).contains(&self.ingest_max_body_bytes),
+            "v1 ingest body limit must be 65536..=8388608 bytes"
         );
         anyhow::ensure!(
             self.management_http_host.ip().is_loopback(),
@@ -74,6 +84,36 @@ fn sockets_conflict(left: SocketAddr, right: SocketAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ingest_configuration_has_exact_limits() {
+        assert_eq!(MAX_INGEST_BODY_BYTES, 2_097_152);
+        let sample = include_str!("../../../../configs/api.toml");
+        for source in [sample.split("[v1]").next().unwrap(), sample] {
+            let config: crate::config::ApiConfig = toml::from_str(source).unwrap();
+            assert_eq!(config.v1.ingest_max_body_bytes, 2_097_152);
+            assert_eq!(config.v1.max_concurrent_requests, Some(32));
+            assert_eq!(config.v1.request_timeout_ms, 60_000);
+            assert!(config.v1.validate(&[]).is_ok());
+        }
+        for (bytes, valid) in [
+            (0, false),
+            (65_535, false),
+            (65_536, true),
+            (2_097_152, true),
+            (8_388_608, true),
+            (8_388_609, false),
+        ] {
+            let config = V1ApiConfig {
+                ingest_max_body_bytes: bytes,
+                ..Default::default()
+            };
+            assert_eq!(config.validate(&[]).is_ok(), valid, "body bytes {bytes}");
+        }
+        assert!(toml::from_str::<V1ApiConfig>("ingest_unknown = 1").is_err());
+        assert_eq!(crate::live_index::TTL.as_secs(), 5_184_000);
+        assert_eq!(crate::live_index::AUTO_COMMIT_INTERVAL.as_secs(), 600);
+    }
 
     #[test]
     fn defaults_and_configuration_preserve_finite_v1_limits() {

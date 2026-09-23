@@ -182,6 +182,7 @@ pub async fn run(config: config::ApiConfig) -> Result<()> {
     let (app, v1_state) = router(&config, counters, cluster.clone(), &resources).await?;
     let v1_store = v1_state.store();
     let compliance_store = v1_state.compliance();
+    let ingest_register = v1_state.ingest_register();
     let management_app = crate::api::v1::compose_management(v1_state);
     let management_listener = TcpListener::bind(config.v1.management_http_host).await?;
     let management_http = axum::serve(management_listener, management_app.into_make_service())
@@ -214,9 +215,11 @@ pub async fn run(config: config::ApiConfig) -> Result<()> {
     })
     .map_err(|e| e.into());
 
+    ingest_register.start_maintenance().await;
     let result = tokio::try_join!(server, metrics_server, management, management_http);
     v1_store.shutdown().await;
     compliance_store.shutdown().await;
+    ingest_register.shutdown().await;
     result?;
 
     Ok(())

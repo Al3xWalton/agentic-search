@@ -1,7 +1,7 @@
 //! Maps closed input, service and HTTP failures to fixed text, without exposing internal causes.
 //! A private response marker lets the outer normalizer preserve only owned JSON responders.
 
-use super::dto::V1Version;
+use super::{dto::V1Version, ingest_dto::V1AdmissionReason};
 use crate::{query::planner::bounds::InputError, searcher::wire::QueryServiceError};
 use axum::{
     http::StatusCode,
@@ -56,6 +56,12 @@ pub enum V1Failure {
     ComplianceCapacity,
     /// The independent serving-rule state cannot safely serve search.
     RulesUnavailable,
+    /// Current indexer, publisher or serving policy refuses this document.
+    NotAdmitted,
+    /// Delivery or its metadata register cannot safely acknowledge the document.
+    IngestUnavailable,
+    /// A healthy metadata register cannot reserve the complete transaction.
+    IngestCapacity,
 }
 
 /// Safe error details with a closed code and its fixed message.
@@ -63,6 +69,9 @@ pub enum V1Failure {
 pub struct V1ErrorDetail {
     code: V1ErrorCode,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = V1AdmissionReason, nullable = false)]
+    reason: Option<V1AdmissionReason>,
 }
 
 /// Universal v1 JSON error envelope.
@@ -78,6 +87,7 @@ pub struct V1Error {
     status: StatusCode,
     code: V1ErrorCode,
     message: String,
+    reason: Option<V1AdmissionReason>,
 }
 
 #[derive(Clone)]
@@ -95,6 +105,7 @@ impl V1Error {
             status,
             code: V1ErrorCode::Input(error),
             message: error.to_string(),
+            reason: None,
         }
     }
 
@@ -104,6 +115,7 @@ impl V1Error {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: V1ErrorCode::Service(error),
             message: error.to_string(),
+            reason: None,
         }
     }
 
@@ -127,12 +139,23 @@ impl V1Error {
             ComplianceUnavailable => (503, "The compliance service is unavailable"),
             ComplianceCapacity => (503, "The compliance store is full"),
             RulesUnavailable => (503, "The serving rules are unavailable"),
+            NotAdmitted => (400, "The document was not admitted"),
+            IngestUnavailable => (503, "The ingest service is unavailable"),
+            IngestCapacity => (503, "The ingest register is full"),
         };
         Self {
             status: StatusCode::from_u16(status).expect("fixed valid status"),
             code: V1ErrorCode::Failure(failure),
             message: message.into(),
+            reason: (failure == NotAdmitted).then_some(V1AdmissionReason::Excluded),
         }
+    }
+
+    /// Explains an admission refusal with exactly one closed reason and a fixed message.
+    pub fn not_admitted(reason: V1AdmissionReason) -> Self {
+        let mut error = Self::failure(V1Failure::NotAdmitted);
+        error.reason = Some(reason);
+        error
     }
 
     /// Sanitizes unknown causes while preserving the known query-service and input types.
@@ -178,6 +201,7 @@ impl IntoResponse for V1Error {
             error: V1ErrorDetail {
                 code: self.code,
                 message: self.message,
+                reason: self.reason,
             },
         };
         let mut response = axum::Json(body).into_response();

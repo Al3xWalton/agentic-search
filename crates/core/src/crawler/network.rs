@@ -704,7 +704,10 @@ impl std::fmt::Debug for ResponseHeaders {
     }
 }
 impl ResponseHeaders {
-    pub(super) fn observe(&mut self, name: &str, value: Option<&str>) {
+    /// Appends a physical occurrence under the ASCII-lowercased header name.
+    /// Only printable ASCII bytes (`b' '..=b'~'`) are retained. Other bytes or None mark
+    /// the name invalid: `get` then returns None and `invalid` returns true for that name.
+    pub(crate) fn observe(&mut self, name: &str, value: Option<&str>) {
         let entry = self.0.entry(name.to_ascii_lowercase()).or_default();
         if let Some(value) = value.filter(|value| value.bytes().all(|b| (b' '..=b'~').contains(&b)))
         {

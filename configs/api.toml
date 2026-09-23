@@ -26,6 +26,8 @@ thesaurus_paths = ["data/english-wordnet-2022-subset.ttl"]
 
 # Independent v1 HTTP budgets; management is a distinct loopback HTTP listener.
 [v1]
+# Complete JSON wire-body cap for authenticated management ingest; other operations keep 64 KiB.
+ingest_max_body_bytes = 2097152
 management_http_host = "127.0.0.1:3012"
 suppression_store_path = "data/v1/suppression.json"
 request_timeout_ms = 60000
@@ -33,7 +35,7 @@ max_concurrent_requests = 32
 
 # Private reporting journal and independent serving rules. Local mode is not public-operation approval.
 # Omitted store_dir derives a compliance sibling from v1.suppression_store_path.
-# No admin_token_file means every compliance management operation is unauthorised.
+# No admin_token_file means compliance management and document ingest are unauthorised.
 # A configured listed_hashes_file must be a private, validated hash-only file; updates require restart.
 [compliance]
 deployment_mode = "local"
