@@ -237,6 +237,19 @@ enum Crawler {
         #[arg(long)]
         out: std::path::PathBuf,
     },
+    /// Measure isolated indexer runs on explicit retained WARC files.
+    MeasureIndex {
+        #[arg(long, required = true, num_args = 1..)]
+        warcs: Vec<std::path::PathBuf>,
+        #[arg(long, required = true, value_delimiter = ',')]
+        batch_sizes: Vec<usize>,
+        #[arg(long, required = true)]
+        runs: usize,
+        #[arg(long, required = true)]
+        out: std::path::PathBuf,
+        #[arg(long, default_value_t = stract::crawler::measure::DEFAULT_CHILD_TIMEOUT_SECONDS)]
+        child_timeout_seconds: u64,
+    },
     /// Delete expired raw objects from an initialized managed local store.
     Retention {
         #[arg(long)]
@@ -465,6 +478,24 @@ fn main() -> Result<()> {
                 out,
             } => entrypoint::crawler::reconcile(&seeds, &spike_log, ledger.as_deref(), &out)?,
             Crawler::InspectWarc { warc, out } => entrypoint::crawler::inspect_warc(&warc, &out)?,
+            Crawler::MeasureIndex {
+                warcs,
+                batch_sizes,
+                runs,
+                out,
+                child_timeout_seconds,
+            } => {
+                if let Err(error) = entrypoint::crawler::measure_index(
+                    &warcs,
+                    &batch_sizes,
+                    runs,
+                    &out,
+                    child_timeout_seconds,
+                ) {
+                    eprintln!("Error: {error}");
+                    std::process::exit(1);
+                }
+            }
             Crawler::Retention {
                 store,
                 config,

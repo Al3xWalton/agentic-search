@@ -56,6 +56,24 @@ pub fn inspect_warc(warc: &std::path::Path, out: &std::path::Path) -> Result<()>
     );
     Ok(())
 }
+/// Measures retained inputs and prints the completed report's summary before its aggregate outcome.
+///
+/// Returns fixed measurement errors; diagnostics must use Display without a chain.
+pub fn measure_index(
+    warcs: &[std::path::PathBuf],
+    batch_sizes: &[usize],
+    runs: usize,
+    out: &std::path::Path,
+    child_timeout_seconds: u64,
+) -> Result<()> {
+    let summary = crawler::measure::run(warcs, batch_sizes, runs, out, child_timeout_seconds)?;
+    println!(
+        "runs={} failed={} repeatable={}",
+        summary.runs, summary.failed, summary.repeatable
+    );
+    summary.outcome()?;
+    Ok(())
+}
 /// Executes only the raw retention job under the existing managed store's exclusive lock.
 pub fn retention(store: &std::path::Path, config: &std::path::Path, dry_run: bool) -> Result<()> {
     crawler::sample::retention(store, config, dry_run)?;
