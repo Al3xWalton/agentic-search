@@ -1516,6 +1516,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "egress"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "ipnet",
+ "ring",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6638,10 +6650,15 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
+ "chrono",
  "clap",
+ "egress",
  "hex",
+ "libc",
  "proc-macro2",
  "quote",
+ "ring",
  "serde_json",
  "sha2",
  "syn 2.0.90",

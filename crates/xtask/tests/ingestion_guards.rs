@@ -308,7 +308,35 @@ fn strict_clippy_paths() {
 #[test]
 fn ingestion_ci_wiring() {
     let source = include_str!("../src/ci.rs");
-    ingestion::ensure_ingestion_ci_wiring(source).unwrap();
+    assert!(
+        ingestion::ensure_ingestion_ci_wiring(source).is_ok(),
+        "actual CI must run egress immediately after ingestion guards"
+    );
+    let egress = concat!(
+        "cargo(\n        &root,\n",
+        "        &[\"test\", \"--locked\", \"-p\", \"xtask\", \"--test\", \"egress\"],\n",
+        "    )?;"
+    );
+    assert_eq!(
+        source.matches(egress).count(),
+        1,
+        "egress CI statement seam"
+    );
+    let removed = source.replace(egress, "");
+    for invalid in [
+        removed.clone(),
+        source.replace("\"egress\"", "\"renamed\""),
+        source.replace(egress, &format!("{egress}\n{egress}")),
+        removed.replace("source_offer()?;", &format!("source_offer()?;\n{egress}")),
+        source.replace(egress, &format!("{egress}\nprintln!(\"separated\");")),
+    ] {
+        let failure = ingestion::ensure_ingestion_ci_wiring(&invalid);
+        assert!(
+            failure.is_err(),
+            "egress CI sequence must remain consecutive and unique"
+        );
+        assert!(format!("{:#}", failure.unwrap_err()).contains("ingestion-ci-wiring"));
+    }
     for call in [
         "crate::ingestion::crawler_user_agent(&root)?;",
         "crate::ingestion::crawler_dependency_deny(&root)?;",

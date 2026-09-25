@@ -199,6 +199,10 @@ pub fn ci_all() -> Result<()> {
             "ingestion_guards",
         ],
     )?;
+    cargo(
+        &root,
+        &["test", "--locked", "-p", "xtask", "--test", "egress"],
+    )?;
     source_offer()?;
     check()?;
     cargo(&root, &["build", "--locked", "--release"])?;

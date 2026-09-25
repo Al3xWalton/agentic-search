@@ -1,0 +1,10 @@
+{
+  "ptr": {
+    "192.0.2.10": ["crawler-v4.egress.example.net"],
+    "2001:db8::10": ["crawler-v6.egress.example.net"]
+  },
+  "addresses": {
+    "crawler-v4.egress.example.net": ["192.0.2.10"],
+    "crawler-v6.egress.example.net": ["2001:db8::10"]
+  }
+}

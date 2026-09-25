@@ -1188,6 +1188,7 @@ pub fn ensure_ingestion_ci_wiring(source: &str) -> Result<()> {
             "crate :: ingestion :: crawler_policy_check (& root . join (\"CRAWLER_POLICY.md\")) ?",
         )?,
         find("\"ingestion_guards\"")?,
+        find("\"egress\"")?,
         find("source_offer () ?")?,
         find("check () ?")?,
     ];
