@@ -15,6 +15,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Task {
+    EgressSign {
+        #[arg(long)]
+        payload: PathBuf,
+        #[arg(long)]
+        key: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    EgressVerify {
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long)]
+        trusted_keys: PathBuf,
+        #[arg(long)]
+        observed: PathBuf,
+        #[arg(long)]
+        dns_fixture: Option<PathBuf>,
+    },
     CrawlerUserAgent {
         #[arg(long)]
         root: Option<PathBuf>,
@@ -87,6 +105,13 @@ enum Task {
 fn execute(task: Task) -> Result<()> {
     let default_root = xtask::repository_root();
     match task {
+        Task::EgressSign { payload, key, out } => xtask::egress::egress_sign(&payload, &key, &out),
+        Task::EgressVerify {
+            file,
+            trusted_keys,
+            observed,
+            dns_fixture,
+        } => xtask::egress::egress_verify(&file, &trusted_keys, &observed, dns_fixture.as_deref()),
         Task::CrawlerUserAgent { root } => {
             xtask::ingestion::crawler_user_agent(root.as_deref().unwrap_or(&default_root))
         }

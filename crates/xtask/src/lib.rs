@@ -6,6 +6,8 @@
 pub mod artifacts;
 /// Serial CI commands and runner initialization.
 pub mod ci;
+/// Local signed egress publication and independent fixture-aware verification.
+pub mod egress;
 /// Pure file guards used by CI and disposable fixtures.
 pub mod guards;
 /// Closed crawler transport boundary, policy and strict lint guards.

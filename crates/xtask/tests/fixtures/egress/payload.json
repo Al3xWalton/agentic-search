@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-09-24T11:00:00Z",
+  "valid_until_utc": "2026-09-25T11:00:00Z",
+  "controlled_domain": "egress.example.net",
+  "ranges": ["192.0.2.0/24", "2001:db8::/32"],
+  "egress_ips": ["192.0.2.10", "2001:db8::10"],
+  "policy_version": "test-v1"
+}
