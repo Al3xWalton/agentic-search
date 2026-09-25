@@ -52,6 +52,7 @@ dashmap.workspace = true
 deadpool.workspace = true
 dirs.workspace = true
 encoding_rs.workspace = true
+egress = { path = "../egress" }
 enum_dispatch.workspace = true
 fend-core.workspace = true
 file_store = { path = "../file-store" }

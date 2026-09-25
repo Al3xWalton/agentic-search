@@ -10,6 +10,10 @@ management_host = "0.0.0.0:3011"
 prometheus_host = "0.0.0.0:3001"
 top_phrases_for_autosuggest = 1_000
 
+# Optional publication paths must be configured together; files are verified once at startup.
+# egress_file_path = "data/egress/envelope.json"
+# egress_trusted_keys_path = "data/egress/trusted-keys.json"
+
 [spell_check]
 path = "data/web_spell/checker"
 

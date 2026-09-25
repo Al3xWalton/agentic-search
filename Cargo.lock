@@ -5113,6 +5113,7 @@ dependencies = [
  "dashmap",
  "deadpool",
  "dirs 5.0.1",
+ "egress",
  "encoding_rs",
  "enum_dispatch",
  "fend-core",

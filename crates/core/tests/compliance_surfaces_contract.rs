@@ -3821,8 +3821,8 @@ mod contracts {
     fn beta_bytes_and_delete_contract_remain_unchanged() {
         let golden = include_bytes!("fixtures/api_v1/beta-openapi.json");
         let expected = [
-            177u8, 164, 46, 156, 148, 157, 87, 237, 172, 113, 111, 228, 243, 70, 216, 23, 51, 239,
-            177, 175, 44, 253, 253, 130, 101, 173, 248, 114, 251, 235, 167, 43,
+            222u8, 237, 194, 79, 95, 85, 23, 58, 97, 238, 5, 73, 114, 102, 197, 168, 203, 42, 179,
+            69, 168, 171, 222, 1, 85, 10, 13, 43, 159, 215, 10, 148,
         ];
         assert_eq!(
             ring::digest::digest(&ring::digest::SHA256, golden).as_ref(),

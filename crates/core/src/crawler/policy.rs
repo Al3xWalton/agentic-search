@@ -111,6 +111,29 @@ fn pending<'a>(value: &'a Option<String>, placeholder: &'a str) -> &'a str {
     value.as_deref().unwrap_or(placeholder)
 }
 
+fn egress_policy(url: &Option<String>) -> String {
+    let egress_url = pending(url, "[FOUNDER REQUIRED: stable signed egress URL]");
+    format!(
+        "Signed egress publication and DNS verification remain pending deployment.\n\
+{egress_url}.\n\
+The API route is `/.well-known/ava-search-egress.json`. It returns 503 pending until both\n\
+the signed file and its independent trusted-key set are configured. Configured files are\n\
+verified once at startup and served unchanged; this is not continuous DNS verification.\n\n\
+Operators must generate an Ed25519 PKCS8 signing key at deployment and keep its generation\n\
+and custody outside the repository and CI. Register the derived key ID and public key in\n\
+the independent trusted-key set. Supply the real complete egress-IP inventory and canonical\n\
+ranges, and provision forward-confirmed PTR records under a domain the operator controls.\n\
+The signed controlled_domain is the deployer's attestation; DNS alone proves no ownership.\n\n\
+Run nightly re-verification with independently observed outbound IPs:\n\
+`cargo xtask egress-verify --file <json> --trusted-keys <json> --observed <json>`.\n\
+Verification checks the trusted Ed25519 signature over exact payload bytes, validity window,\n\
+inventory and observed subset, then each PTR and its forward A/AAAA confirmation. Refresh\n\
+the signed file before expiry; one day is the engineering lifetime default, not a legal rule.\n\
+The nightly job, real IPs, PTR ownership, deployed URL and key custody are deployment work.\n\
+Do not treat an unsigned, missing or expired inventory as verified."
+    )
+}
+
 /// Returns deterministic UTF-8 Markdown with exactly one nonempty section P01 through P12.
 /// Durations are seconds, milliseconds or days as labelled; configured bounds were validated.
 pub fn render(policy: &ValidatedPolicy) -> String {
@@ -126,7 +149,7 @@ pub fn render(policy: &ValidatedPolicy) -> String {
         ("P05 Data categories", "Public page text and metadata; exact operational URLs including queries; access, robots, directives and rights signals; bounded diagnostics and per-target outcomes. Credentials and fragments are removed from recorded URLs. [FOUNDER REQUIRED: confirm exact data categories]".into()),
         ("P06 Retention", format!("Maximum raw bodies: {} days from the original parse, without renewal on 304. Snippets: at most {} characters and any stricter publisher limit; news or paywalled content gets zero absent explicit permission. Query logs: at most {} days, IPv4 /{}, IPv6 /{}, rotating salt required: {}. Serving enforcement is owned by #588. User-facing cached copy: {}. Ledger and document metadata have no TTL in this slice; these diagnostic URLs remain operational records. Raw objects are removed on expiry, no-store, rights reservation or deletion signals; deletion failures fail the run.", c.retention.raw_body_max_age_days, c.retention.snippet_max_chars, c.retention.query_log_max_age_days, c.retention.query_ip_v4_prefix, c.retention.query_ip_v6_prefix, c.retention.query_rotating_salt_required, c.retention.cached_copy)),
         ("P07 Robots, directives and opting out", format!("AVASearchBot checks robots before requests and revalidates queued snapshots. Maximum usable robots: {} seconds (hard cap {MAX_ROBOTS_CACHE_SECS} seconds); unreachable robots deny access and retry no earlier than {ROBOTS_FAILURE_RETRY_SECS} seconds. 4xx robots permit parsing semantics while 401/403/429 still block the host. Gap: {} ms; concurrency: {} per host; hard ceiling: {HARD_MIN_HOST_GAP_MS} ms and {HARD_MAX_HOST_CONCURRENCY} connections. Publisher Crawl-delay raises the gap; above {MAX_ACCEPTED_CRAWL_DELAY_SECS} seconds the target is skipped. Access refusals and challenges block for at least {} seconds (floor {MIN_BLOCK_SECS} seconds). Retry-After and bounded backoff can extend deadlines. All applicable X-Robots-Tag and robots/AVASearchBot meta directives merge restrictively: noindex, nofollow, noarchive, nosnippet, noimageindex, max-snippet and unavailable_after. Invalid dates and exceeded directive limits are ineligible. Rights/TDM reservations and licence signals are stored; restricted bodies are not retained. Exclusions version: {}. Never-crawl matches are applied before DNS and robots; request a rule using the contact or pending private removal route. Conditional requests, redirects, feeds and sitemaps share identity, address checks, host limits and outcome accounting.", c.robots.cache_secs, c.politeness.gap_ms, c.politeness.max_concurrent_per_host, c.politeness.block_secs, c.exclusions.version)),
-        ("P08 Egress verification", format!("Signed egress publication and DNS verification are pending follow-up A and deployment. {}. Once deployed, verify the configured trusted-key signature, validity period and inventory; forward-confirm reverse DNS against an AVA-controlled domain. Do not treat an unsigned or missing inventory as verified.", pending(&p.egress_file_url, "[FOUNDER REQUIRED: stable signed egress URL]"))),
+        ("P08 Egress verification", egress_policy(&p.egress_file_url)),
         ("P09 Removal and delisting", format!("Request removal or delisting through {}. A public issue is not a private rights channel.", pending(&p.removal_url, "[FOUNDER REQUIRED: private removal/delisting route]"))),
         ("P10 Online Safety reports", format!("Online Safety reports: {}. No report route is asserted as operational by this source rendering.", pending(&p.osa_report_url, "[FOUNDER REQUIRED: OSA report route]"))),
         ("P11 Complaints to AVA and ICO", format!("You may complain to AVA using {}. Separately, you may complain to the ICO: {}.", pending(&p.complaints_url, "[FOUNDER REQUIRED: private controller complaints route]"), pending(&p.ico_url, "[FOUNDER REQUIRED: confirmed ICO complaints link]"))),

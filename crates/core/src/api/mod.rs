@@ -55,6 +55,7 @@ use axum::{
 mod autosuggest;
 mod crawler_policy;
 mod docs;
+mod egress;
 mod explore;
 mod hosts;
 pub mod improvement;
@@ -159,6 +160,11 @@ pub async fn router(
     v1_resources: &v1::V1Resources,
 ) -> Result<(Router, Arc<v1::V1State>)> {
     let policy_router = crawler_policy::router(config.crawler_policy_config_path.as_deref())?;
+    let egress_router = egress::router(
+        config.egress_file_path.as_deref(),
+        config.egress_trusted_keys_path.as_deref(),
+    )?;
+    let policy_router = merge_policy_egress(policy_router, egress_router);
     let lambda_model = match &config.lambda_model_path {
         Some(path) => Some(LambdaMART::open(path)?),
         None => None,
@@ -260,6 +266,11 @@ pub async fn router(
     let ingest_backend = ingest_backend(&state).await;
     let router = attach_v1(config, state, policy_router, v1_resources, ingest_backend);
     Ok(router)
+}
+
+/// Enables `oneshot` wiring tests without cluster startup; `wiring_source` guards its call site.
+fn merge_policy_egress(policy_router: Router, egress_router: Router) -> Router {
+    policy_router.merge(egress_router)
 }
 
 async fn ingest_backend(state: &State) -> Arc<dyn v1::IngestBackend> {

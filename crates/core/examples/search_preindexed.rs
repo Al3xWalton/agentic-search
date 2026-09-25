@@ -28,6 +28,8 @@ pub async fn main() {
         compliance: Default::default(),
         agent_query_planning: true,
         crawler_policy_config_path: None,
+        egress_file_path: None,
+        egress_trusted_keys_path: None,
         host: "0.0.0.0:8000".parse().unwrap(),
         prometheus_host: "0.0.0.0:8001".parse().unwrap(),
         management_host: "0.0.0.0:8003".parse().unwrap(),

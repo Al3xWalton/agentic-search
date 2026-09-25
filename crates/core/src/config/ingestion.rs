@@ -384,7 +384,8 @@ pub struct PolicyContent {
     pub ico_url: Option<String>,
     /// Approved Article 14 notice rationale, absent while pending.
     pub article14_measures: Option<String>,
-    /// Deployed signed egress file HTTPS location, absent until follow-up A.
+    /// Deployed signed egress file HTTPS location; absent until the deployment publishes it
+    /// (served at `/.well-known/ava-search-egress.json` once configured).
     pub egress_file_url: Option<String>,
 }
 
