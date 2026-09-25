@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Preserves the beta document and separately describes the bounded v1 agent contract.
+//! Extends the beta publication baseline and separately describes the bounded v1 agent contract.
 
-use super::{autosuggest, crawler_policy, explore, hosts, search, source_offer, webgraph};
+use super::{autosuggest, crawler_policy, egress, explore, hosts, search, source_offer, webgraph};
 use axum::Router;
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
@@ -26,6 +26,7 @@ use utoipa_swagger_ui::SwaggerUi;
         paths(
             source_offer::route,
             crawler_policy::route,
+            egress::route,
             search::search,
             search::widget,
             search::sidebar,
@@ -43,6 +44,7 @@ use utoipa_swagger_ui::SwaggerUi;
         components(
             schemas(
                 source_offer::SourceOffer,
+                egress::PendingBody,
                 crate::webpage::region::Region,
                 optics::HostRankings,
                 search::ApiSearchQuery,
@@ -344,6 +346,7 @@ fn mark_internal(path: &mut utoipa::openapi::path::PathItem) {
 
 impl Modify for ApiModifier {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        describe_egress_envelope(openapi);
         openapi.info.title = "Agentic Search API".to_string();
         openapi.info.description = Some(
             "Agentic Search is AVA's open-source web retrieval service for AI agents, derived from Stract. \
@@ -377,6 +380,50 @@ Remember to always give proper attributions to the sources you use from the sear
     }
 }
 
+fn describe_egress_envelope(openapi: &mut utoipa::openapi::OpenApi) {
+    use utoipa::openapi::{
+        schema::{AdditionalProperties, ObjectBuilder, Type},
+        RefOr,
+    };
+    let Some(operation) = openapi
+        .paths
+        .paths
+        .get_mut("/.well-known/ava-search-egress.json")
+        .and_then(|path| path.get.as_mut())
+    else {
+        return;
+    };
+    let Some(RefOr::T(response)) = operation.responses.responses.get_mut("200") else {
+        return;
+    };
+    let Some(content) = response.content.get_mut("application/json") else {
+        return;
+    };
+    let string = || ObjectBuilder::new().schema_type(Type::String);
+    let schema = ObjectBuilder::new()
+        .schema_type(Type::Object)
+        .additional_properties(Some(AdditionalProperties::FreeForm(false)))
+        .property(
+            "schema_version",
+            ObjectBuilder::new()
+                .schema_type(Type::Integer)
+                .enum_values(Some([::egress::SCHEMA_VERSION])),
+        )
+        .property(
+            "algorithm",
+            string().enum_values(Some([::egress::ALGORITHM])),
+        )
+        .property("key_id", string().pattern(Some("^[0-9a-f]{64}$")))
+        .property("payload_base64", string())
+        .property("signature_base64", string())
+        .required("schema_version")
+        .required("algorithm")
+        .required("key_id")
+        .required("payload_base64")
+        .required("signature_base64");
+    content.schema = Some(schema.into());
+}
+
 /// Serves the API schema and Swagger UI with existing paths intact.
 pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
     SwaggerUi::new("/beta/api/docs/swagger")
@@ -399,6 +446,7 @@ mod tests {
             http::Request,
         };
         use tower::ServiceExt;
+        // The deliberately extended beta baseline includes the load-verified egress publication.
         let golden = include_bytes!("../../tests/fixtures/api_v1/beta-openapi.json");
         assert_eq!(serde_json::to_vec(&BetaApiDoc::openapi()).unwrap(), golden);
         let docs: Router = router().into();

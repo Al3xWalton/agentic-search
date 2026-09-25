@@ -284,6 +284,12 @@ pub struct ApiConfig {
     pub agent_query_planning: bool,
     /// Optional validated crawler policy file; None uses the embedded template.
     pub crawler_policy_config_path: Option<std::path::PathBuf>,
+    /// Optional signed local egress file, verified once during API startup.
+    #[serde(default)]
+    pub egress_file_path: Option<std::path::PathBuf>,
+    /// Independent local trusted public-key set; must accompany the signed file path.
+    #[serde(default)]
+    pub egress_trusted_keys_path: Option<std::path::PathBuf>,
     pub host: SocketAddr,
     pub prometheus_host: SocketAddr,
     pub crossencoder_model_path: Option<String>,

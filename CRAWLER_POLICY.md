@@ -36,7 +36,25 @@ AVASearchBot checks robots before requests and revalidates queued snapshots. Max
 
 ## P08 Egress verification
 
-Signed egress publication and DNS verification are pending follow-up A and deployment. [FOUNDER REQUIRED: stable signed egress URL]. Once deployed, verify the configured trusted-key signature, validity period and inventory; forward-confirm reverse DNS against an AVA-controlled domain. Do not treat an unsigned or missing inventory as verified.
+Signed egress publication and DNS verification remain pending deployment.
+[FOUNDER REQUIRED: stable signed egress URL].
+The API route is `/.well-known/ava-search-egress.json`. It returns 503 pending until both
+the signed file and its independent trusted-key set are configured. Configured files are
+verified once at startup and served unchanged; this is not continuous DNS verification.
+
+Operators must generate an Ed25519 PKCS8 signing key at deployment and keep its generation
+and custody outside the repository and CI. Register the derived key ID and public key in
+the independent trusted-key set. Supply the real complete egress-IP inventory and canonical
+ranges, and provision forward-confirmed PTR records under a domain the operator controls.
+The signed controlled_domain is the deployer's attestation; DNS alone proves no ownership.
+
+Run nightly re-verification with independently observed outbound IPs:
+`cargo xtask egress-verify --file <json> --trusted-keys <json> --observed <json>`.
+Verification checks the trusted Ed25519 signature over exact payload bytes, validity window,
+inventory and observed subset, then each PTR and its forward A/AAAA confirmation. Refresh
+the signed file before expiry; one day is the engineering lifetime default, not a legal rule.
+The nightly job, real IPs, PTR ownership, deployed URL and key custody are deployment work.
+Do not treat an unsigned, missing or expired inventory as verified.
 
 ## P09 Removal and delisting
 
