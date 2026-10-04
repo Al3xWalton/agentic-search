@@ -821,7 +821,7 @@ mod contracts {
         let schemas = document["components"]["schemas"].as_object().unwrap();
         assert!(schemas.keys().all(|key| key.starts_with("V1")));
         references(&document, schemas);
-        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 47);
+        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 48);
         literal_operations(&document);
         literal_queue_schemas(schemas);
         for name in [
@@ -5664,8 +5664,15 @@ suppression_unavailable request_timeout"
             .iter()
             .map(|value| value.as_str().unwrap())
             .collect::<BTreeSet<_>>();
-        assert_eq!(codes.len(), 47);
-        assert_eq!(observed.len(), 47);
-        assert_eq!(observed, old.union(&new).copied().chain(ingest).collect());
+        assert_eq!(codes.len(), 48);
+        assert_eq!(observed.len(), 48);
+        assert_eq!(
+            observed,
+            old.union(&new)
+                .copied()
+                .chain(ingest)
+                .chain(["scholarly_unavailable"])
+                .collect()
+        );
     }
 }

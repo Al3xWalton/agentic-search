@@ -1104,6 +1104,12 @@ mod contracts {
         use V1Failure::*;
         for (failure, code, message, status) in [
             (
+                ScholarlyUnavailable,
+                "scholarly_unavailable",
+                "The scholarly provider is unavailable",
+                503,
+            ),
+            (
                 InvalidDocumentId,
                 "invalid_document_id",
                 "The document identifier is invalid",

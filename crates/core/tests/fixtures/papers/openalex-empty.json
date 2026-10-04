@@ -1,0 +1,12 @@
+{
+  "group_by": [],
+  "meta": {
+    "cost_usd": 0.001,
+    "count": 0,
+    "db_response_time_ms": 1,
+    "groups_count": null,
+    "page": 1,
+    "per_page": 20
+  },
+  "results": []
+}

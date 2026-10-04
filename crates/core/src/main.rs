@@ -341,16 +341,20 @@ fn load_toml_config<T: DeserializeOwned, P: AsRef<Path>>(path: P) -> T {
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_env_filter(
+    tracing_subscriber::registry()
+        .with(
             tracing_subscriber::EnvFilter::builder()
-                .with_default_directive("stract=info".parse().unwrap())
+                .with_default_directive("stract=info".parse()?)
                 .from_env_lossy(),
         )
-        .without_time()
-        .with_target(false)
-        .finish()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .without_time()
+                .with_target(false),
+        )
+        .with(tracing_subscriber::filter::filter_fn(
+            stract::api::v1::scholarly::transport_log_allowed,
+        ))
         .init();
 
     let args = Args::parse();
@@ -365,78 +369,11 @@ fn main() -> Result<()> {
         Commands::Eval { command } => {
             tokio::runtime::Runtime::new()?.block_on(command.run())?;
         }
-        Commands::Indexer { options } => match options {
-            IndexingOptions::Search { config_path } => {
-                let config = load_toml_config(config_path);
-                entrypoint::indexer::run(&config)?;
-            }
-            IndexingOptions::Entity {
-                wikipedia_dump_path,
-                output_path,
-            } => entrypoint::EntityIndexer::run(wikipedia_dump_path, output_path)?,
-            IndexingOptions::MergeSearch { paths } => {
-                let pointers = paths
-                    .into_iter()
-                    .map(entrypoint::indexer::IndexPointer::from)
-                    .collect::<Vec<_>>();
-                entrypoint::indexer::merge(pointers)?;
-            }
-            IndexingOptions::Canonical { config_path } => {
-                let config: config::CanonicalIndexConfig = load_toml_config(config_path);
-                entrypoint::canonical::create(config)?;
-            }
-        },
-        Commands::Centrality { mode } => match mode {
-            CentralityMode::Harmonic {
-                webgraph_path,
-                output_path,
-            } => {
-                entrypoint::Centrality::build_harmonic(&webgraph_path, &output_path);
-            }
-            CentralityMode::ApproxHarmonic {
-                webgraph_path,
-                output_path,
-            } => entrypoint::Centrality::build_approx_harmonic(webgraph_path, output_path)?,
-            CentralityMode::HarmonicNearestSeed { config_path } => {
-                let config: config::HarmonicNearestSeedConfig = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::Centrality::harmonic_nearest_seed(config))?;
-            }
-        },
-        Commands::Webgraph { options } => match options {
-            WebgraphOptions::Create { config_path } => {
-                let config = load_toml_config(config_path);
-                entrypoint::Webgraph::run(&config)?;
-            }
-            WebgraphOptions::Merge { mut paths } => {
-                let mut webgraph = WebgraphBuilder::new(paths.remove(0), 0u64.into()).open()?;
-
-                for other_path in paths {
-                    let other = WebgraphBuilder::new(&other_path, 0u64.into()).open()?;
-                    webgraph.merge(other)?;
-                }
-
-                webgraph.optimize_read()?;
-            }
-            WebgraphOptions::Server { config_path } => {
-                let config: config::WebgraphServerConfig = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(webgraph_server::run(config))?;
-            }
-        },
+        Commands::Indexer { options } => run_indexer(options)?,
+        Commands::Centrality { mode } => run_centrality(mode)?,
+        Commands::Webgraph { options } => run_webgraph(options)?,
         Commands::Api { config_path } => {
-            let config: config::ApiConfig = load_toml_config(config_path);
-
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()?
-                .block_on(api::run(config))?;
+            run_api(Path::new(&config_path))?;
         }
         Commands::SearchServer { config_path } => {
             let config: config::SearchServerConfig = load_toml_config(config_path);
@@ -461,106 +398,9 @@ fn main() -> Result<()> {
         } => {
             configure::run(skip_download)?;
         }
-        Commands::Crawler { options } => match options {
-            Crawler::PolicyRender { config, out } => {
-                entrypoint::crawler::policy_render(&config, &out)?;
-            }
-            Crawler::Sample { seeds, out, config } => {
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::crawler::sample(&seeds, &out, config.as_deref()))?;
-            }
-            Crawler::Reconcile {
-                seeds,
-                spike_log,
-                ledger,
-                out,
-            } => entrypoint::crawler::reconcile(&seeds, &spike_log, ledger.as_deref(), &out)?,
-            Crawler::InspectWarc { warc, out } => entrypoint::crawler::inspect_warc(&warc, &out)?,
-            Crawler::MeasureIndex {
-                warcs,
-                batch_sizes,
-                runs,
-                out,
-                child_timeout_seconds,
-            } => {
-                if let Err(error) = entrypoint::crawler::measure_index(
-                    &warcs,
-                    &batch_sizes,
-                    runs,
-                    &out,
-                    child_timeout_seconds,
-                ) {
-                    eprintln!("Error: {error}");
-                    std::process::exit(1);
-                }
-            }
-            Crawler::Retention {
-                store,
-                config,
-                dry_run,
-            } => entrypoint::crawler::retention(&store, &config, dry_run)?,
-            Crawler::Worker { config_path } => {
-                let config: config::CrawlerConfig = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::crawler::worker(config))?;
-            }
-            Crawler::Coordinator { config_path } => {
-                let config: config::CrawlCoordinatorConfig = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::crawler::coordinator(config))?;
-            }
-            Crawler::Router { config_path } => {
-                let config: config::CrawlRouterConfig = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::crawler::router(config))?;
-            }
-            Crawler::Plan { config_path } => {
-                let config: config::CrawlPlannerConfig = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::crawler::planner(config))?;
-            }
-        },
-        Commands::SafetyClassifier { options } => match options {
-            SafetyClassifierOptions::Train {
-                dataset_path,
-                output_path,
-            } => safety_classifier::train(dataset_path, output_path)?,
-            SafetyClassifierOptions::Predict { model_path, text } => {
-                safety_classifier::predict(model_path, &text)?;
-            }
-        },
-        Commands::LiveIndex { options } => match options {
-            LiveIndex::Serve { config_path } => {
-                let config = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::live_index::search_server::serve(config))?;
-            }
-            LiveIndex::Crawler { config_path } => {
-                let config = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::live_index::crawler::run(config))?;
-            }
-        },
+        Commands::Crawler { options } => run_crawler(options)?,
+        Commands::SafetyClassifier { options } => run_safetyclassifier(options)?,
+        Commands::LiveIndex { options } => run_liveindex(options)?,
         Commands::WebSpell { config_path } => {
             let config: config::WebSpellConfig = load_toml_config(config_path);
             entrypoint::web_spell::run(config)?;
@@ -569,42 +409,7 @@ fn main() -> Result<()> {
             let config: config::SiteStatsConfig = load_toml_config(config_path);
             entrypoint::site_stats::run(config)?;
         }
-        Commands::Ampc { options } => match options {
-            AmpcOptions::Dht { config_path } => {
-                let config: config::DhtConfig = load_toml_config(config_path);
-
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()?
-                    .block_on(entrypoint::ampc::dht::run(config))?;
-            }
-
-            AmpcOptions::HarmonicWorker { config_path } => {
-                let config: config::HarmonicWorkerConfig = load_toml_config(config_path);
-                entrypoint::ampc::harmonic_centrality::worker::run(config)?;
-            }
-
-            AmpcOptions::HarmonicCoordinator { config_path } => {
-                let config: config::HarmonicCoordinatorConfig = load_toml_config(config_path);
-                entrypoint::ampc::harmonic_centrality::coordinator::run(config)?;
-            }
-
-            AmpcOptions::ApproxHarmonicCoordinator { config_path } => {
-                let config: config::ApproxHarmonicCoordinatorConfig = load_toml_config(config_path);
-                entrypoint::ampc::approximated_harmonic_centrality::coordinator::run(config)?;
-            }
-
-            AmpcOptions::ShortestPathWorker { config_path } => {
-                let config: config::ShortestPathWorkerConfig = load_toml_config(config_path);
-                entrypoint::ampc::shortest_path::worker::run(config)?;
-            }
-
-            AmpcOptions::ShortestPathCoordinator { config_path } => {
-                let config: config::ShortestPathCoordinatorConfig = load_toml_config(config_path);
-                entrypoint::ampc::shortest_path::coordinator::run(config)?;
-            }
-        },
-
+        Commands::Ampc { options } => run_ampc(options)?,
         Commands::Admin { options } => match options {
             AdminOptions::Init { host } => {
                 entrypoint::admin::init(host)?;
@@ -635,5 +440,259 @@ fn main() -> Result<()> {
         },
     }
 
+    Ok(())
+}
+
+// API configuration can contain secrets or private paths, so only fixed diagnostics reach stderr.
+fn run_api(path: &Path) -> Result<()> {
+    let config = match config::papers::read_api_config(path) {
+        Ok(config) => config,
+        Err(_) => {
+            eprintln!("Error: API configuration is invalid");
+            std::process::exit(1);
+        }
+    };
+    let outcome = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(api::run(config));
+    if let Err(error) = &outcome {
+        if error
+            .downcast_ref::<stract::api::v1::scholarly::PaperProviderError>()
+            .is_some()
+        {
+            eprintln!("Error: Paper provider configuration is invalid");
+            std::process::exit(1);
+        }
+    }
+    outcome
+}
+
+// Keep existing command behavior separate from API error handling.
+fn run_indexer(options: IndexingOptions) -> Result<()> {
+    match options {
+        IndexingOptions::Search { config_path } => {
+            let config = load_toml_config(config_path);
+            entrypoint::indexer::run(&config)?;
+        }
+        IndexingOptions::Entity {
+            wikipedia_dump_path,
+            output_path,
+        } => entrypoint::EntityIndexer::run(wikipedia_dump_path, output_path)?,
+        IndexingOptions::MergeSearch { paths } => {
+            let pointers = paths
+                .into_iter()
+                .map(entrypoint::indexer::IndexPointer::from)
+                .collect::<Vec<_>>();
+            entrypoint::indexer::merge(pointers)?;
+        }
+        IndexingOptions::Canonical { config_path } => {
+            let config: config::CanonicalIndexConfig = load_toml_config(config_path);
+            entrypoint::canonical::create(config)?;
+        }
+    }
+    Ok(())
+}
+
+fn run_centrality(mode: CentralityMode) -> Result<()> {
+    match mode {
+        CentralityMode::Harmonic {
+            webgraph_path,
+            output_path,
+        } => {
+            entrypoint::Centrality::build_harmonic(&webgraph_path, &output_path);
+        }
+        CentralityMode::ApproxHarmonic {
+            webgraph_path,
+            output_path,
+        } => entrypoint::Centrality::build_approx_harmonic(webgraph_path, output_path)?,
+        CentralityMode::HarmonicNearestSeed { config_path } => {
+            let config: config::HarmonicNearestSeedConfig = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::Centrality::harmonic_nearest_seed(config))?;
+        }
+    }
+    Ok(())
+}
+
+fn run_webgraph(options: WebgraphOptions) -> Result<()> {
+    match options {
+        WebgraphOptions::Create { config_path } => {
+            let config = load_toml_config(config_path);
+            entrypoint::Webgraph::run(&config)?;
+        }
+        WebgraphOptions::Merge { mut paths } => {
+            let mut webgraph = WebgraphBuilder::new(paths.remove(0), 0u64.into()).open()?;
+
+            for other_path in paths {
+                let other = WebgraphBuilder::new(&other_path, 0u64.into()).open()?;
+                webgraph.merge(other)?;
+            }
+
+            webgraph.optimize_read()?;
+        }
+        WebgraphOptions::Server { config_path } => {
+            let config: config::WebgraphServerConfig = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(webgraph_server::run(config))?;
+        }
+    }
+    Ok(())
+}
+
+fn run_crawler(options: Crawler) -> Result<()> {
+    match options {
+        Crawler::PolicyRender { config, out } => {
+            entrypoint::crawler::policy_render(&config, &out)?;
+        }
+        Crawler::Sample { seeds, out, config } => {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::crawler::sample(&seeds, &out, config.as_deref()))?;
+        }
+        Crawler::Reconcile {
+            seeds,
+            spike_log,
+            ledger,
+            out,
+        } => entrypoint::crawler::reconcile(&seeds, &spike_log, ledger.as_deref(), &out)?,
+        Crawler::InspectWarc { warc, out } => entrypoint::crawler::inspect_warc(&warc, &out)?,
+        Crawler::MeasureIndex {
+            warcs,
+            batch_sizes,
+            runs,
+            out,
+            child_timeout_seconds,
+        } => {
+            if let Err(error) = entrypoint::crawler::measure_index(
+                &warcs,
+                &batch_sizes,
+                runs,
+                &out,
+                child_timeout_seconds,
+            ) {
+                eprintln!("Error: {error}");
+                std::process::exit(1);
+            }
+        }
+        Crawler::Retention {
+            store,
+            config,
+            dry_run,
+        } => entrypoint::crawler::retention(&store, &config, dry_run)?,
+        Crawler::Worker { config_path } => {
+            let config: config::CrawlerConfig = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::crawler::worker(config))?;
+        }
+        Crawler::Coordinator { config_path } => {
+            let config: config::CrawlCoordinatorConfig = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::crawler::coordinator(config))?;
+        }
+        Crawler::Router { config_path } => {
+            let config: config::CrawlRouterConfig = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::crawler::router(config))?;
+        }
+        Crawler::Plan { config_path } => {
+            let config: config::CrawlPlannerConfig = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::crawler::planner(config))?;
+        }
+    }
+    Ok(())
+}
+
+fn run_safetyclassifier(options: SafetyClassifierOptions) -> Result<()> {
+    match options {
+        SafetyClassifierOptions::Train {
+            dataset_path,
+            output_path,
+        } => safety_classifier::train(dataset_path, output_path)?,
+        SafetyClassifierOptions::Predict { model_path, text } => {
+            safety_classifier::predict(model_path, &text)?;
+        }
+    }
+    Ok(())
+}
+
+fn run_liveindex(options: LiveIndex) -> Result<()> {
+    match options {
+        LiveIndex::Serve { config_path } => {
+            let config = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::live_index::search_server::serve(config))?;
+        }
+        LiveIndex::Crawler { config_path } => {
+            let config = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::live_index::crawler::run(config))?;
+        }
+    }
+    Ok(())
+}
+
+fn run_ampc(options: AmpcOptions) -> Result<()> {
+    match options {
+        AmpcOptions::Dht { config_path } => {
+            let config: config::DhtConfig = load_toml_config(config_path);
+
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(entrypoint::ampc::dht::run(config))?;
+        }
+
+        AmpcOptions::HarmonicWorker { config_path } => {
+            let config: config::HarmonicWorkerConfig = load_toml_config(config_path);
+            entrypoint::ampc::harmonic_centrality::worker::run(config)?;
+        }
+
+        AmpcOptions::HarmonicCoordinator { config_path } => {
+            let config: config::HarmonicCoordinatorConfig = load_toml_config(config_path);
+            entrypoint::ampc::harmonic_centrality::coordinator::run(config)?;
+        }
+
+        AmpcOptions::ApproxHarmonicCoordinator { config_path } => {
+            let config: config::ApproxHarmonicCoordinatorConfig = load_toml_config(config_path);
+            entrypoint::ampc::approximated_harmonic_centrality::coordinator::run(config)?;
+        }
+
+        AmpcOptions::ShortestPathWorker { config_path } => {
+            let config: config::ShortestPathWorkerConfig = load_toml_config(config_path);
+            entrypoint::ampc::shortest_path::worker::run(config)?;
+        }
+
+        AmpcOptions::ShortestPathCoordinator { config_path } => {
+            let config: config::ShortestPathCoordinatorConfig = load_toml_config(config_path);
+            entrypoint::ampc::shortest_path::coordinator::run(config)?;
+        }
+    }
     Ok(())
 }

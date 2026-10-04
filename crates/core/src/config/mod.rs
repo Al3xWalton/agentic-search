@@ -19,6 +19,8 @@ pub mod compliance;
 pub mod defaults;
 /// Validated ingestion configuration shared by crawling, retention and policy rendering.
 pub mod ingestion;
+/// Trusted operator paper configuration, containing paths rather than credential bytes.
+pub mod papers;
 /// Finite request limits and loopback management settings for the v1 HTTP contract.
 pub mod v1;
 

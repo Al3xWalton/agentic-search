@@ -1,0 +1,45 @@
+{
+  "has_more_results": true,
+  "num_results": 2,
+  "page": 0,
+  "results": [
+    {
+      "domain": "openalex.org",
+      "id": "a5b984f08034b3176ea4cf01221ab8e4c371b0ab798bf12d2091d55c1c78d84f",
+      "scholarly": {
+        "authors": [
+          "Synthetic Élodie",
+          "Synthetic 李"
+        ],
+        "doi": "https://doi.org/10.5555/synthetic.0001",
+        "metadata_license": "CC0-1.0",
+        "oa_url": "https://repository.example/record/1",
+        "openalex_id": "https://openalex.org/W9999000001",
+        "publication_year": 2021,
+        "snapshot_date": null,
+        "venue": "Journal of Synthetic Fixtures"
+      },
+      "snippet": "",
+      "title": "Synthetic cedar – α study",
+      "url": "https://openalex.org/W9999000001"
+    },
+    {
+      "domain": "openalex.org",
+      "id": "4a2ed391c5bd3371dc10a34e796aa58a835e856d500baa4d3b0f05ffdeab83d0",
+      "scholarly": {
+        "authors": [],
+        "doi": null,
+        "metadata_license": "CC0-1.0",
+        "oa_url": null,
+        "openalex_id": "https://openalex.org/W9999000002",
+        "publication_year": 1901,
+        "snapshot_date": null,
+        "venue": null
+      },
+      "snippet": "",
+      "title": "Synthetic cedar second study",
+      "url": "https://openalex.org/W9999000002"
+    }
+  ],
+  "version": "v1"
+}

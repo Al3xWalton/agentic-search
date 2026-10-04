@@ -183,6 +183,7 @@ impl OpenApi for ApiDoc {
         super::v1::dto::V1SearchResponse,
         super::v1::dto::AttributedResult,
         super::v1::suppression::DocumentId,
+        super::v1::dto::ScholarlyAttribution,
         super::v1::dto::Country,
         super::v1::dto::V1Version,
         super::v1::dto::V1SourceResponse,
@@ -228,6 +229,7 @@ pub(super) fn v1_openapi() -> utoipa::openapi::OpenApi {
     value["servers"] = serde_json::json!([{"url":"{api_base}","description":"Search/source API listener. Management operations use a separately configured trusted loopback listener.","variables":{"api_base":{"default":"http://127.0.0.1:3000","description":"Configured API base URL; no production URL is implied"}}}]);
     value["components"]["securitySchemes"]["V1ComplianceBearer"] = serde_json::json!({"type":"http","scheme":"bearer","bearerFormat":"64 lowercase hexadecimal characters"});
     v1_error_schema(&mut value);
+    v1_paper_docs(&mut value);
     for name in ["InputError", "QueryServiceError", "V1Failure"] {
         value["components"]["schemas"]
             .as_object_mut()
@@ -298,7 +300,12 @@ fn v1_responses(operation: &mut serde_json::Value) {
             "413" => "request_too_large; fixed safe message",
             "415" => "unsupported_media_type; fixed safe message",
             "500" => "internal_error or invalid_result; no internal cause or request text",
-            "503" => "Typed QueryServiceError, overloaded, suppression_unavailable, compliance_unavailable, compliance_capacity, rules_unavailable, ingest_unavailable or ingest_capacity; fixed safe message",
+            "503" => concat!(
+                "Typed QueryServiceError, overloaded, suppression_unavailable, ",
+                "compliance_unavailable, compliance_capacity, rules_unavailable, ",
+                "ingest_unavailable, ingest_capacity or scholarly_unavailable; ",
+                "fixed safe message"
+            ),
             "504" => "request_timeout; a started durable transaction continues while retaining admission",
             _ => "Closed V1ErrorResponse for unexpected failures; no request text or internal cause",
         };
@@ -316,11 +323,41 @@ fn v1_error_schema(document: &mut serde_json::Value) {
         "invalid_document_id", "not_found", "no_bang_target", "method_not_allowed", "unsupported_media_type", "internal_error", "invalid_result", "overloaded", "suppression_unavailable", "request_timeout",
         "unauthorised", "invalid_transition", "retention_not_due", "compliance_unavailable",
         "compliance_capacity", "rules_unavailable",
-        "not_admitted", "ingest_unavailable", "ingest_capacity"
+        "not_admitted", "ingest_unavailable", "ingest_capacity",
+        "scholarly_unavailable"
     ]});
 }
 
 struct ApiModifier;
+
+// Derived schemas cannot express conditional limits or custom deserializers' closed objects.
+fn v1_paper_docs(document: &mut serde_json::Value) {
+    let schemas = &mut document["components"]["schemas"];
+    schemas["V1AttributedResult"]["additionalProperties"] = serde_json::json!(false);
+    schemas["V1ScholarlyAttribution"]["additionalProperties"] = serde_json::json!(false);
+    schemas["V1ScholarlyAttribution"]["required"] = serde_json::json!([
+        "openalex_id",
+        "doi",
+        "oa_url",
+        "authors",
+        "publication_year",
+        "venue",
+        "snapshot_date",
+        "metadata_license"
+    ]);
+    document["paths"]["/v1/search"]["post"]["description"] = serde_json::json!(concat!(
+        "Missing or false scholarly preserves web search. True selects the configured paper ",
+        "provider without fallback; absent configuration returns 503 scholarly_unavailable. ",
+        "Paper pages are zero-based 0..99 with 1..20 results (default 20). Original plain text ",
+        "is at most 4096 UTF-8 bytes and contains 1..64 Unicode alphanumeric runs. Web query ",
+        "syntax does not apply to papers. ",
+        "Scholarly bound violations return 400 invalid_request. ",
+        "OpenAlex additionally caps the encoded URL at 4094 ",
+        "bytes. Paper snippets are empty; metadata_license is CC0-1.0, which grants no rights ",
+        "to abstracts or linked content. Live OpenAlex snapshot_date is null. All known links ",
+        "are checked against current local serving rules; short or empty pages are not refilled."
+    ));
+}
 
 fn mark_internal(path: &mut utoipa::openapi::path::PathItem) {
     let internal_extensions = utoipa::openapi::extensions::ExtensionsBuilder::new()
@@ -506,6 +543,7 @@ mod tests {
             "V1SearchRequest",
             "V1SearchResponse",
             "V1AttributedResult",
+            "V1ScholarlyAttribution",
             "V1DocumentId",
             "V1Country",
             "V1Version",
@@ -527,7 +565,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .len(),
-            5
+            6
         );
         for field in ["id", "url", "domain", "title", "snippet"] {
             assert!(schemas["V1AttributedResult"]["required"]
@@ -639,7 +677,7 @@ mod tests {
         assert_ne!(put["description"], delete["description"]);
         let schemas = &doc["components"]["schemas"];
         ingest_error_schema(schemas);
-        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 47);
+        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 48);
         assert_eq!(
             schemas["V1AdmissionReason"]["enum"],
             json!([
@@ -799,7 +837,7 @@ mod tests {
         );
         assert_eq!(schemas["V1DocumentId"]["maxLength"], 64);
         assert_eq!(schemas["V1NonEmptyText"]["pattern"], "\\S");
-        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 47);
+        assert_eq!(schemas["V1ErrorCode"]["enum"].as_array().unwrap().len(), 48);
         ingest_error_schema(schemas);
         assert!(schemas
             .as_object()

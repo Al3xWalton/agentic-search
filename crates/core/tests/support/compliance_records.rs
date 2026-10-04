@@ -2067,13 +2067,14 @@ fn statement_codes(schema: &Value) {
         "invalid_document_id not_found no_bang_target method_not_allowed unsupported_media_type ",
         "internal_error invalid_result overloaded suppression_unavailable request_timeout ",
         "unauthorised invalid_transition retention_not_due compliance_unavailable ",
-        "compliance_capacity rules_unavailable not_admitted ingest_unavailable ingest_capacity"
+        "compliance_capacity rules_unavailable not_admitted ingest_unavailable ingest_capacity ",
+        "scholarly_unavailable"
     )
     .split_whitespace()
     .collect::<std::collections::BTreeSet<_>>();
     assert!(schema["V1ErrorCode"]["enum"].is_array());
     let codes = schema["V1ErrorCode"]["enum"].as_array().unwrap();
-    assert_eq!(codes.len(), 47);
+    assert_eq!(codes.len(), 48);
     let actual = codes
         .iter()
         .map(|code| code.as_str().unwrap())

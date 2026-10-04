@@ -48,6 +48,8 @@ pub mod moderation_dto;
 pub mod report_dto;
 /// Public intake, reporting index and minimal status-capability handlers.
 pub mod reports;
+/// Opt-in metadata providers, bounded pages and the public Rust extension contract.
+pub mod scholarly;
 /// Request validation, country context and final result assembly.
 pub mod search;
 /// Versioned source metadata operation.
@@ -161,6 +163,8 @@ impl Observer for NoObserver {}
 
 /// Shared backend, immutable validated policy and suppression gate.
 pub struct V1State {
+    /// Startup provider and shared nonqueued admission, retained across every attached listener.
+    papers: Arc<scholarly::Resources>,
     /// Cached rendered publication or fixed unavailable outcome, applied only at startup.
     pub(super) publication: crate::compliance::Result<Arc<statement::V1StatementResponse>>,
     /// Validated-query adapter, shared with the legacy internal searcher.
@@ -190,6 +194,7 @@ pub struct V1State {
 
 /// Startup-owned policy and durable store, loaded before binding any HTTP listener.
 pub struct V1Resources {
+    papers: Arc<scholarly::Resources>,
     policy: ServingPolicy,
     store: Arc<suppression::SuppressionStore>,
     compliance: Arc<compliance_adapter::Resources>,
@@ -211,6 +216,7 @@ impl V1Resources {
     /// Performs blocking startup validation and opens the lifetime store lock.
     /// Call through spawn_blocking in an async entrypoint; any failure prevents serving.
     pub fn load(config: &ApiConfig) -> anyhow::Result<Self> {
+        let papers = scholarly::Resources::load(config)?;
         let policy = validated_policy(config)?;
         let store = Arc::new(suppression::SuppressionStore::open(
             &config.v1.suppression_store_path,
@@ -219,6 +225,7 @@ impl V1Resources {
             compliance_adapter::Resources::for_store(config, &store, Default::default())?;
         let ingest = ingest_register::for_store(config, &store, None)?;
         Ok(Self {
+            papers,
             policy,
             store,
             compliance,
@@ -232,10 +239,12 @@ impl V1Resources {
         config: &ApiConfig,
         store: Arc<suppression::SuppressionStore>,
     ) -> anyhow::Result<Self> {
+        let papers = scholarly::Resources::load(config)?;
         let compliance =
             compliance_adapter::Resources::for_store(config, &store, Default::default())?;
         let ingest = ingest_register::for_store(config, &store, None)?;
         Ok(Self {
+            papers,
             policy: validated_policy(config)?,
             store,
             compliance,
@@ -247,6 +256,7 @@ impl V1Resources {
         config: &ApiConfig,
         seams: compliance_adapter::ComplianceSeams,
     ) -> anyhow::Result<Self> {
+        let papers = scholarly::Resources::load(config)?;
         let policy = validated_policy(config)?;
         let store = Arc::new(suppression::SuppressionStore::open(
             &config.v1.suppression_store_path,
@@ -254,6 +264,7 @@ impl V1Resources {
         let compliance = compliance_adapter::Resources::for_store(config, &store, seams)?;
         let ingest = ingest_register::for_store(config, &store, None)?;
         Ok(Self {
+            papers,
             policy,
             store,
             compliance,
@@ -268,6 +279,7 @@ impl V1Resources {
         compliance_seams: compliance_adapter::ComplianceSeams,
         ingest_seams: ingest_register::IngestSeams,
     ) -> anyhow::Result<Self> {
+        let papers = scholarly::Resources::load(config)?;
         let policy = validated_policy(config)?;
         let store = Arc::new(suppression::SuppressionStore::open(
             &config.v1.suppression_store_path,
@@ -276,11 +288,19 @@ impl V1Resources {
             compliance_adapter::Resources::for_store(config, &store, compliance_seams)?;
         let ingest = ingest_register::for_store(config, &store, Some(ingest_seams))?;
         Ok(Self {
+            papers,
             policy,
             store,
             compliance,
             ingest,
         })
+    }
+
+    /// Installs a trusted Rust provider after normal resource validation, with four shared permits.
+    /// Custom providers obey the same page validation, cancellation, deadline and serving gates.
+    pub fn with_paper_provider(mut self, provider: Arc<dyn scholarly::PaperProvider>) -> Self {
+        self.papers = scholarly::Resources::with_provider(Some(provider));
+        self
     }
 }
 
@@ -298,6 +318,7 @@ impl V1State {
         resources: &V1Resources,
     ) -> Self {
         Self {
+            papers: resources.papers.clone(),
             backend,
             ingest_backend: Arc::new(|_: AuditedIngestPage| async {
                 Err(IngestBackendFailure::Unavailable)

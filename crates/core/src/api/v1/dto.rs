@@ -3,6 +3,7 @@
 
 use super::{
     error::V1Error,
+    scholarly::*,
     suppression::{canonical_identity, DocumentId},
 };
 use serde::{Deserialize, Deserializer, Serialize};
@@ -43,7 +44,7 @@ pub struct V1SearchRequest {
     #[serde(default)]
     #[schema(minimum = 0, maximum = 99, default = 0)]
     pub page: u64,
-    /// Requested page size in 1..=100; defaults to 20.
+    /// Requested page size in 1..=100 for web, 1..=20 for papers; defaults to 20.
     #[serde(default = "default_count")]
     #[schema(minimum = 1, maximum = 100, default = 20)]
     pub num_results: u64,
@@ -52,6 +53,11 @@ pub struct V1SearchRequest {
     pub country: Country,
     /// Caller assertion only: absent/null/false receives child treatment.
     pub adult_verified: Option<bool>,
+    /// Missing or false selects web; true selects the configured provider, without fallback.
+    /// Paper queries are <=4096 UTF-8 bytes and contain 1..=64 Unicode alphanumeric runs.
+    #[serde(default)]
+    #[schema(default = false)]
+    pub scholarly: bool,
 }
 
 fn default_count() -> u64 {
@@ -112,6 +118,9 @@ pub struct AttributedResult {
     domain: NonEmptyText,
     title: NonEmptyText,
     snippet: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(nullable = false)]
+    scholarly: Option<ScholarlyAttribution>,
 }
 
 impl AttributedResult {
@@ -126,6 +135,7 @@ impl AttributedResult {
             domain: NonEmptyText::new(domain.into())?,
             title: NonEmptyText::new(title.into())?,
             snippet: snippet.into(),
+            scholarly: None,
         })
     }
     /// Converts an upstream page without dates, markup, scores or attribution fallbacks.
@@ -159,6 +169,21 @@ impl AttributedResult {
     pub fn snippet(&self) -> &str {
         &self.snippet
     }
+
+    /// Returns validated metadata attribution; web results omit the scholarly key entirely.
+    pub fn scholarly(&self) -> Option<&ScholarlyAttribution> {
+        self.scholarly.as_ref()
+    }
+
+    /// Constructs a metadata-only paper with canonical URL/hash/domain and an empty snippet.
+    /// Invalid attribution or a blank/oversize title returns fixed invalid_result.
+    pub fn try_from_paper(title: &str, attribution: ScholarlyAttribution) -> Result<Self, V1Error> {
+        attribution.validate()?;
+        paper_title(title)?;
+        let mut result = Self::try_new(&attribution.openalex_id, "openalex.org", title, "")?;
+        result.scholarly = Some(attribution);
+        Ok(result)
+    }
 }
 
 impl<'de> Deserialize<'de> for AttributedResult {
@@ -171,17 +196,226 @@ impl<'de> Deserialize<'de> for AttributedResult {
             domain: NonEmptyText,
             title: NonEmptyText,
             snippet: String,
+            #[serde(default, deserialize_with = "non_null_scholarly")]
+            scholarly: Option<ScholarlyAttribution>,
         }
         let raw = Raw::deserialize(deserializer)?;
-        let result = Self::try_new(&raw.url.0, &raw.domain.0, &raw.title.0, &raw.snippet)
+        if raw.scholarly.is_some() {
+            validate_id(&raw.url.0).map_err(serde::de::Error::custom)?;
+        }
+        let mut result = Self::try_new(&raw.url.0, &raw.domain.0, &raw.title.0, &raw.snippet)
             .map_err(serde::de::Error::custom)?;
         if raw.id != result.id {
             return Err(serde::de::Error::custom(
                 "The result identifier does not match its URL",
             ));
         }
+        if let Some(scholarly) = raw.scholarly {
+            scholarly.bind(&result).map_err(serde::de::Error::custom)?;
+            result.scholarly = Some(scholarly);
+        }
         Ok(result)
     }
+}
+
+/// Eight required metadata keys with explicit nulls for absent optional source facts.
+/// Metadata carries CC0-1.0 provenance; it grants no rights to abstracts or linked content.
+#[derive(Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[schema(as = V1ScholarlyAttribution)]
+pub struct ScholarlyAttribution {
+    /// Canonical https://openalex.org/W plus digits, at most 64 ASCII bytes; equals result URL.
+    #[schema(max_length = 64, pattern = "^https://openalex\\.org/W[0-9]+$")]
+    openalex_id: String,
+    /// Canonical HTTPS DOI URL, at most 2048 UTF-8 bytes, or explicit null; key is required.
+    #[schema(required = true, nullable = true)]
+    doi: Option<String>,
+    /// Canonical HTTP(S) DNS URL, at most 2048 UTF-8 bytes, or null; never fetched.
+    #[schema(required = true, nullable = true)]
+    oa_url: Option<String>,
+    /// Ordered 0..=100 nonblank names, each <=256 Unicode scalars and <=1024 UTF-8 bytes.
+    #[schema(max_items = 100)]
+    authors: Vec<String>,
+    /// Source publication year in 1..=9999; no frozen corpus slice.
+    #[schema(minimum = 1, maximum = 9999)]
+    publication_year: u16,
+    /// Nonblank venue <=256 Unicode scalars and <=1024 UTF-8 bytes, or explicit null.
+    #[schema(required = true, nullable = true)]
+    venue: Option<String>,
+    /// Valid ten-byte YYYY-MM-DD source snapshot date, or null for the live OpenAlex API.
+    /// This is never a retrieval date; compatible HTTP services must supply a source date.
+    #[schema(required = true, nullable = true)]
+    snapshot_date: Option<String>,
+    /// Exact SPDX metadata licence CC0-1.0, independent of paper or location rights.
+    #[schema(schema_with = metadata_license_schema)]
+    metadata_license: String,
+}
+
+// A single literal must be represented exactly, rather than by a permissive regex pattern.
+fn metadata_license_schema() -> utoipa::openapi::Object {
+    utoipa::openapi::ObjectBuilder::new()
+        .schema_type(utoipa::openapi::schema::Type::String)
+        .enum_values(Some(["CC0-1.0"]))
+        .build()
+}
+
+impl std::fmt::Debug for ScholarlyAttribution {
+    // Formatting metadata can disclose queries indirectly through matching source text.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ScholarlyAttribution { .. }")
+    }
+}
+
+impl ScholarlyAttribution {
+    // Revalidate external deserialization and internal construction against identical invariants.
+    fn validate(&self) -> Result<(), V1Error> {
+        validate_id(&self.openalex_id)?;
+        if let Some(doi) = &self.doi {
+            validate_doi(doi)?;
+        }
+        if let Some(oa) = &self.oa_url {
+            validate_link(oa)?;
+        }
+        if self.authors.len() > MAX_PAPER_AUTHORS
+            || !(1..=MAX_PAPER_YEAR).contains(&self.publication_year)
+            || self.metadata_license != "CC0-1.0"
+        {
+            return Err(V1Error::invalid_result());
+        }
+        for name in self.authors.iter().chain(self.venue.iter()) {
+            paper_name(name)?;
+        }
+        if let Some(date) = &self.snapshot_date {
+            if date.len() != SNAPSHOT_DATE_BYTES
+                || !date.is_ascii()
+                || date.bytes().enumerate().any(|(i, b)| {
+                    if i == 4 || i == 7 {
+                        b != b'-'
+                    } else {
+                        !b.is_ascii_digit()
+                    }
+                })
+                || date.starts_with("0000")
+                || chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err()
+            {
+                return Err(V1Error::invalid_result());
+            }
+        }
+        Ok(())
+    }
+    // A valid attribution alone cannot authorize a forged enclosing result.
+    fn bind(&self, result: &AttributedResult) -> Result<(), V1Error> {
+        if self.openalex_id != result.url
+            || result.domain() != "openalex.org"
+            || !result.snippet.is_empty()
+        {
+            return Err(V1Error::invalid_result());
+        }
+        paper_title(result.title())
+    }
+    /// Enumerates independently checked known links; callers deduplicate canonical URLs.
+    pub(crate) fn known_urls(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.openalex_id.as_str())
+            .chain(self.doi.as_deref())
+            .chain(self.oa_url.as_deref())
+    }
+}
+
+impl<'de> Deserialize<'de> for ScholarlyAttribution {
+    // Required nullable decoding distinguishes a truthful null from a missing protocol key.
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Raw {
+            openalex_id: String,
+            #[serde(deserialize_with = "required_nullable_text")]
+            doi: Option<String>,
+            #[serde(deserialize_with = "required_nullable_text")]
+            oa_url: Option<String>,
+            #[serde(deserialize_with = "paper_authors")]
+            authors: Vec<String>,
+            publication_year: u16,
+            #[serde(deserialize_with = "required_nullable_text")]
+            venue: Option<String>,
+            #[serde(deserialize_with = "required_nullable_text")]
+            snapshot_date: Option<String>,
+            metadata_license: String,
+        }
+        let raw = Raw::deserialize(d)?;
+        let value = Self {
+            openalex_id: raw.openalex_id,
+            doi: raw.doi,
+            oa_url: raw.oa_url,
+            authors: raw.authors,
+            publication_year: raw.publication_year,
+            venue: raw.venue,
+            snapshot_date: raw.snapshot_date,
+            metadata_license: raw.metadata_license,
+        };
+        value.validate().map_err(serde::de::Error::custom)?;
+        Ok(value)
+    }
+}
+
+// Omission is handled only by the enclosing serde default; a present null is never web.
+fn non_null_scholarly<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<Option<ScholarlyAttribution>, D::Error> {
+    ScholarlyAttribution::deserialize(d).map(Some)
+}
+
+// No serde default on callers: explicit null is valid but absence is a protocol error.
+fn required_nullable_text<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(d)
+}
+
+// Separate scalar and byte guards preserve exact source text without silent truncation.
+fn paper_title(value: &str) -> Result<(), V1Error> {
+    if value.trim().is_empty()
+        || value.len() > MAX_PAPER_TITLE_BYTES
+        || value.chars().count() > MAX_PAPER_TITLE_SCALARS
+    {
+        return Err(V1Error::invalid_result());
+    }
+    Ok(())
+}
+
+// Names have different bounds from titles and cannot be blank, even in optional venues.
+fn paper_name(value: &str) -> Result<(), V1Error> {
+    if value.trim().is_empty()
+        || value.len() > MAX_PAPER_NAME_BYTES
+        || value.chars().count() > MAX_PAPER_NAME_SCALARS
+    {
+        return Err(V1Error::invalid_result());
+    }
+    Ok(())
+}
+
+/// Enforces the author allocation bound for external DTO decoding as well as transport parsing.
+pub(super) fn paper_authors<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    struct Authors;
+    impl<'de> serde::de::Visitor<'de> for Authors {
+        type Value = Vec<String>;
+        // Fixed expectation text cannot echo a malformed name.
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("bounded author array")
+        }
+        // Stop on entry 101 rather than first allocating an unbounded vector.
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut names = Vec::new();
+            while let Some(name) = seq.next_element::<String>()? {
+                if names.len() >= MAX_PAPER_AUTHORS {
+                    return Err(serde::de::Error::custom("paper author bounds"));
+                }
+                paper_name(&name).map_err(serde::de::Error::custom)?;
+                names.push(name);
+            }
+            Ok(names)
+        }
+    }
+    d.deserialize_seq(Authors)
 }
 
 /// Narrow text-search response; the page-size echo and pagination hint precede suppression.
