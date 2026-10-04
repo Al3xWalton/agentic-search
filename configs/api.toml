@@ -37,6 +37,18 @@ suppression_store_path = "data/v1/suppression.json"
 request_timeout_ms = 60000
 max_concurrent_requests = 32
 
+# Optional paper provider: choose exactly one example. Omitted means no paper provider.
+# Copy container-mounted secrets to an owned, single-link mode-0600 regular file first.
+# [v1.paper_provider]
+# kind = "openalex"
+# api_key_file = "secrets/openalex.key"
+#
+# Alternative compatible service; endpoint and bearer are never inferred or defaulted.
+# [v1.paper_provider]
+# kind = "http"
+# endpoint = "https://papers.example/v1/search"
+# bearer_token_file = "secrets/papers.token"
+
 # Private reporting journal and independent serving rules. Local mode is not public-operation approval.
 # Omitted store_dir derives a compliance sibling from v1.suppression_store_path.
 # No admin_token_file means compliance management and document ingest are unauthorised.

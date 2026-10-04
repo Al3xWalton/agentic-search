@@ -21,6 +21,8 @@ pub struct V1ApiConfig {
     pub max_concurrent_requests: Option<usize>,
     /// Complete ingest JSON body bytes; accepted range is 65,536..=8,388,608.
     pub ingest_max_body_bytes: usize,
+    /// Optional startup-selected paper provider; absence performs no provider initialization.
+    pub paper_provider: Option<super::papers::PaperProviderConfig>,
 }
 
 impl Default for V1ApiConfig {
@@ -31,6 +33,7 @@ impl Default for V1ApiConfig {
             request_timeout_ms: 60_000,
             max_concurrent_requests: Some(32),
             ingest_max_body_bytes: MAX_INGEST_BODY_BYTES,
+            paper_provider: None,
         }
     }
 }

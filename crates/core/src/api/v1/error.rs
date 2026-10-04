@@ -62,6 +62,8 @@ pub enum V1Failure {
     IngestUnavailable,
     /// A healthy metadata register cannot reserve the complete transaction.
     IngestCapacity,
+    /// The selected paper provider is absent, busy or unavailable; web is never a fallback.
+    ScholarlyUnavailable,
 }
 
 /// Safe error details with a closed code and its fixed message.
@@ -142,6 +144,7 @@ impl V1Error {
             NotAdmitted => (400, "The document was not admitted"),
             IngestUnavailable => (503, "The ingest service is unavailable"),
             IngestCapacity => (503, "The ingest register is full"),
+            ScholarlyUnavailable => (503, "The scholarly provider is unavailable"),
         };
         Self {
             status: StatusCode::from_u16(status).expect("fixed valid status"),
@@ -175,6 +178,10 @@ impl V1Error {
     /// Returns the fixed invalid-attribution failure.
     pub fn invalid_result() -> Self {
         Self::failure(V1Failure::InvalidResult)
+    }
+    /// Returns the fixed 503 paper-provider failure, without remote causes or headers.
+    pub fn scholarly_unavailable() -> Self {
+        Self::failure(V1Failure::ScholarlyUnavailable)
     }
     /// Returns the fixed invalid-identifier failure.
     pub fn invalid_document_id() -> Self {
@@ -220,6 +227,51 @@ pub(super) fn success(value: &impl serde::Serialize) -> Response {
             response
         }
         Err(_) => V1Error::failure(V1Failure::InternalError).into_response(),
+    }
+}
+
+/// Serializes an owned paper response under serving gates without allocating past the byte cap.
+/// Overflow or serialization failure produces a complete, fixed invalid_result envelope.
+pub(super) fn bounded_success(value: &impl serde::Serialize, max_bytes: usize) -> Response {
+    match capped_bytes(value, max_bytes) {
+        Ok(bytes) => {
+            let mut response = ([("content-type", "application/json")], bytes).into_response();
+            response.extensions_mut().insert(OwnedResponse);
+            response
+        }
+        Err(_) => V1Error::invalid_result().into_response(),
+    }
+}
+
+/// Bounds allocation during serialization, including JSON escape expansion.
+pub(super) fn capped_bytes(
+    value: &impl serde::Serialize,
+    max_bytes: usize,
+) -> Result<Vec<u8>, serde_json::Error> {
+    let mut writer = CappedWriter {
+        bytes: Vec::new(),
+        max_bytes,
+    };
+    serde_json::to_writer(&mut writer, value)?;
+    Ok(writer.bytes)
+}
+
+struct CappedWriter {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+}
+impl std::io::Write for CappedWriter {
+    // Check before extending so a failed serialization never holds an oversized complete body.
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > self.max_bytes.saturating_sub(self.bytes.len()) {
+            return Err(std::io::Error::other("paper output bounds"));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    // Memory buffers have no external flush operation.
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 

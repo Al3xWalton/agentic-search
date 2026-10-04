@@ -1,0 +1,111 @@
+{
+  "group_by": [],
+  "meta": {
+    "cost_usd": 0.001,
+    "count": 45,
+    "db_response_time_ms": 12,
+    "groups_count": null,
+    "page": 1,
+    "per_page": 2
+  },
+  "results": [
+    {
+      "abstract_inverted_index": {
+        "Synthetic": [
+          0
+        ],
+        "abstract": [
+          1
+        ]
+      },
+      "authorships": [
+        {
+          "affiliations": [],
+          "author": {
+            "display_name": "Synthetic Élodie",
+            "id": "https://openalex.org/A9999000001",
+            "orcid": null
+          },
+          "author_position": "first",
+          "countries": [],
+          "institutions": [],
+          "is_corresponding": false,
+          "raw_affiliation_strings": [],
+          "raw_author_name": "Synthetic Élodie"
+        },
+        {
+          "affiliations": [],
+          "author": {
+            "display_name": "Synthetic 李",
+            "id": "https://openalex.org/A9999000002",
+            "orcid": null
+          },
+          "author_position": "last",
+          "countries": [],
+          "institutions": [],
+          "is_corresponding": false,
+          "raw_affiliation_strings": [],
+          "raw_author_name": "Synthetic 李"
+        }
+      ],
+      "best_oa_location": {
+        "landing_page_url": "https://repository.example/record/1",
+        "pdf_url": "https://repository.example/record/1.pdf"
+      },
+      "cited_by_count": 0,
+      "content_urls": {
+        "grobid_xml": null,
+        "pdf": null
+      },
+      "display_name": "Distinct fixture display A",
+      "doi": "https://doi.org/10.5555/synthetic.0001",
+      "id": "https://openalex.org/W9999000001",
+      "open_access": {
+        "any_repository_has_fulltext": true,
+        "is_oa": true,
+        "oa_status": "green",
+        "oa_url": "https://repository.example/record/1.pdf"
+      },
+      "primary_location": {
+        "id": "doi:10.5555/synthetic.0001",
+        "is_accepted": true,
+        "is_oa": true,
+        "is_published": true,
+        "landing_page_url": "https://doi.org/10.5555/synthetic.0001",
+        "license": "cc-by",
+        "license_id": "https://openalex.org/licenses/cc-by",
+        "pdf_url": null,
+        "source": {
+          "display_name": "Journal of Synthetic Fixtures",
+          "id": "https://openalex.org/S9999000001",
+          "issn_l": null,
+          "type": "journal"
+        },
+        "version": "publishedVersion"
+      },
+      "publication_year": 2021,
+      "title": "Synthetic cedar – α study",
+      "topics": [],
+      "type": "article"
+    },
+    {
+      "abstract_inverted_index": null,
+      "authorships": [],
+      "best_oa_location": null,
+      "display_name": "Distinct fixture display B",
+      "doi": null,
+      "id": "https://openalex.org/W9999000002",
+      "open_access": {
+        "any_repository_has_fulltext": false,
+        "is_oa": false,
+        "oa_status": "closed",
+        "oa_url": null
+      },
+      "primary_location": {
+        "source": null
+      },
+      "publication_year": 1901,
+      "title": "Synthetic cedar second study"
+    }
+  ]
+}

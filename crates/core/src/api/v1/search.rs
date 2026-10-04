@@ -4,6 +4,7 @@
 use super::{
     dto::{AttributedResult, Country, V1SearchRequest, V1SearchResponse},
     error::{self, V1Error, V1Failure},
+    scholarly::{self, PaperProviderError, PaperQuery},
     suppression::canonical_identity,
     CappedBody, V1State,
 };
@@ -55,6 +56,7 @@ fn context(request: &V1SearchRequest, policy: &ServingPolicy) -> ServingContext 
 
 /// A bounded request ready for the backend; its fields are private to prevent validation bypass.
 pub struct ValidatedSearchRequest {
+    paper: Option<PaperQuery>,
     query: SearchQuery,
     context: ServingContext,
     page: u64,
@@ -65,6 +67,9 @@ fn validate(
     request: V1SearchRequest,
     policy: &ServingPolicy,
 ) -> Result<ValidatedSearchRequest, V1Error> {
+    if request.scholarly {
+        return validate_paper(request, policy);
+    }
     if request.page > MAX_PAGE {
         return Err(InputError::InvalidPage.into());
     }
@@ -86,10 +91,35 @@ fn validate(
         ..Default::default()
     };
     Ok(ValidatedSearchRequest {
+        paper: None,
         query,
         context,
         page: request.page,
         count: request.num_results,
+    })
+}
+
+// Paper validation preserves original text and context without invoking web query semantics.
+fn validate_paper(
+    request: V1SearchRequest,
+    policy: &ServingPolicy,
+) -> Result<ValidatedSearchRequest, V1Error> {
+    let page = u16::try_from(request.page).map_err(|_| InputError::InvalidRequest)?;
+    let count = u8::try_from(request.num_results).map_err(|_| InputError::InvalidRequest)?;
+    let context = context(&request, policy);
+    let paper = PaperQuery::try_new(request.query.clone(), page, count)
+        .map_err(|_| InputError::InvalidRequest)?;
+    Ok(ValidatedSearchRequest {
+        paper: Some(paper),
+        context,
+        page: request.page,
+        count: request.num_results,
+        query: SearchQuery {
+            query: request.query,
+            page: usize::from(page),
+            num_results: usize::from(count),
+            ..Default::default()
+        },
     })
 }
 
@@ -132,6 +162,9 @@ impl FromRequest<Arc<V1State>> for ValidatedSearchRequest {
 /// Returns attributed text results, preserving order and the upstream pre-suppression page hint.
 #[utoipa::path(post, path = "/v1/search", request_body = V1SearchRequest, responses((status = 200, description = "Attributed text results; suppression can shorten a page", body = V1SearchResponse)), tag = "v1")]
 pub async fn route(State(state): State<Arc<V1State>>, request: ValidatedSearchRequest) -> Response {
+    if let Some(query) = request.paper {
+        return paper_route(state, query, request.context).await;
+    }
     // Avoid paid backend work when the store is already unable to serve.
     if state.store.unavailable().await {
         return V1Error::failure(V1Failure::SuppressionUnavailable).into_response();
@@ -210,4 +243,134 @@ pub async fn route(State(state): State<Arc<V1State>>, request: ValidatedSearchRe
         request.count,
         result.has_more_results,
     ))
+}
+
+// Select the provider before local-store preflight so missing configuration has one exact failure.
+async fn paper_route(state: Arc<V1State>, query: PaperQuery, context: ServingContext) -> Response {
+    let Some(provider) = state.papers.provider.clone() else {
+        return V1Error::scholarly_unavailable().into_response();
+    };
+    if state.store.unavailable().await {
+        return V1Error::failure(V1Failure::SuppressionUnavailable).into_response();
+    }
+    if state.compliance.rules().unavailable().await {
+        return V1Error::failure(V1Failure::RulesUnavailable).into_response();
+    }
+    let permit = match state.papers.admission.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => return V1Error::scholarly_unavailable().into_response(),
+    };
+    let operation = async {
+        let result = match provider.search(query.clone()).await {
+            Ok(page) => page,
+            Err(error) => return paper_failure(error).into_response(),
+        };
+        if let Err(error) = result.validate_for(&query) {
+            return paper_failure(error).into_response();
+        }
+        state.observer.before_assembly().await;
+        assemble_papers(&state, result, &query, context).await
+    };
+    let response = match tokio::time::timeout(scholarly::PROVIDER_TOTAL_TIMEOUT, operation).await {
+        Ok(response) => response,
+        Err(_) => paper_failure(PaperProviderError::Deadline).into_response(),
+    };
+    drop(permit);
+    response
+}
+
+// Provider configuration errors after startup cannot blame a validated HTTP caller.
+fn paper_failure(error: PaperProviderError) -> V1Error {
+    match error {
+        PaperProviderError::InvalidResponse => V1Error::invalid_result(),
+        PaperProviderError::Deadline => V1Error::failure(V1Failure::RequestTimeout),
+        _ => V1Error::scholarly_unavailable(),
+    }
+}
+
+// Hold both live read gates through complete bounded serialization, never during provider I/O.
+async fn assemble_papers(
+    state: &V1State,
+    page: scholarly::PaperPage,
+    query: &PaperQuery,
+    context: ServingContext,
+) -> Response {
+    let gate = state.store.state.read().await;
+    if gate.unavailable {
+        return V1Error::failure(V1Failure::SuppressionUnavailable).into_response();
+    }
+    let rules = state.compliance.rules().read().await;
+    if rules.unavailable() {
+        return V1Error::failure(V1Failure::RulesUnavailable).into_response();
+    }
+    let rule_context = crate::compliance::rules::RuleContext {
+        country: match context.country {
+            Country::Uk => crate::compliance::rules::RuleCountry::Uk,
+            Country::NonUk => crate::compliance::rules::RuleCountry::NonUk,
+            Country::Unknown => crate::compliance::rules::RuleCountry::Unknown,
+        },
+        is_child: context.is_child,
+        uk_measures: context.uk_measures,
+    };
+    let query_tokens = crate::compliance::rules::query_tokens(query.query());
+    let now = state.compliance.rules().serving_now();
+    let mut hosts = crate::compliance::listed::HostCache::default();
+    let (hits, next_page) = page.into_parts();
+    let mut results = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for hit in hits {
+        let Some(attribution) = hit.scholarly() else {
+            return V1Error::invalid_result().into_response();
+        };
+        let mut links = std::collections::BTreeSet::new();
+        let mut allowed = true;
+        for url in attribution.known_urls() {
+            let (canonical_url, id) = match canonical_identity(url) {
+                Ok(value) => value,
+                Err(error) => return error.into_response(),
+            };
+            if !links.insert(canonical_url.clone()) {
+                continue;
+            }
+            state.observer.serving_context(&id, &context);
+            if !gate.allows_document(&id, &context) {
+                allowed = false;
+                break;
+            }
+            let document = match crate::compliance::model::DocumentKey::parse(id.as_str()) {
+                Ok(value) => value,
+                Err(_) => return V1Error::invalid_result().into_response(),
+            };
+            state.observer.compliance_context(&rule_context);
+            if !rules.allows(
+                &document,
+                &canonical_url,
+                &query_tokens,
+                &rule_context,
+                now,
+                &mut hosts,
+            ) {
+                allowed = false;
+                break;
+            }
+        }
+        if allowed && seen.insert(hit.id().clone()) {
+            state.observer.attribution_construct(hit.id());
+            results.push(hit);
+        }
+    }
+    #[cfg(test)]
+    scholarly::tests::serialization_gate(state);
+    let response = error::bounded_success(
+        &V1SearchResponse::new(
+            results,
+            u64::from(query.page()),
+            u64::from(query.num_results()),
+            next_page.is_some(),
+        ),
+        scholarly::MAX_PAPER_RESPONSE_BYTES,
+    );
+    drop(rules);
+    drop(gate);
+    response
 }
