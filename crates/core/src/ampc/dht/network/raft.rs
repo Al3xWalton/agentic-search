@@ -206,12 +206,12 @@ impl RemoteClient {
         &self,
     ) -> Result<
         impl DerefMut<Target = Connection<Server>>,
-        crate::bincode_utils::SerdeCompat<RPCError<E>>,
+        Box<crate::bincode_utils::SerdeCompat<RPCError<E>>>,
     > {
         self.inner.conn().await.map_err(|e| {
-            crate::bincode_utils::SerdeCompat(RPCError::Unreachable(
+            Box::new(crate::bincode_utils::SerdeCompat(RPCError::Unreachable(
                 openraft::error::Unreachable::new(&e),
-            ))
+            )))
         })
     }
 
@@ -219,7 +219,7 @@ impl RemoteClient {
         &self,
         rpc: R,
         option: RPCOption,
-    ) -> Result<R::Response, crate::bincode_utils::SerdeCompat<RPCError<E>>>
+    ) -> Result<R::Response, Box<crate::bincode_utils::SerdeCompat<RPCError<E>>>>
     where
         R: sonic::service::Wrapper<Server>,
         E: std::error::Error,
@@ -229,9 +229,9 @@ impl RemoteClient {
             .await
             .map_err(|e| match e {
                 sonic::Error::ConnectionTimeout | sonic::Error::RequestTimeout => {
-                    crate::bincode_utils::SerdeCompat(RPCError::Unreachable(
+                    Box::new(crate::bincode_utils::SerdeCompat(RPCError::Unreachable(
                         openraft::error::Unreachable::new(&e),
-                    ))
+                    )))
                 }
                 _ => {
                     panic!("unexpected error: {:?}", e)
@@ -288,10 +288,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -347,10 +352,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -393,7 +403,7 @@ impl RaftNetwork<TypeConfig> for RemoteClient {
         Ok(self
             .send_raft_rpc(AppendEntries(rpc), option)
             .await
-            .map_err(|crate::bincode_utils::SerdeCompat(e)| e)?
+            .map_err(|boxed| boxed.0)?
             .map_err(|crate::bincode_utils::SerdeCompat(e)| -> RPCError {
                 openraft::error::RemoteError {
                     target: self.target,
@@ -414,7 +424,7 @@ impl RaftNetwork<TypeConfig> for RemoteClient {
         Ok(self
             .send_raft_rpc(InstallSnapshot(rpc), option)
             .await
-            .map_err(|crate::bincode_utils::SerdeCompat(e)| e)?
+            .map_err(|boxed| boxed.0)?
             .map_err(
                 |crate::bincode_utils::SerdeCompat(e)| -> RPCError<InstallSnapshotError> {
                     openraft::error::RemoteError {
@@ -436,7 +446,7 @@ impl RaftNetwork<TypeConfig> for RemoteClient {
         Ok(self
             .send_raft_rpc(Vote(rpc), option)
             .await
-            .map_err(|crate::bincode_utils::SerdeCompat(e)| e)?
+            .map_err(|boxed| boxed.0)?
             .map_err(|crate::bincode_utils::SerdeCompat(e)| -> RPCError {
                 openraft::error::RemoteError {
                     target: self.target,
