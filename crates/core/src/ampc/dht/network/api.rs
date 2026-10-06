@@ -375,10 +375,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -443,10 +448,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -476,10 +486,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -510,10 +525,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -546,10 +566,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -611,10 +636,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -676,10 +706,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -736,10 +771,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -802,10 +842,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -878,10 +923,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -953,10 +1003,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,
@@ -996,10 +1051,15 @@ impl RemoteClient {
                     sonic::Error::IO(_)
                     | sonic::Error::ConnectionTimeout
                     | sonic::Error::RequestTimeout
-                    | sonic::Error::PoolGet => {
+                    | sonic::Error::PoolGet
+                    | sonic::Error::ConnectionClosed => {
                         tokio::time::sleep(backoff).await;
                     }
-                    sonic::Error::BadRequest
+                    sonic::Error::Decode(_)
+                    | sonic::Error::Encode(_)
+                    | sonic::Error::Allocation(_)
+                    | sonic::Error::TrailingBytes { .. }
+                    | sonic::Error::BadRequest
                     | sonic::Error::BodyTooLarge {
                         body_size: _,
                         max_size: _,

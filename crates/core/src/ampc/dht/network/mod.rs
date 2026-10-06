@@ -76,6 +76,15 @@ pub struct AddNodes {
 #[derive(serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode, Debug, Clone)]
 pub struct Metrics;
 
+/// Encoded body-byte cap for DHT frames: 134,217,728 bytes (128 MiB), in both directions.
+///
+/// The sizing case is a synthetic batch-body projection of a configured-maximum raft append: one
+/// measured 4096-pair `(u64, HyperLogLog<64>)` batch encodes to 278,029 bytes, and 300 entries of
+/// it come to 83,408,700 bytes, above sonic's 64 MiB default. 128 MiB leaves about 1.6x headroom
+/// over that projection. The decoder's separate 256 MiB claim budget does not bound this frame's
+/// decoded size: raft payloads decode through serde and make no bincode claims.
+pub const MAX_DHT_FRAME_BODY_BYTES: usize = 128 * 1024 * 1024;
+
 sonic_service!(
     Server,
     [
@@ -97,7 +106,8 @@ sonic_service!(
         AllTables,
         CloneTable,
         RangeGet,
-    ]
+    ],
+    max_frame_body_bytes = crate::ampc::dht::network::MAX_DHT_FRAME_BODY_BYTES
 );
 
 pub struct Server {

@@ -22,37 +22,55 @@ use crate::OneOrMany;
 
 use super::Result;
 
+/// A typed sonic service whose source-level body-byte cap governs both of its peers.
 pub trait Service: Sized + Send + Sync + 'static {
+    /// Encoded body-byte cap for this service's requests and responses, excluding the native
+    /// header. Both peers derive it from source; `sonic_service!` sets it via its optional
+    /// `max_frame_body_bytes = …` argument, otherwise it is the sonic default.
+    const MAX_FRAME_BODY_BYTES: usize = super::DEFAULT_MAX_FRAME_BODY_BYTES;
+    /// Request envelope; its variant order is the wire format.
     type Request: bincode::Encode + bincode::Decode + Send + Sync;
+    /// Response envelope; its variant order is the wire format.
     type Response: bincode::Encode + bincode::Decode + Send + Sync;
 
+    /// Dispatches a decoded request to its application handler.
     fn handle(
         req: Self::Request,
         server: &Self,
     ) -> impl std::future::Future<Output = Self::Response> + Send + '_;
 }
 
+/// An application message handled by one service.
 pub trait Message<S: Service>: Send + Sync {
+    /// Application response carried inside the service envelope.
     type Response: Send + Sync;
+    /// Handles the decoded message and returns its application response.
     fn handle(self, server: &S) -> impl std::future::Future<Output = Self::Response>;
 }
+/// Maps an application message to and from its service envelope variants.
 pub trait Wrapper<S: Service>: Message<S> {
+    /// Wraps the message in its request variant.
     fn wrap_request(req: Self) -> S::Request;
+    /// Extracts this message's response variant, or `None` for any other variant.
     fn unwrap_response(res: S::Response) -> Option<Self::Response>;
 }
 
+/// Service listener whose accepted peers each run, and fail, independently.
 pub struct Server<S: Service> {
     inner: super::Server<OneOrMany<S::Request>, OneOrMany<S::Response>>,
     service: Arc<S>,
 }
 
 impl<S: Service> Server<S> {
+    /// Binds a listener whose request reads and response writes use `S::MAX_FRAME_BODY_BYTES`.
     pub async fn bind(service: S, addr: impl ToSocketAddrs) -> Result<Self> {
+        let server_frame_limit = S::MAX_FRAME_BODY_BYTES;
         Ok(Server {
-            inner: super::Server::bind(addr).await?,
+            inner: super::Server::bind_with_limit(addr, server_frame_limit).await?,
             service: Arc::new(service),
         })
     }
+    /// Accepts one peer and spawns its request loop; a framing failure ends only that loop.
     pub async fn accept(&self) -> Result<()> {
         let mut conn = self.inner.accept().await?;
 
@@ -88,40 +106,56 @@ impl<S: Service> Server<S> {
     }
 }
 
+/// Service client whose single and batched exchanges use `S::MAX_FRAME_BODY_BYTES`.
 pub struct Connection<S: Service> {
     await_res: bool,
     inner: super::Connection<OneOrMany<S::Request>, OneOrMany<S::Response>>,
 }
 
 impl<S: Service> Connection<S> {
+    /// Connects with the service cap and the established 30-second connection deadline.
     pub async fn create(server: impl ToSocketAddrs) -> Result<Connection<S>> {
-        Ok(Connection {
-            await_res: false,
-            inner: super::Connection::create(server).await?,
-        })
+        Self::create_with_timeout(server, Duration::from_secs(30)).await
     }
 
+    /// Connects with the service cap and the supplied connection deadline.
     pub async fn create_with_timeout(
         server: impl ToSocketAddrs,
         timeout: Duration,
     ) -> Result<Connection<S>> {
+        let client_frame_limit = S::MAX_FRAME_BODY_BYTES;
         Ok(Connection {
             await_res: false,
-            inner: super::Connection::create_with_timeout(server, timeout).await?,
+            inner: super::Connection::create_with_timeout_and_limit(
+                server,
+                timeout,
+                client_frame_limit,
+            )
+            .await?,
         })
     }
 
+    /// Connects with the service cap on every retried attempt; see the raw retry constructor.
     pub async fn create_with_timeout_retry(
         server: impl ToSocketAddrs + Clone,
         timeout: Duration,
         retry: impl Iterator<Item = Duration>,
     ) -> Result<Connection<S>> {
+        let retry_service_limit = S::MAX_FRAME_BODY_BYTES;
         Ok(Connection {
             await_res: false,
-            inner: super::Connection::create_with_timeout_retry(server, timeout, retry).await?,
+            inner: super::Connection::create_with_timeout_retry_and_limit(
+                server,
+                timeout,
+                retry,
+                retry_service_limit,
+            )
+            .await?,
         })
     }
 
+    /// Sends one message with no deadline; a framing error discards the raw socket.
+    /// A caller that cancels this future must discard the connection.
     pub async fn send_without_timeout<R: Wrapper<S>>(&mut self, request: R) -> Result<R::Response> {
         self.await_res = true;
         let res = Ok(R::unwrap_response(
@@ -136,6 +170,7 @@ impl<S: Service> Connection<S> {
         res
     }
 
+    /// Sends one message within the raw client's 90-second exchange deadline.
     pub async fn send<R: Wrapper<S>>(&mut self, request: R) -> Result<R::Response> {
         self.await_res = true;
         let res = Ok(R::unwrap_response(
@@ -150,6 +185,7 @@ impl<S: Service> Connection<S> {
         res
     }
 
+    /// Sends one message within `timeout`.
     pub async fn send_with_timeout<R: Wrapper<S>>(
         &mut self,
         request: R,
@@ -168,6 +204,7 @@ impl<S: Service> Connection<S> {
         res
     }
 
+    /// Sends a batch in one frame; the cap applies to the whole batch envelope.
     pub async fn batch_send_with_timeout<R: Wrapper<S> + Clone>(
         &mut self,
         requests: &[R],
@@ -194,10 +231,12 @@ impl<S: Service> Connection<S> {
         res
     }
 
+    /// Returns true when the raw socket was discarded, expired or fails its liveness probe.
     pub async fn is_closed(&mut self) -> bool {
         self.inner.is_closed().await
     }
 
+    /// Returns true while an exchange is pending or after one failed.
     pub fn awaiting_response(&self) -> bool {
         self.await_res
     }
@@ -205,6 +244,16 @@ impl<S: Service> Connection<S> {
 
 macro_rules! sonic_service {
     ($service:ident, [$($req:ident),*$(,)?]) => {
+        $crate::distributed::sonic::service::sonic_service!(
+            $service, [$($req),*],
+            max_frame_body_bytes = $crate::distributed::sonic::DEFAULT_MAX_FRAME_BODY_BYTES
+        );
+    };
+    (
+        $service:ident,
+        [$($req:ident),*$(,)?],
+        max_frame_body_bytes = $max_frame_body_bytes:expr
+    ) => {
         mod service_impl__ {
             #![allow(dead_code)]
 
@@ -212,10 +261,12 @@ macro_rules! sonic_service {
 
             use $crate::distributed::sonic;
 
+            /// Request envelope whose variants keep the declared message order on the wire.
             #[derive(Clone, ::bincode::Encode, ::bincode::Decode)]
             pub enum Request {
                 $($req(Box<$req>),)*
             }
+            /// Response envelope whose variants mirror the request order on the wire.
             #[derive(::bincode::Encode, ::bincode::Decode)]
             pub enum Response {
                 $($req(Box<<$req as sonic::service::Message<$service>>::Response>),)*
@@ -236,6 +287,7 @@ macro_rules! sonic_service {
                 }
             )*
             impl sonic::service::Service for $service {
+                const MAX_FRAME_BODY_BYTES: usize = $max_frame_body_bytes;
                 type Request = Request;
                 type Response = Response;
 
@@ -254,6 +306,7 @@ macro_rules! sonic_service {
                 }
             }
             impl $service {
+                /// Binds this service with its declared request and response body-byte cap.
                 pub async fn bind(self, addr: impl ::tokio::net::ToSocketAddrs) -> sonic::Result<sonic::service::Server<Self>> {
                     sonic::service::Server::bind(self, addr).await
                 }
