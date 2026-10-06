@@ -169,7 +169,9 @@ async fn run_management(addr: SocketAddr, cluster: Arc<Cluster>) -> Result<()> {
     }
 }
 
+/// Rejects retired storage before resource work, then serves the supported listeners.
 pub async fn run(config: config::ApiConfig) -> Result<()> {
+    config.ensure_query_store_retired()?;
     let startup_config = config.clone();
     let resources =
         tokio::task::spawn_blocking(move || crate::api::v1::V1Resources::load(&startup_config))

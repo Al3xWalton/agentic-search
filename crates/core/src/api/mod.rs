@@ -17,9 +17,10 @@
 //! The api module contains the http api.
 //! All http requests are handled using axum.
 
-use axum::{body::Body, extract, middleware, Router};
+use axum::{body::Body, middleware, Router};
+#[cfg(test)]
+use axum::{extract, routing::post};
 use tokio::sync::Mutex;
-use tower::limit::ConcurrencyLimitLayer;
 use tower_http::compression::CompressionLayer;
 
 use crate::{
@@ -28,8 +29,6 @@ use crate::{
     config::ApiConfig,
     distributed::cluster::Cluster,
     generic_query::TopKeyPhrasesQuery,
-    improvement::{store_improvements_loop, ImprovementEvent},
-    leaky_queue::LeakyQueue,
     models::dual_encoder::DualEncoder,
     ranking::models::lambdamart::LambdaMART,
     searcher::{api::ApiSearcher, DistributedSearcher, SearchClient},
@@ -40,32 +39,35 @@ use crate::{
 use crate::ranking::models::cross_encoder::CrossEncoderModel;
 
 use anyhow::Result;
-use std::{
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-};
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
-    routing::post,
 };
 
+#[cfg(test)]
 mod autosuggest;
 mod crawler_policy;
 mod docs;
 mod egress;
+#[cfg(test)]
 mod explore;
+#[cfg(test)]
 mod hosts;
 pub mod improvement;
 mod metrics;
+mod retired;
 pub mod search;
 mod source_offer;
 pub mod user_count;
 /// Bounded, versioned agent HTTP contract, independent of the legacy beta handlers.
 pub mod v1;
 pub mod webgraph;
+
+#[cfg(test)]
+mod retired_tests;
 
 const WARMUP_QUERIES: usize = 100;
 
@@ -76,14 +78,21 @@ pub struct Counters {
     pub daily_active_users: user_count::UserCount<user_count::Daily>,
 }
 
+/// Shared retrieval resources; no query-storage owner exists.
 pub struct State {
+    /// Startup retrieval settings, including rejected legacy configuration shape.
     pub config: ApiConfig,
+    /// Distributed retrieval adapter shared with the supported v1 route.
     pub searcher: Arc<ApiSearcher<DistributedSearcher, Arc<RemoteWebgraph>>>,
+    /// Internal graph adapter retained for the remaining legacy library code.
     pub webgraph: Arc<RemoteWebgraph>,
+    /// Internal suggestions retained pending #598 cleanup.
     pub autosuggest: Autosuggest,
+    /// Existing metrics retained pending #598 cleanup.
     pub counters: Counters,
-    pub improvement_queue: Option<Arc<Mutex<LeakyQueue<ImprovementEvent>>>>,
+    /// Keeps membership alive for retrieval and ingest adapters.
     pub _cluster: Arc<Cluster>,
+    /// Internal host lookup retained pending #598 cleanup.
     pub similar_hosts: SimilarHostsFinder,
 }
 
@@ -96,69 +105,24 @@ pub async fn favicon() -> impl IntoResponse {
         .unwrap()
 }
 
-fn build_router(state: Arc<State>) -> Router {
-    let mut search = Router::new()
-        .route("/beta/api/search", post(search::search))
-        .route_layer(middleware::from_fn_with_state(state.clone(), search_metric))
-        .layer(cors_layer());
-
-    if let Some(limit) = state.config.max_concurrent_searches {
-        search = search.layer(ConcurrencyLimitLayer::new(limit));
-    }
-
+// Retirement is merged outside compression and CORS so neither changes its refusal.
+fn build_router() -> Router {
     let router = Router::new()
-        .merge(search)
         .route("/favicon.ico", get(favicon))
-        .merge(
-            Router::new()
-                .route("/improvement/click", post(improvement::click))
-                .route("/improvement/store", post(improvement::store))
-                .layer(cors_layer()),
-        )
         .layer(CompressionLayer::new())
         .merge(docs::router().into().layer(cors_layer()))
-        .nest(
-            "/beta",
-            Router::new()
-                .route("/api/search/widget", post(search::widget))
-                .route("/api/search/sidebar", post(search::sidebar))
-                .route("/api/search/spellcheck", post(search::spellcheck))
-                .route("/api/autosuggest", post(autosuggest::route))
-                .route("/api/autosuggest/browser", get(autosuggest::browser))
-                .route("/api/webgraph/host/similar", post(webgraph::host::similar))
-                .route("/api/webgraph/host/knows", post(webgraph::host::knows))
-                .route(
-                    "/api/webgraph/host/ingoing",
-                    post(webgraph::host::ingoing_hosts),
-                )
-                .route(
-                    "/api/webgraph/host/outgoing",
-                    post(webgraph::host::outgoing_hosts),
-                )
-                .route(
-                    "/api/webgraph/page/ingoing",
-                    post(webgraph::page::ingoing_pages),
-                )
-                .route(
-                    "/api/webgraph/page/outgoing",
-                    post(webgraph::page::outgoing_pages),
-                )
-                .route("/api/hosts/export", post(hosts::hosts_export_optic))
-                .route("/api/explore/export", post(explore::explore_export_optic))
-                .route("/api/entity_image", get(search::entity_image))
-                .layer(cors_layer()),
-        )
-        .with_state(state);
+        .merge(retired::router());
     finish_router(router)
 }
 
-/// Constructs the unchanged legacy API and the independently bounded v1 subtree.
+/// Rejects obsolete storage configuration and constructs supported and retired HTTP surfaces.
 pub async fn router(
     config: &ApiConfig,
     counters: Counters,
     cluster: Arc<Cluster>,
     v1_resources: &v1::V1Resources,
 ) -> Result<(Router, Arc<v1::V1State>)> {
+    config.ensure_query_store_retired()?;
     let policy_router = crawler_policy::router(config.crawler_policy_config_path.as_deref())?;
     let egress_router = egress::router(
         config.egress_file_path.as_deref(),
@@ -173,17 +137,6 @@ pub async fn router(
         Some(path) => Some(DualEncoder::open(path)?),
         None => None,
     };
-
-    let query_store_queue = config.query_store_db.clone().map(|query_store_config| {
-        let query_store_queue = Arc::new(Mutex::new(LeakyQueue::new(10_000)));
-        tokio::spawn(store_improvements_loop(
-            query_store_queue.clone(),
-            query_store_config.host,
-            query_store_config.username,
-            query_store_config.password,
-        ));
-        query_store_queue
-    });
 
     let bangs = match &config.bangs_path {
         Some(bangs_path) => Bangs::from_path(bangs_path),
@@ -258,7 +211,6 @@ pub async fn router(
             autosuggest,
             counters,
             webgraph,
-            improvement_queue: query_store_queue,
             _cluster: cluster,
             similar_hosts,
         })
@@ -266,6 +218,11 @@ pub async fn router(
     let ingest_backend = ingest_backend(&state).await;
     let router = attach_v1(config, state, policy_router, v1_resources, ingest_backend);
     Ok(router)
+}
+
+// Both startup and in-process witnesses use this final public assembly.
+fn compose_public(policy_router: Router, v1_state: Arc<v1::V1State>) -> Router {
+    v1::compose_api(build_router().merge(policy_router), v1_state)
 }
 
 /// Enables `oneshot` wiring tests without cluster startup; `wiring_source` guards its call site.
@@ -315,10 +272,7 @@ fn attach_v1(
         v1::V1State::from_resources(config, backend, v1_resources)
             .with_ingest_backend(ingest_backend),
     );
-    (
-        v1::compose_api(build_router(state).merge(policy_router), v1_state.clone()),
-        v1_state,
-    )
+    (compose_public(policy_router, v1_state.clone()), v1_state)
 }
 
 type IngestReplicaReceipt = (
@@ -369,39 +323,6 @@ pub fn metrics_router(registry: crate::metrics::PrometheusRegistry) -> Router {
         .route("/metrics", get(metrics::route))
         .with_state(Arc::new(registry));
     finish_router(router)
-}
-
-async fn search_metric(
-    extract::State(state): extract::State<Arc<State>>,
-    extract::ConnectInfo(addr): extract::ConnectInfo<SocketAddr>,
-    request: axum::extract::Request,
-    next: middleware::Next,
-) -> Response {
-    // It is very important that the ip address is not stored. It is only used
-    // for a probabilistic estimate of the number of unique users using a hyperloglog datastructure.
-    let mut ip = None;
-
-    if let Some(forwarded_for) = request.headers().get("x-forwarded-for") {
-        let forwarded_for = forwarded_for.to_str().unwrap_or_default();
-        if let Some(client_ip) = forwarded_for.split(',').next() {
-            if let Ok(client_ip) = client_ip.trim().parse::<IpAddr>() {
-                ip = Some(client_ip);
-            }
-        }
-    }
-
-    let ip = ip.unwrap_or_else(|| addr.ip());
-    state.counters.daily_active_users.inc(&ip).ok();
-
-    let response = next.run(request).await;
-
-    if response.status().is_success() {
-        state.counters.search_counter_success.inc();
-    } else if response.status().is_server_error() {
-        state.counters.search_counter_fail.inc();
-    }
-
-    response
 }
 
 /// Finishes both HTTP routers after their routes, fallbacks and inner middleware.
@@ -503,9 +424,11 @@ mod source_offer_tests {
         let (status, headers, body) = call(finish_router(Router::new()), "GET", "/absent").await;
         assert_eq!(status, 404);
         assert!(body.is_empty());
-        assert_eq!(
-            headers["source-offer"],
-            crate::source_metadata::embedded().source_url
+        assert!(
+            headers.get("source-offer").is_some_and(
+                |value| value == crate::source_metadata::embedded().source_url.as_str()
+            ),
+            "SOURCE_OFFER_FALLBACK"
         );
     }
 
@@ -586,7 +509,11 @@ mod source_offer_tests {
     fn v1_production_wiring() {
         let source = include_str!("mod.rs");
         assert!(function_body(source, "pub async fn router(").contains("attach_v1("));
-        assert!(function_body(source, "fn attach_v1(").contains("v1::compose_api("));
+        assert!(function_body(source, "fn attach_v1(").contains("compose_public("));
+        let composition = function_body(source, "fn compose_public(");
+        assert!(composition.contains("v1::compose_api("));
+        assert!(composition.contains("build_router("));
+        assert!(function_body(source, "fn build_router(").contains("retired::router"));
         let entrypoint = include_str!("../entrypoint/api.rs");
         assert_eq!(entrypoint.matches("v1::compose_management(").count(), 1);
         assert!(!entrypoint.contains("v1::management_router("));
@@ -675,14 +602,26 @@ mod source_offer_tests {
             .unwrap();
         #[cfg(feature = "cors")]
         {
-            assert_eq!(response.headers()["access-control-allow-origin"], "*");
-            let exposed = response.headers()["access-control-expose-headers"]
-                .to_str()
-                .unwrap();
-            assert!(exposed
-                .split(',')
-                .any(|h| h.trim().eq_ignore_ascii_case("source-offer")));
-            assert!(exposed.split(',').any(|h| h.trim() == "*"));
+            assert!(
+                response
+                    .headers()
+                    .get("access-control-allow-origin")
+                    .is_some_and(|value| value == "*"),
+                "SOURCE_OFFER_CORS_ORIGIN"
+            );
+            let exposed = response
+                .headers()
+                .get("access-control-expose-headers")
+                .and_then(|value| value.to_str().ok());
+            assert!(
+                exposed.is_some_and(|value| {
+                    value
+                        .split(',')
+                        .any(|h| h.trim().eq_ignore_ascii_case("source-offer"))
+                        && value.split(',').any(|h| h.trim() == "*")
+                }),
+                "SOURCE_OFFER_CORS_EXPOSE"
+            );
         }
         #[cfg(not(feature = "cors"))]
         assert!(!response

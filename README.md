@@ -46,38 +46,21 @@ target/release/stract api configs/api.toml
 Query it.
 
 ```sh
-curl -X POST http://localhost:3000/beta/api/search \
+curl -X POST http://localhost:3000/v1/search \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "what is sequence parallelism",
-    "numResults": 10
-  }'
+  -d '{"query":"cedar","page":0,"num_results":10,
+       "country":"unknown","adult_verified":false,"scholarly":false}'
 ```
 
 This returns a JSON object with the ranked results. The interactive API
-reference is served at `/beta/api/docs/swagger` and the OpenAPI document at
-`/beta/api/docs/openapi.json`.
+reference is served at `/api/docs/swagger` and the OpenAPI document at
+`/api/docs/openapi.json`. The legacy namespaces are permanently retired; see
+[the migration contract](docs/legacy-api-retirement.md).
 
 ## Options
 
-Fields of the JSON body:
-
-- `query`: the search query. Stract's syntax is supported: `site:`, `intitle:`,
-  `inbody:`, `inurl:`, `exacturl:` and `linkto:` prefixes, quoted phrases, `-`
-  to exclude a term, and DuckDuckGo-style `!bangs`.
-- `numResults`: results per page; default 20, at most 100.
-- `page`: page number, starting at 0.
-- `optic`: an [optic](https://github.com/StractOrg/sample-optics/blob/main/quickstart.optic)
-  that restricts or re-ranks results, for example to blogs or educational sites.
-- `hostRankings`: `liked`, `disliked` and `blocked` host lists.
-- `selectedRegion`: prefer results for a region.
-- `safeSearch`: filter pages classified as not safe for work.
-- `signalCoefficients`: custom weights for the ranking signals;
-  `returnRankingSignals: true` returns each result's signal scores.
-- `returnStructuredData`: include a page's schema.org data.
-- `returnBody`: whether page content is returned with each result.
-- `flattenResponse` and `countResultsExact`: the response shape and whether the
-  total is exact rather than estimated.
+See the published v1 schema at `/api/docs/openapi.json` for the supported request
+fields, bounds and response contract. Listener annotations identify management-only operations.
 
 ## Crawling
 

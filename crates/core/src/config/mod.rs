@@ -267,9 +267,13 @@ pub struct ApiSpellCheck {
     pub correction_config: CorrectionConfig,
 }
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+/// Rejected migration input only; remove the query_store_db table to start the API.
 pub struct QueryStoreConfig {
+    /// Obsolete database host; never connected to.
     pub host: String,
+    /// Obsolete username; never used for authentication.
     pub username: String,
+    /// Obsolete password; never used or included in the retirement diagnostic.
     pub password: String,
 }
 
@@ -298,6 +302,7 @@ pub struct ApiConfig {
     pub lambda_model_path: Option<String>,
     pub dual_encoder_model_path: Option<String>,
     pub bangs_path: Option<String>,
+    /// Deprecated input shape only; every configured value is rejected before startup.
     pub query_store_db: Option<QueryStoreConfig>,
     pub gossip_seed_nodes: Option<Vec<SocketAddr>>,
     pub gossip_addr: SocketAddr,
@@ -323,6 +328,17 @@ pub struct ApiConfig {
 
     #[serde(default = "defaults::Api::max_concurrent_searches")]
     pub max_concurrent_searches: Option<usize>,
+}
+
+impl ApiConfig {
+    /// Rejects obsolete query storage before resources, clusters or listeners are created.
+    /// An absent table succeeds; any configured table returns a fixed, credential-free error.
+    pub fn ensure_query_store_retired(&self) -> anyhow::Result<()> {
+        if self.query_store_db.is_some() {
+            anyhow::bail!("query_store_db has been retired");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]

@@ -1,4 +1,7 @@
 cluster_id = "dev_api"
+
+# /beta and /improvement are permanently retired. Use /v1/search and /api/docs/swagger.
+# Remove any query_store_db table: every configured query store prevents API startup.
 # crossencoder_model_path = "data/cross_encoder"
 bangs_path = "data/bangs.json"
 gossip_addr = "0.0.0.0:3005"
@@ -30,6 +33,7 @@ thesaurus_paths = ["data/english-wordnet-2022-subset.ttl"]
 
 # Independent v1 HTTP budgets; management is a distinct loopback HTTP listener.
 [v1]
+# max_concurrent_searches no longer limits routes; v1 uses [v1] max_concurrent_requests.
 # Complete JSON wire-body cap for authenticated management ingest; other operations keep 64 KiB.
 ingest_max_body_bytes = 2097152
 management_http_host = "127.0.0.1:3012"
