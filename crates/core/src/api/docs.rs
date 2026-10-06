@@ -14,13 +14,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Extends the beta publication baseline and separately describes the bounded v1 agent contract.
+//! Publishes supported operations while retaining the beta format only in historical tests.
 
-use super::{autosuggest, crawler_policy, egress, explore, hosts, search, source_offer, webgraph};
+#[cfg(test)]
+use super::{autosuggest, explore, hosts, search, webgraph};
+use super::{crawler_policy, egress, source_offer};
 use axum::Router;
-use utoipa::{Modify, OpenApi};
+#[cfg(test)]
+use utoipa::Modify;
+use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+// Historical modifiers assume beta paths and must never modify the publication.
+#[cfg(test)]
 #[derive(OpenApi)]
 #[openapi(
         paths(
@@ -132,7 +138,7 @@ use utoipa_swagger_ui::SwaggerUi;
             (name = "stract"),
         )
     )]
-/// Shared API schema used by the documentation route and local contract witnesses.
+/// Historical beta schema retained solely for private format witnesses.
 pub(super) struct BetaApiDoc;
 
 /// Aggregates registrations while retaining the complete legacy document's metadata.
@@ -328,6 +334,7 @@ fn v1_error_schema(document: &mut serde_json::Value) {
     ]});
 }
 
+#[cfg(test)]
 struct ApiModifier;
 
 // Derived schemas cannot express conditional limits or custom deserializers' closed objects.
@@ -359,6 +366,7 @@ fn v1_paper_docs(document: &mut serde_json::Value) {
     ));
 }
 
+#[cfg(test)]
 fn mark_internal(path: &mut utoipa::openapi::path::PathItem) {
     let internal_extensions = utoipa::openapi::extensions::ExtensionsBuilder::new()
         .add("x-internal", true)
@@ -381,6 +389,7 @@ fn mark_internal(path: &mut utoipa::openapi::path::PathItem) {
     }
 }
 
+#[cfg(test)]
 impl Modify for ApiModifier {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         describe_egress_envelope(openapi);
@@ -461,10 +470,39 @@ fn describe_egress_envelope(openapi: &mut utoipa::openapi::OpenApi) {
     content.schema = Some(schema.into());
 }
 
-/// Serves the API schema and Swagger UI with existing paths intact.
+// A separate registration keeps historical beta operations out of the served document.
+#[derive(OpenApi)]
+#[openapi(
+    info(title = "Agentic Search API", version = "v1"),
+    paths(source_offer::route, crawler_policy::route, egress::route),
+    components(schemas(source_offer::SourceOffer, egress::PendingBody))
+)]
+struct PublicationApiDoc;
+
+/// Generates the canonical supported publication without running the historical modifier.
+pub(super) fn published_openapi() -> utoipa::openapi::OpenApi {
+    let mut doc = PublicationApiDoc::openapi().merge_from(super::v1::openapi());
+    describe_egress_envelope(&mut doc);
+    doc.info.description = Some(
+        concat!(
+            "Supported v1 operations and public service metadata. ",
+            "The /beta and /improvement namespaces are permanently retired with HTTP 410. ",
+            "Documentation moved to /api/docs/swagger and /api/docs/openapi.json. ",
+            "The [source offer](/.well-known/ava-search-source) identifies this build's ",
+            "AGPL-3.0-only source. Read the [crawler policy](/.well-known/ava-search-crawler) ",
+            "and [egress publication](/.well-known/ava-search-egress.json). ",
+            "Every API response includes its source URL in the Source-Offer header. ",
+            "Operation listener annotations distinguish public and management HTTP."
+        )
+        .into(),
+    );
+    doc
+}
+
+/// Serves the supported publication at the unversioned documentation URLs.
 pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
-    SwaggerUi::new("/beta/api/docs/swagger")
-        .url("/beta/api/docs/openapi.json", BetaApiDoc::openapi())
+    SwaggerUi::new("/api/docs/swagger")
+        .url("/api/docs/openapi.json", published_openapi())
         .config(
             utoipa_swagger_ui::Config::default()
                 .use_base_layout()
@@ -473,42 +511,37 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> impl Into<Router<S>> {
 }
 
 #[cfg(test)]
+/// Compares the complete historical schema with the golden and its optional body fields.
+pub(super) fn historical_beta_matches_golden() -> bool {
+    let golden = include_bytes!("../../tests/fixtures/api_v1/beta-openapi.json");
+    let actual = BetaApiDoc::openapi();
+    if let Some(path) = std::env::var_os("BETA_OPENAPI_ARTIFACT") {
+        std::fs::write(path, serde_json::to_vec(&actual).unwrap()).unwrap();
+    }
+    if cfg!(feature = "return_body") {
+        let mut expected: serde_json::Value = serde_json::from_slice(golden).unwrap();
+        // The original optional feature adds request selection and result body properties.
+        let schemas = &mut expected["components"]["schemas"];
+        schemas["ApiSearchQuery"]["properties"]["returnBody"] = serde_json::json!({
+            "oneOf":[{"type":"null"},{
+                "$ref":"#/components/schemas/ReturnBody",
+                "description":"Control whether or not the page content is returned"}]
+        });
+        schemas["DisplayedWebpage"]["properties"]["body"] =
+            serde_json::json!({"type":["string","null"]});
+        serde_json::to_value(actual).unwrap() == expected
+    } else {
+        serde_json::to_vec(&actual).unwrap() == golden
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn beta_openapi_bytes_are_unchanged_from_base() {
-        use axum::{
-            body::{to_bytes, Body},
-            http::Request,
-        };
-        use tower::ServiceExt;
-        // The deliberately extended beta baseline includes the load-verified egress publication.
-        let golden = include_bytes!("../../tests/fixtures/api_v1/beta-openapi.json");
-        assert_eq!(serde_json::to_vec(&BetaApiDoc::openapi()).unwrap(), golden);
-        let docs: Router = router().into();
-        let response = super::super::finish_router(docs)
-            .oneshot(
-                Request::builder()
-                    .uri("/beta/api/docs/openapi.json")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            response.headers()["source-offer"],
-            crate::source_metadata::embedded().source_url
-        );
-        assert_eq!(response.headers()["content-type"], "application/json");
-        assert_eq!(response.status(), 200);
-        assert_eq!(
-            to_bytes(response.into_body(), 4 * 1024 * 1024)
-                .await
-                .unwrap()
-                .as_ref(),
-            golden
-        );
+    #[test]
+    fn beta_openapi_bytes_are_unchanged_from_base() {
+        assert!(historical_beta_matches_golden(), "HISTORICAL_BETA_BYTES");
     }
 
     #[test]
